@@ -93,7 +93,8 @@
         "github.com/ben-ranford/stave/render",
         "github.com/ben-ranford/stave/semantic",
         "log",
-        "os"
+        "os",
+        "strings"
       ]
     },
     {
