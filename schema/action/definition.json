@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "stave-action-definition-v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "version", "inputSchema", "outputSchema", "safety"],
+  "properties": {
+    "id": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-z][a-z0-9._:-]*$"},
+    "version": {"type": "string", "minLength": 1, "maxLength": 64},
+    "title": {"type": "string", "maxLength": 256},
+    "description": {"type": "string", "maxLength": 4096},
+    "inputSchema": {"$ref": "#/$defs/schema"},
+    "outputSchema": {"$ref": "#/$defs/schema"},
+    "safety": {"enum": ["read_only", "reversible", "consequential", "destructive"]},
+    "idempotency": {"enum": ["idempotent", "non_idempotent"]},
+    "cancellable": {"type": "boolean"},
+    "targetRoles": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true, "maxItems": 64},
+    "requiredCaps": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true, "maxItems": 64},
+    "confirmation": {
+      "type": "object", "additionalProperties": false,
+      "properties": {"required": {"type": "boolean"}, "singleUse": {"type": "boolean"}}
+    },
+    "timeout": {"type": "integer", "minimum": 0}
+  },
+  "$defs": {
+    "schema": {
+      "type": "object", "additionalProperties": true,
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "json": {"type": "object"}
+      }
+    }
+  }
+}

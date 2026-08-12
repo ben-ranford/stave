@@ -1,0 +1,654 @@
+{
+  "modulePath": "github.com/ben-ranford/stave",
+  "goVersion": "1.22",
+  "packages": [
+    {
+      "importPath": "github.com/ben-ranford/stave",
+      "dir": ".",
+      "imports": [
+        "context",
+        "encoding/hex",
+        "errors",
+        "fmt",
+        "github.com/ben-ranford/stave/action",
+        "github.com/ben-ranford/stave/capability",
+        "github.com/ben-ranford/stave/config",
+        "github.com/ben-ranford/stave/effect",
+        "github.com/ben-ranford/stave/event",
+        "github.com/ben-ranford/stave/layout",
+        "github.com/ben-ranford/stave/observer",
+        "github.com/ben-ranford/stave/semantic",
+        "github.com/ben-ranford/stave/session",
+        "github.com/ben-ranford/stave/state",
+        "github.com/ben-ranford/stave/theme",
+        "strings",
+        "sync/atomic",
+        "time"
+      ]
+    },
+    {
+      "importPath": "github.com/ben-ranford/stave/action",
+      "dir": "action",
+      "imports": [
+        "bytes",
+        "context",
+        "crypto/rand",
+        "crypto/sha256",
+        "encoding/hex",
+        "encoding/json",
+        "errors",
+        "fmt",
+        "github.com/ben-ranford/stave/diag",
+        "github.com/ben-ranford/stave/internal/canonical",
+        "github.com/ben-ranford/stave/semantic",
+        "io",
+        "math/big",
+        "reflect",
+        "sort",
+        "strconv",
+        "strings",
+        "sync",
+        "time"
+      ]
+    },
+    {
+      "importPath": "github.com/ben-ranford/stave/capability",
+      "dir": "capability",
+      "imports": [
+        "encoding/json",
+        "fmt",
+        "sort",
+        "strings"
+      ]
+    },
+    {
+      "importPath": "github.com/ben-ranford/stave/cmd/atlas",
+      "dir": "cmd/atlas",
+      "imports": [
+        "context",
+        "encoding/json",
+        "errors",
+        "flag",
+        "fmt",
+        "github.com/ben-ranford/stave/internal/atlasrig",
+        "io",
+        "log",
+        "os",
+        "strings"
+      ]
+    },
+    {
+      "importPath": "github.com/ben-ranford/stave/cmd/lopper",
+      "dir": "cmd/lopper",
+      "imports": [
+        "context",
+        "fmt",
+        "github.com/ben-ranford/stave",
+        "github.com/ben-ranford/stave/capability",
+        "github.com/ben-ranford/stave/effect",
+        "github.com/ben-ranford/stave/event",
+        "github.com/ben-ranford/stave/internal/examples",
+        "github.com/ben-ranford/stave/layout",
+        "github.com/ben-ranford/stave/primitive",
+        "github.com/ben-ranford/stave/render",
+        "github.com/ben-ranford/stave/semantic",
+        "log",
+        "os",
+        "strings"
+      ]
+    },
+    {
+      "importPath": "github.com/ben-ranford/stave/cmd/stave-agent",
+      "dir": "cmd/stave-agent",
+      "imports": [
+        "context",
+        "github.com/ben-ranford/stave/capability",
+        "github.com/ben-ranford/stave/protocol",
+        "github.com/ben-ranford/stave/runtime/agent",
+        "log",
+        "os"
+      ]
+    },
+    {
+      "importPath": "github.com/ben-ranford/stave/cmd/stave-conformance",
+      "dir": "cmd/stave-conformance",
+      "imports": [
+        "context",
+        "encoding/json",
+        "fmt",
+        "github.com/ben-ranford/stave/action",
+        "github.com/ben-ranford/stave/capability",
+        "github.com/ben-ranford/stave/conformance",
+        "github.com/ben-ranford/stave/input",
+        "github.com/ben-ranford/stave/internal/examples",
+        "github.com/ben-ranford/stave/internal/width",
+        "github.com/ben-ranford/stave/keymap",
+        "github.com/ben-ranford/stave/layout",
+        "github.com/ben-ranford/stave/render",
+        "github.com/ben-ranford/stave/semantic",
+        "github.com/ben-ranford/stave/testfixture",
+        "github.com/ben-ranford/stave/theme",
+        "io",
+        "os",
+        "path/filepath",
+        "sort",
+        "strings",
+        "unicode/utf8"
+      ]
+    },
+    {
+      "importPath": "github.com/ben-ranford/stave/cmd/stave-performance",
+      "dir": "cmd/stave-performance",
+      "imports": [
+        "bytes",
+        "context",
+        "encoding/json",
+        "flag",
+        "fmt",
+        "github.com/ben-ranford/stave/capability",
+        "github.com/ben-ranford/stave/internal/examples",
+        "github.com/ben-ranford/stave/layout",
+        "github.com/ben-ranford/stave/performance",
+        "github.com/ben-ranford/stave/protocol",
+        "github.com/ben-ranford/stave/render",
+        "github.com/ben-ranford/stave/surface",
+        "github.com/ben-ranford/stave/theme",
+        "os",
+        "runtime",
+        "runtime/debug",
+        "sort",
+        "time"
+      ]
+    },
+    {
+      "importPath": "github.com/ben-ranford/stave/config",
+      "dir": "config",
+      "imports": [
+        "encoding/json",
+        "errors",
+        "fmt",
+        "github.com/ben-ranford/stave/internal/tokens",
+        "github.com/ben-ranford/stave/schema/config",
+        "io",
+        "sort",
+        "strconv",
+        "strings",
+        "time"
+      ]
+    },
+    {
+      "importPath": "github.com/ben-ranford/stave/conformance",
+      "dir": "conformance",
+      "imports": [
+        "fmt",
+        "github.com/ben-ranford/stave/action",
+        "github.com/ben-ranford/stave/keymap",
+        "github.com/ben-ranford/stave/semantic",
+        "strings"
+      ]
+    },
+    {
+      "importPath": "github.com/ben-ranford/stave/diag",
+      "dir": "diag",
+      "imports": [
+        "encoding/json",
+        "github.com/ben-ranford/stave/semantic",
+        "time"
+      ]
+    },
+    {
+      "importPath": "github.com/ben-ranford/stave/effect",
+      "dir": "effect",
+      "imports": [
+        "bytes",
+        "context",
+        "encoding/hex",
+        "encoding/json",
+        "errors",
+        "fmt",
+        "github.com/ben-ranford/stave/event",
+        "github.com/ben-ranford/stave/internal/canonical",
+        "sync",
+        "time"
+      ]
+    },
+    {
+      "importPath": "github.com/ben-ranford/stave/event",
+      "dir": "event",
+      "imports": [
+        "bytes",
+        "encoding/hex",
+        "encoding/json",
+        "errors",
+        "fmt",
+        "github.com/ben-ranford/stave/internal/canonical",
+        "github.com/ben-ranford/stave/secret",
+        "io",
+        "strconv",
+        "strings",
+        "unicode",
+        "unicode/utf8"
+      ]
+    },
+    {
+      "importPath": "github.com/ben-ranford/stave/focus",
+      "dir": "focus",
+      "imports": [
+        "errors",
+        "github.com/ben-ranford/stave/semantic"
+      ]
+    },
+    {
+      "importPath": "github.com/ben-ranford/stave/input",
+      "dir": "input",
+      "imports": [
+        "bytes",
+        "context",
+        "errors",
+        "github.com/ben-ranford/stave/event",
+        "github.com/ben-ranford/stave/secret",
+        "strings",
+        "unicode",
+        "unicode/utf8"
+      ]
+    },
+    {
+      "importPath": "github.com/ben-ranford/stave/internal/atlasrig",
+      "dir": "internal/atlasrig",
+      "imports": [
+        "bytes",
+        "context",
+        "crypto/sha256",
+        "encoding/hex",
+        "encoding/json",
+        "errors",
+        "fmt",
+        "github.com/ben-ranford/stave",
+        "github.com/ben-ranford/stave/action",
+        "github.com/ben-ranford/stave/capability",
+        "github.com/ben-ranford/stave/conformance",
+        "github.com/ben-ranford/stave/effect",
+        "github.com/ben-ranford/stave/event",
+        "github.com/ben-ranford/stave/input",
+        "github.com/ben-ranford/stave/keymap",
+        "github.com/ben-ranford/stave/layout",
+        "github.com/ben-ranford/stave/primitive",
+        "github.com/ben-ranford/stave/render",
+        "github.com/ben-ranford/stave/semantic",
+        "github.com/ben-ranford/stave/theme",
+        "io",
+        "slices",
+        "sort",
+        "strconv",
+        "strings",
+        "unicode/utf8"
+      ]
+    },
+    {
+      "importPath": "github.com/ben-ranford/stave/internal/canonical",
+      "dir": "internal/canonical",
+      "imports": [
+        "bytes",
+        "crypto/sha256",
+        "encoding/json",
+        "fmt",
+        "io",
+        "math/big",
+        "reflect",
+        "sort",
+        "strings",
+        "unicode/utf8"
+      ]
+    },
+    {
+      "importPath": "github.com/ben-ranford/stave/internal/examples",
+      "dir": "internal/examples",
+      "imports": [
+        "github.com/ben-ranford/stave/theme",
+        "strings"
+      ]
+    },
+    {
+      "importPath": "github.com/ben-ranford/stave/internal/terminal",
+      "dir": "internal/terminal",
+      "imports": [
+        "bytes",
+        "io",
+        "unicode/utf8"
+      ]
+    },
+    {
+      "importPath": "github.com/ben-ranford/stave/internal/tokens",
+      "dir": "internal/tokens",
+      "imports": [
+        "encoding/hex",
+        "github.com/ben-ranford/stave/internal/canonical",
+        "sort"
+      ]
+    },
+    {
+      "importPath": "github.com/ben-ranford/stave/internal/width",
+      "dir": "internal/width",
+      "imports": [
+        "fmt",
+        "strings",
+        "unicode",
+        "unicode/utf8"
+      ]
+    },
+    {
+      "importPath": "github.com/ben-ranford/stave/keymap",
+      "dir": "keymap",
+      "imports": [
+        "encoding/json",
+        "errors",
+        "fmt",
+        "github.com/ben-ranford/stave/action",
+        "github.com/ben-ranford/stave/event",
+        "github.com/ben-ranford/stave/input",
+        "github.com/ben-ranford/stave/primitive",
+        "github.com/ben-ranford/stave/semantic",
+        "strconv",
+        "strings",
+        "time"
+      ]
+    },
+    {
+      "importPath": "github.com/ben-ranford/stave/layout",
+      "dir": "layout",
+      "imports": [
+        "context",
+        "crypto/sha256",
+        "encoding/binary",
+        "fmt",
+        "github.com/ben-ranford/stave/internal/width",
+        "github.com/ben-ranford/stave/semantic",
+        "math",
+        "sort",
+        "strconv",
+        "strings",
+        "sync"
+      ]
+    },
+    {
+      "importPath": "github.com/ben-ranford/stave/observer",
+      "dir": "observer",
+      "imports": [
+        "context",
+        "time"
+      ]
+    },
+    {
+      "importPath": "github.com/ben-ranford/stave/performance",
+      "dir": "performance",
+      "imports": [
+        "context",
+        "encoding/json",
+        "errors",
+        "fmt",
+        "github.com/ben-ranford/stave/capability",
+        "github.com/ben-ranford/stave/effect",
+        "github.com/ben-ranford/stave/event",
+        "github.com/ben-ranford/stave/input",
+        "github.com/ben-ranford/stave/layout",
+        "github.com/ben-ranford/stave/protocol",
+        "github.com/ben-ranford/stave/runtime/human",
+        "github.com/ben-ranford/stave/secret",
+        "github.com/ben-ranford/stave/semantic",
+        "github.com/ben-ranford/stave/surface",
+        "runtime",
+        "runtime/metrics",
+        "sort",
+        "time"
+      ]
+    },
+    {
+      "importPath": "github.com/ben-ranford/stave/primitive",
+      "dir": "primitive",
+      "imports": [
+        "errors",
+        "fmt",
+        "github.com/ben-ranford/stave/secret",
+        "github.com/ben-ranford/stave/semantic",
+        "strconv",
+        "strings"
+      ]
+    },
+    {
+      "importPath": "github.com/ben-ranford/stave/protocol",
+      "dir": "protocol",
+      "imports": [
+        "bytes",
+        "encoding/json",
+        "errors",
+        "fmt",
+        "github.com/ben-ranford/stave/action",
+        "github.com/ben-ranford/stave/diag",
+        "github.com/ben-ranford/stave/semantic",
+        "io",
+        "unicode/utf8"
+      ]
+    },
+    {
+      "importPath": "github.com/ben-ranford/stave/render",
+      "dir": "render",
+      "imports": [
+        "context",
+        "encoding/json",
+        "fmt",
+        "github.com/ben-ranford/stave/capability",
+        "github.com/ben-ranford/stave/internal/terminal",
+        "github.com/ben-ranford/stave/internal/width",
+        "github.com/ben-ranford/stave/layout",
+        "github.com/ben-ranford/stave/semantic",
+        "github.com/ben-ranford/stave/surface",
+        "github.com/ben-ranford/stave/theme",
+        "sort",
+        "strconv",
+        "strings"
+      ]
+    },
+    {
+      "importPath": "github.com/ben-ranford/stave/replay",
+      "dir": "replay",
+      "imports": [
+        "bytes",
+        "context",
+        "encoding/json",
+        "fmt",
+        "github.com/ben-ranford/stave/event",
+        "github.com/ben-ranford/stave/internal/canonical",
+        "github.com/ben-ranford/stave/state"
+      ]
+    },
+    {
+      "importPath": "github.com/ben-ranford/stave/requirements",
+      "dir": "requirements"
+    },
+    {
+      "importPath": "github.com/ben-ranford/stave/runtime/agent",
+      "dir": "runtime/agent",
+      "imports": [
+        "bufio",
+        "bytes",
+        "context",
+        "encoding/hex",
+        "encoding/json",
+        "errors",
+        "fmt",
+        "github.com/ben-ranford/stave/action",
+        "github.com/ben-ranford/stave/capability",
+        "github.com/ben-ranford/stave/diag",
+        "github.com/ben-ranford/stave/observer",
+        "github.com/ben-ranford/stave/protocol",
+        "github.com/ben-ranford/stave/semantic",
+        "io",
+        "sync",
+        "time"
+      ]
+    },
+    {
+      "importPath": "github.com/ben-ranford/stave/runtime/human",
+      "dir": "runtime/human",
+      "imports": [
+        "bufio",
+        "context",
+        "errors",
+        "fmt",
+        "github.com/ben-ranford/stave/capability",
+        "github.com/ben-ranford/stave/event",
+        "github.com/ben-ranford/stave/focus",
+        "github.com/ben-ranford/stave/input",
+        "github.com/ben-ranford/stave/keymap",
+        "github.com/ben-ranford/stave/protocol",
+        "github.com/ben-ranford/stave/render",
+        "github.com/ben-ranford/stave/secret",
+        "github.com/ben-ranford/stave/semantic",
+        "github.com/ben-ranford/stave/surface",
+        "io",
+        "strings",
+        "sync",
+        "time"
+      ]
+    },
+    {
+      "importPath": "github.com/ben-ranford/stave/schema/config",
+      "dir": "schema/config"
+    },
+    {
+      "importPath": "github.com/ben-ranford/stave/schema/protocol",
+      "dir": "schema/protocol"
+    },
+    {
+      "importPath": "github.com/ben-ranford/stave/scripts/rigor/cmd/rigor",
+      "dir": "scripts/rigor/cmd/rigor",
+      "imports": [
+        "bytes",
+        "context",
+        "crypto/sha256",
+        "encoding/hex",
+        "encoding/json",
+        "errors",
+        "flag",
+        "fmt",
+        "github.com/ben-ranford/stave/config",
+        "github.com/ben-ranford/stave/schema/config",
+        "github.com/ben-ranford/stave/semantic",
+        "go/ast",
+        "go/parser",
+        "go/printer",
+        "go/token",
+        "io",
+        "os",
+        "os/exec",
+        "path/filepath",
+        "regexp",
+        "sort",
+        "strings"
+      ]
+    },
+    {
+      "importPath": "github.com/ben-ranford/stave/secret",
+      "dir": "secret",
+      "imports": [
+        "crypto/rand",
+        "encoding/hex",
+        "errors",
+        "sync"
+      ]
+    },
+    {
+      "importPath": "github.com/ben-ranford/stave/semantic",
+      "dir": "semantic",
+      "imports": [
+        "crypto/sha256",
+        "encoding/base32",
+        "encoding/hex",
+        "encoding/json",
+        "errors",
+        "fmt",
+        "github.com/ben-ranford/stave/internal/canonical",
+        "sort",
+        "strings",
+        "unicode",
+        "unicode/utf8"
+      ]
+    },
+    {
+      "importPath": "github.com/ben-ranford/stave/session",
+      "dir": "session",
+      "imports": [
+        "context",
+        "errors",
+        "github.com/ben-ranford/stave/capability",
+        "github.com/ben-ranford/stave/effect",
+        "github.com/ben-ranford/stave/event",
+        "github.com/ben-ranford/stave/replay",
+        "github.com/ben-ranford/stave/semantic",
+        "github.com/ben-ranford/stave/state",
+        "strings",
+        "sync",
+        "time",
+        "unicode"
+      ]
+    },
+    {
+      "importPath": "github.com/ben-ranford/stave/state",
+      "dir": "state",
+      "imports": [
+        "bytes",
+        "encoding/hex",
+        "encoding/json",
+        "fmt",
+        "github.com/ben-ranford/stave/capability",
+        "github.com/ben-ranford/stave/event",
+        "github.com/ben-ranford/stave/internal/canonical",
+        "github.com/ben-ranford/stave/semantic"
+      ]
+    },
+    {
+      "importPath": "github.com/ben-ranford/stave/surface",
+      "dir": "surface",
+      "imports": [
+        "crypto/sha256",
+        "encoding/json",
+        "fmt",
+        "github.com/ben-ranford/stave/internal/width",
+        "github.com/ben-ranford/stave/layout",
+        "github.com/ben-ranford/stave/semantic",
+        "slices",
+        "strings"
+      ]
+    },
+    {
+      "importPath": "github.com/ben-ranford/stave/testfixture",
+      "dir": "testfixture",
+      "imports": [
+        "fmt",
+        "github.com/ben-ranford/stave/layout",
+        "github.com/ben-ranford/stave/primitive",
+        "github.com/ben-ranford/stave/semantic",
+        "github.com/ben-ranford/stave/surface"
+      ]
+    },
+    {
+      "importPath": "github.com/ben-ranford/stave/theme",
+      "dir": "theme",
+      "imports": [
+        "encoding/hex",
+        "encoding/json",
+        "fmt",
+        "github.com/ben-ranford/stave/capability",
+        "github.com/ben-ranford/stave/internal/tokens",
+        "github.com/ben-ranford/stave/internal/width",
+        "io",
+        "math",
+        "sort",
+        "strconv",
+        "strings",
+        "unicode/utf8"
+      ]
+    }
+  ],
+  "externalModules": []
+}

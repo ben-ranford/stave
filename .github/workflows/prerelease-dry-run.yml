@@ -1,0 +1,47 @@
+name: prerelease-dry-run
+
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: "0 7 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prerelease-dry-run-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GO_VERSION_CURRENT: "1.26.5"
+
+jobs:
+  rolling:
+    name: rolling / dry-run
+    runs-on: stave-arc
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: ${{ env.GO_VERSION_CURRENT }}
+          cache: true
+      - name: Install build tools
+        run: |
+          if ! command -v make >/dev/null 2>&1 || ! command -v rg >/dev/null 2>&1 || ! command -v gcc >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y build-essential ripgrep
+          fi
+      - name: Run canonical CI
+        env:
+          CGO_ENABLED: "1"
+        run: make ci
+      - name: Compute rolling prerelease candidate
+        run: make release-dry-run

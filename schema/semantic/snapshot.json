@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "stave-semantic-snapshot-v1",
+  "type": "object", "additionalProperties": false,
+  "required": ["schemaVersion", "revision", "treeHash", "root"],
+  "properties": {
+    "schemaVersion": {"const": "stave-semantic-v1"},
+    "revision": {"type": "integer", "minimum": 1},
+    "treeHash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "root": {"$ref": "#/$defs/node"}
+  },
+  "$defs": {
+    "node": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "generation", "role", "name", "flags"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^n1_[a-z2-7]{26}$"},
+        "generation": {"type": "integer", "minimum": 0},
+        "role": {"type": "string", "minLength": 1},
+        "name": {"type": "string"},
+        "description": {"type": "string"},
+        "value": {"$ref": "#/$defs/value"},
+        "states": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "relations": {"type": "array", "items": {"$ref": "#/$defs/relation"}},
+        "actions": {"type": "array", "items": {"$ref": "#/$defs/actionRef"}},
+        "layout": {"$ref": "#/$defs/layout"},
+        "style": {"$ref": "#/$defs/style"},
+        "children": {"type": "array", "items": {"$ref": "#/$defs/node"}},
+        "flags": {"$ref": "#/$defs/flags"},
+        "metadata": {"type": "object", "additionalProperties": {"type": "string"}}
+      }
+    },
+    "value": {"type": "object", "additionalProperties": false, "properties": {"text": {"type": "string"}, "redacted": {"type": "boolean"}, "hasValue": {"type": "boolean"}}},
+    "relation": {"type": "object", "additionalProperties": false, "required": ["kind", "target"], "properties": {"kind": {"type": "string", "minLength": 1}, "target": {"type": "string", "pattern": "^n1_[a-z2-7]{26}$"}}},
+    "actionRef": {"type": "object", "additionalProperties": false, "required": ["id"], "properties": {"id": {"type": "string", "minLength": 1}, "label": {"type": "string"}, "default": {"type": "boolean"}}},
+    "layout": {"type": "object", "additionalProperties": false, "properties": {"width": {"type": "integer", "minimum": 0}, "height": {"type": "integer", "minimum": 0}}},
+    "style": {"type": "object", "additionalProperties": false, "properties": {"role": {"type": "string"}}},
+    "flags": {"type": "object", "additionalProperties": false, "required": ["visible", "focusable", "disabled", "sensitive", "offscreen"], "properties": {"visible": {"type": "boolean"}, "focusable": {"type": "boolean"}, "disabled": {"type": "boolean"}, "sensitive": {"type": "boolean"}, "offscreen": {"type": "boolean"}, "live": {"enum": ["none", "polite", "assertive"]}, "stability": {"enum": ["stable", "snapshot"]}}}
+  }
+}

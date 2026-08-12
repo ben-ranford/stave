@@ -1,0 +1,57 @@
+{
+  "modulePath": "github.com/ben-ranford/stave",
+  "goVersion": "1.22",
+  "configSchemaVersion": "stave.config/v1",
+  "configSchemaRequired": [
+    "app",
+    "capabilities",
+    "diagnostics",
+    "keymap",
+    "protocol",
+    "runtime",
+    "schemaVersion",
+    "security",
+    "theme",
+    "viewport"
+  ],
+  "semanticTreeSchemaVersion": "stave-semantic-v1",
+  "nodeIdAlgorithm": "stave-node-id-v1:utf8-identity",
+  "schemaArtifacts": [
+    {
+      "path": "schema/action/definition.json",
+      "sha256": "e16ace4d6d9bdf4733a0c13ea4d0debd10614725fe0c8a58543653bd82577d3f"
+    },
+    {
+      "path": "schema/config/config.json",
+      "sha256": "344bc3eefe128aa983424d6a0338cdfeb13a37265d90402a2c0e175f04e28ea5"
+    },
+    {
+      "path": "schema/protocol/protocol.json",
+      "sha256": "d4bff3483e88369d0ef969a40d4b92876cdc91e588fb4fc2ec7a050be8d3fd5d"
+    },
+    {
+      "path": "schema/semantic/snapshot.json",
+      "sha256": "c76dda2bd158b8100f2a28b2a0ff5d732833ad29a489b108a57fe15f6dbbb0ad"
+    }
+  ],
+  "commandRenderTrace": [
+    {
+      "name": "atlas",
+      "path": "./cmd/atlas",
+      "sha256": "02411a7e2f08408c9bea5ba961b32c8c4b70a16d643277557c8f7d7e4699c003",
+      "bytes": 3608
+    },
+    {
+      "name": "lopper",
+      "path": "./cmd/lopper",
+      "sha256": "18f3025d552e1889aeac1cef1e33f80d28011f81d2c4a4f75cd3ca9b5636179c",
+      "bytes": 408
+    }
+  ],
+  "atlasProofMatrix": {
+    "name": "atlas-proof-matrix",
+    "path": "./cmd/atlas -matrix",
+    "sha256": "5d73cca8db79986ccf79c27b49d03fe2fd300ef1e28667902ec02dd858be72c3",
+    "bytes": 196548
+  }
+}

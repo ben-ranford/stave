@@ -1,0 +1,2339 @@
+{
+  "schemaVersion": "stave-traceability-v1",
+  "validationCommand": "go test ./requirements -run TestTraceabilityMatrix -count=1",
+  "entries": [
+    {
+      "id": "FR-001",
+      "category": "functional_requirement",
+      "title": "Core model stays renderer/runtime neutral",
+      "sourceRef": ".doc/prd.md §8 FR-001",
+      "priority": "P0",
+      "plannedPackageAPI": [
+        "stave.Program[M]",
+        "semantic.Tree",
+        "session.ReduceContext"
+      ],
+      "verificationArtifacts": [
+        "stave_test.go::TestProgramComposesProductionSession",
+        "go run ./scripts/rigor/cmd/rigor boundary-check"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "README.md#proof-points"
+      ],
+      "status": "implemented",
+      "milestone": "M1",
+      "notes": "The production facade composes the renderer-neutral semantic, session, action, and runtime packages."
+    },
+    {
+      "id": "FR-002",
+      "category": "functional_requirement",
+      "title": "State transitions occur through typed actions or explicit events",
+      "sourceRef": ".doc/prd.md §8 FR-002",
+      "priority": "P0",
+      "plannedPackageAPI": [
+        "event.Event",
+        "session.Program.Run",
+        "session.Reducer[M]"
+      ],
+      "verificationArtifacts": [
+        "session/session_test.go::TestSessionSerializesReducerOwnership",
+        "session/session_test.go::TestSessionCheckpointAndReplayStayDeterministic"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md"
+      ],
+      "status": "implemented",
+      "milestone": "M2"
+    },
+    {
+      "id": "FR-003",
+      "category": "functional_requirement",
+      "title": "Actions expose stable IDs, schemas, validation, risk metadata, confirmation metadata, and typed results",
+      "sourceRef": ".doc/prd.md §8 FR-003",
+      "priority": "P0",
+      "plannedPackageAPI": [
+        "action.Definition",
+        "action.Registry",
+        "action.Result"
+      ],
+      "verificationArtifacts": [
+        "action/action_test.go::TestRegistryRejectsAndConfirmation",
+        "action/contract_freeze_test.go::TestNumericEnumExactEqualityInputAndOutput"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "action/action.go"
+      ],
+      "status": "implemented",
+      "milestone": "M1"
+    },
+    {
+      "id": "FR-004",
+      "category": "functional_requirement",
+      "title": "Side effects stay in application-supplied ports with no hidden core I/O",
+      "sourceRef": ".doc/prd.md §8 FR-004",
+      "priority": "P0",
+      "plannedPackageAPI": [
+        "stave.EffectExecutor",
+        "session.Effect",
+        "runtime.Port"
+      ],
+      "verificationArtifacts": [
+        "session/session_test.go::TestSessionDeliversEffectResultsInDeclarationOrder",
+        "effect/effect_test.go::TestExecutorDeliversDeclarationOrderDespiteParallelCompletion"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md"
+      ],
+      "status": "implemented",
+      "milestone": "M2"
+    },
+    {
+      "id": "FR-005",
+      "category": "functional_requirement",
+      "title": "State snapshots are serializable and versioned",
+      "sourceRef": ".doc/prd.md §8 FR-005",
+      "priority": "P0",
+      "plannedPackageAPI": [
+        "semantic.Tree",
+        "protocol.SnapshotV1",
+        "schema/semantic-snapshot-v1.json"
+      ],
+      "verificationArtifacts": [
+        "semantic/semantic_test.go::TestSnapshotNodeRoundTripAndRedaction",
+        "state/state_test.go::TestCheckpointRoundTrip"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "README.md#deliberate-limits"
+      ],
+      "status": "implemented",
+      "milestone": "M4"
+    },
+    {
+      "id": "FR-010",
+      "category": "functional_requirement",
+      "title": "Snapshot exposes role, accessible name, value, state, relations, visibility, focusability, and stable ref",
+      "sourceRef": ".doc/prd.md §8 FR-010",
+      "priority": "P0",
+      "plannedPackageAPI": [
+        "semantic.Node",
+        "semantic.Tree",
+        "protocol.SnapshotV1"
+      ],
+      "verificationArtifacts": [
+        "semantic/semantic_test.go::TestSnapshotNodeRoundTripAndRedaction",
+        "runtime/agent/server_test.go::TestSnapshotEnvelopeTypedAndDiagnosticsIndependentOfActions"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md"
+      ],
+      "status": "implemented",
+      "milestone": "M4"
+    },
+    {
+      "id": "FR-011",
+      "category": "functional_requirement",
+      "title": "Stable refs disambiguate duplicate labels inside one snapshot/action cycle",
+      "sourceRef": ".doc/prd.md §8 FR-011",
+      "priority": "P0",
+      "plannedPackageAPI": [
+        "semantic.NodeKey",
+        "semantic.Target",
+        "semantic.NodeIDFor"
+      ],
+      "verificationArtifacts": [
+        "semantic/semantic_test.go::TestNodeIdentityStable",
+        "semantic/semantic_test.go::TestNodeIDGoldenVectors"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "semantic/semantic.go"
+      ],
+      "status": "implemented",
+      "milestone": "M1"
+    },
+    {
+      "id": "FR-012",
+      "category": "functional_requirement",
+      "title": "Invalidated refs emit remap or divergence information",
+      "sourceRef": ".doc/prd.md §8 FR-012",
+      "priority": "P0",
+      "plannedPackageAPI": [
+        "session.Replay",
+        "action.Error",
+        "protocol.DivergenceReport"
+      ],
+      "verificationArtifacts": [
+        "replay/replay_test.go::TestValidateFailsClosedAtFirstEventMismatchWithRemap",
+        "replay/replay_test.go::TestValidateDetectsVersionAndHashDivergences"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md"
+      ],
+      "status": "implemented",
+      "milestone": "M2"
+    },
+    {
+      "id": "FR-013",
+      "category": "functional_requirement",
+      "title": "Every meaningful human action has keyboard and typed machine equivalents",
+      "sourceRef": ".doc/prd.md §8 FR-013",
+      "priority": "P0",
+      "plannedPackageAPI": [
+        "runtime/human.Keymap",
+        "action.Registry",
+        "primitive/*"
+      ],
+      "verificationArtifacts": [
+        "conformance/primitive_test.go::TestInteractivePrimitiveActionsHaveKeyboardBindings",
+        "keymap/keymap_test.go::TestDispatcherKeepsAllDefaultBindingsMapped"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md"
+      ],
+      "status": "implemented",
+      "milestone": "M6"
+    },
+    {
+      "id": "FR-014",
+      "category": "functional_requirement",
+      "title": "Agent control negotiates capabilities before action execution",
+      "sourceRef": ".doc/prd.md §8 FR-014",
+      "priority": "P0",
+      "plannedPackageAPI": [
+        "capability.Negotiation.Resolve",
+        "runtime/agent.Server",
+        "action.Definition.RequiredCaps"
+      ],
+      "verificationArtifacts": [
+        "runtime/agent/server_test.go::TestServerRequiresInitialization",
+        "runtime/agent/server_test.go::TestServerNegotiationDoesNotEchoClientOffer"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md"
+      ],
+      "status": "implemented",
+      "milestone": "M4"
+    },
+    {
+      "id": "FR-015",
+      "category": "functional_requirement",
+      "title": "Structured action errors carry stable codes and safe context",
+      "sourceRef": ".doc/prd.md §8 FR-015",
+      "priority": "P0",
+      "plannedPackageAPI": [
+        "action.Error",
+        "diag.Diagnostic",
+        "protocol.ActionErrorV1"
+      ],
+      "verificationArtifacts": [
+        "runtime/agent/server_test.go::TestServerInvokeUsesCamelCaseDTOAndSafeTypedError",
+        "event/event_test.go::TestSensitivePayloadsAreRedactedOnSerialization"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "action/action.go"
+      ],
+      "status": "implemented",
+      "milestone": "M4"
+    },
+    {
+      "id": "FR-016",
+      "category": "functional_requirement",
+      "title": "JSONL and/or JSON-RPC over stdio is available for non-interactive control",
+      "sourceRef": ".doc/prd.md §8 FR-016",
+      "priority": "P1",
+      "plannedPackageAPI": [
+        "protocol/jsonl.Server",
+        "protocol/jsonrpc.Server",
+        "runtime/agent.Stdio"
+      ],
+      "verificationArtifacts": [
+        "runtime/agent/server_test.go::TestServerHandshakeAndStdoutPurity",
+        "protocol/jsonl_test.go::TestDecodeLineRejectsDuplicateAndTrailing"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "README.md#deliberate-limits"
+      ],
+      "status": "implemented",
+      "milestone": "M4"
+    },
+    {
+      "id": "FR-017",
+      "category": "functional_requirement",
+      "title": "Coordinate or canvas fallback is explicit, negotiated, and lower priority than semantic interaction",
+      "sourceRef": ".doc/prd.md §8 FR-017",
+      "priority": "P1",
+      "plannedPackageAPI": [
+        "capability.Manifest",
+        "runtime/agent.FidelityPolicy",
+        "protocol.ActionTarget"
+      ],
+      "verificationArtifacts": [
+        "capability/capability_test.go::TestStrictIntersectionAndDenials",
+        "capability/capability_test.go::TestContradictoryOverridesDegradeSafely"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md"
+      ],
+      "status": "implemented",
+      "milestone": "M4"
+    },
+    {
+      "id": "FR-020",
+      "category": "functional_requirement",
+      "title": "Theme resolves the required semantic role groups",
+      "sourceRef": ".doc/prd.md §8 FR-020",
+      "priority": "P0",
+      "plannedPackageAPI": [
+        "theme.Theme",
+        "theme.Resolve",
+        "theme.RequiredRoles"
+      ],
+      "verificationArtifacts": [
+        "theme/theme_test.go::TestRoleResolutionAcrossTwoThemes",
+        "theme/theme_test.go::TestThemeMissingRequiredTokensFails"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "theme/theme.go"
+      ],
+      "status": "implemented",
+      "milestone": "M3"
+    },
+    {
+      "id": "FR-021",
+      "category": "functional_requirement",
+      "title": "Primitives consume semantic roles rather than raw ramps or global theme state",
+      "sourceRef": ".doc/prd.md §8 FR-021",
+      "priority": "P0",
+      "plannedPackageAPI": [
+        "primitive/*",
+        "theme.TokenID",
+        "theme.Resolved"
+      ],
+      "verificationArtifacts": [
+        "conformance/primitive_test.go::TestTwoBrandsShareSemanticContract",
+        "render/render_test.go::TestRenderConsumesStyleIntentAndStatusVariantsAcrossColorModes"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "README.md#proof-points"
+      ],
+      "status": "implemented",
+      "milestone": "M3"
+    },
+    {
+      "id": "FR-022",
+      "category": "functional_requirement",
+      "title": "Theme supports dark or light policy and capability overrides",
+      "sourceRef": ".doc/prd.md §8 FR-022",
+      "priority": "P1",
+      "plannedPackageAPI": [
+        "theme.Mode",
+        "theme.Theme.Resolve",
+        "capability.Manifest"
+      ],
+      "verificationArtifacts": [
+        "theme/theme_test.go::TestModeAndCapabilityOverrides",
+        "capability/capability_test.go::TestCapabilityProfileMatrix"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "theme/theme.go"
+      ],
+      "status": "implemented",
+      "milestone": "M3"
+    },
+    {
+      "id": "FR-023",
+      "category": "functional_requirement",
+      "title": "Density is configurable without changing semantic structure",
+      "sourceRef": ".doc/prd.md §8 FR-023",
+      "priority": "P1",
+      "plannedPackageAPI": [
+        "theme.Density",
+        "layout.Plan",
+        "semantic.Tree"
+      ],
+      "verificationArtifacts": [
+        "theme/theme_test.go::TestThemeDTCGRoundTrip",
+        "conformance/primitive_test.go::TestTwoBrandsShareSemanticContract"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "theme/theme.go"
+      ],
+      "status": "implemented",
+      "milestone": "M3"
+    },
+    {
+      "id": "FR-024",
+      "category": "functional_requirement",
+      "title": "Motion is tokenized and reduced-motion policy disables timing dependence",
+      "sourceRef": ".doc/prd.md §8 FR-024",
+      "priority": "P1",
+      "plannedPackageAPI": [
+        "theme.TokenID(\"motion.*\")",
+        "theme.Theme.Resolve",
+        "capability.Manifest.ReducedMotion"
+      ],
+      "verificationArtifacts": [
+        "theme/theme_test.go::TestReducedMotionZeroesDurations",
+        "render/render_test.go::TestRenderConsumesStyleIntentAndStatusVariantsAcrossColorModes"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "theme/theme.go"
+      ],
+      "status": "implemented",
+      "milestone": "M3"
+    },
+    {
+      "id": "FR-025",
+      "category": "functional_requirement",
+      "title": "Marks, icons, banners, and ASCII fallbacks are pluggable assets",
+      "sourceRef": ".doc/prd.md §8 FR-025",
+      "priority": "P1",
+      "plannedPackageAPI": [
+        "theme.AssetRef",
+        "theme.GlyphSet",
+        "theme.Theme"
+      ],
+      "verificationArtifacts": [
+        "theme/theme_test.go::TestAssetAndGlyphFallbackSelection",
+        "internal/examples/theme_test.go::TestIndependentBrandThemesAcrossColourLadder"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "theme/theme.go"
+      ],
+      "status": "implemented",
+      "milestone": "M3"
+    },
+    {
+      "id": "FR-030",
+      "category": "functional_requirement",
+      "title": "Renderer accepts model, viewport, capabilities, theme, and event context explicitly",
+      "sourceRef": ".doc/prd.md §8 FR-030",
+      "priority": "P0",
+      "plannedPackageAPI": [
+        "render.Request",
+        "render.Result",
+        "capability.Manifest"
+      ],
+      "verificationArtifacts": [
+        "render/render_test.go::TestRenderRequestIsExplicitAndDeterministic",
+        "layout/layout_test.go::TestMeasureAndArrangeAreDeterministic"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md"
+      ],
+      "status": "implemented",
+      "milestone": "M3"
+    },
+    {
+      "id": "FR-031",
+      "category": "functional_requirement",
+      "title": "Plain-text renderer exists as the reference CI-safe output",
+      "sourceRef": ".doc/prd.md §8 FR-031",
+      "priority": "P0",
+      "plannedPackageAPI": [
+        "render/headless.PlainRenderer",
+        "render/headless.SnapshotRenderer"
+      ],
+      "verificationArtifacts": [
+        "render/render_test.go::TestMachineAndPlainOutputsAvoidANSIAndPreserveSemantics",
+        "go run ./cmd/atlas"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "README.md#proof-points",
+        "stave.go"
+      ],
+      "status": "implemented",
+      "milestone": "M4"
+    },
+    {
+      "id": "FR-032",
+      "category": "functional_requirement",
+      "title": "Terminal renderer sanitizes untrusted control characters at the final write boundary",
+      "sourceRef": ".doc/prd.md §8 FR-032",
+      "priority": "P0",
+      "plannedPackageAPI": [
+        "render/terminal.Writer",
+        "render/terminal.Renderer",
+        "internal/sanitize"
+      ],
+      "verificationArtifacts": [
+        "render/render_test.go::TestWriterSanitizesHostileCellContentAndNarrowResize",
+        "internal/terminal/sanitize_test.go::FuzzSanitize"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "README.md#deliberate-limits"
+      ],
+      "status": "implemented",
+      "milestone": "M5"
+    },
+    {
+      "id": "FR-033",
+      "category": "functional_requirement",
+      "title": "Primitive set includes the required foundational, collection, state, input, viewport, and frame primitives",
+      "sourceRef": ".doc/prd.md §8 FR-033",
+      "priority": "P0",
+      "plannedPackageAPI": [
+        "primitive/text",
+        "primitive/layout",
+        "primitive/table",
+        "primitive/input",
+        "primitive/state"
+      ],
+      "verificationArtifacts": [
+        "testfixture/catalog_test.go::TestPrimitiveManifestUsesRealConstructors",
+        "conformance/negative_test.go::TestPrimitiveRejectsInvalidBoundsAndAmbiguousTabs"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md"
+      ],
+      "status": "implemented",
+      "milestone": "M6"
+    },
+    {
+      "id": "FR-034",
+      "category": "functional_requirement",
+      "title": "Tables support sticky headers, numeric alignment, selection, and non-modal disclosure",
+      "sourceRef": ".doc/prd.md §8 FR-034",
+      "priority": "P1",
+      "plannedPackageAPI": [
+        "primitive.Table",
+        "primitive.TableOptions",
+        "semantic.Node"
+      ],
+      "verificationArtifacts": [
+        "primitive/primitive_test.go::TestTableModalAndMasterDetailContracts",
+        "primitive/primitive_test.go::TestTableRejectsInvalidWindowAndSelectionContracts"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md"
+      ],
+      "status": "implemented",
+      "milestone": "M6"
+    },
+    {
+      "id": "FR-035",
+      "category": "functional_requirement",
+      "title": "Renderer supports deterministic narrow, no-colour, ASCII, and non-TTY degradation",
+      "sourceRef": ".doc/prd.md §8 FR-035",
+      "priority": "P0",
+      "plannedPackageAPI": [
+        "capability.Negotiation",
+        "render/headless.PlainRenderer",
+        "render/terminal.Renderer"
+      ],
+      "verificationArtifacts": [
+        "capability/capability_test.go::TestCapabilityProfileMatrix",
+        "render/render_test.go::TestMachineAndPlainOutputsAvoidANSIAndPreserveSemantics"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "capability/capability.go"
+      ],
+      "status": "implemented",
+      "milestone": "M3"
+    },
+    {
+      "id": "FR-040",
+      "category": "functional_requirement",
+      "title": "Lopper integration lives outside core and preserves Lopper domain semantics",
+      "sourceRef": ".doc/prd.md §8 FR-040",
+      "priority": "P0",
+      "plannedPackageAPI": [
+        "lopper/internal/ui.StavePreview",
+        "lopper/internal/ui.ParityFrame",
+        "stave.Program[M]"
+      ],
+      "verificationArtifacts": [
+        "external://github.com/ben-ranford/lopper@unpublished-feat-1492-stave-v2-production#internal/ui/stave_preview_test.go::TestStaveParityActualASCIIEqualsLegacy",
+        "go run ./scripts/rigor/cmd/rigor boundary-check"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "README.md#proof-points"
+      ],
+      "status": "planned",
+      "milestone": "M7",
+      "notes": "Lopper is the first proving client and owns its domain adapter in the Lopper repository; the proof reference is a portable external citation until the worktree is published. Stave core remains application-neutral."
+    },
+    {
+      "id": "FR-041",
+      "category": "functional_requirement",
+      "title": "Lopper adapter preserves command grammar and codemod or baseline confirmation behavior",
+      "sourceRef": ".doc/prd.md §8 FR-041",
+      "priority": "P0",
+      "plannedPackageAPI": [
+        "lopper/internal/ui.StavePreview",
+        "lopper/internal/ui.Summary",
+        "lopper/internal/ui.SummaryActionRunner"
+      ],
+      "verificationArtifacts": [
+        "external://github.com/ben-ranford/lopper@unpublished-feat-1492-stave-v2-production#internal/ui/stave_preview_test.go::TestStavePreviewPreservesCommandAndConsequentialActionGrammar",
+        "external://github.com/ben-ranford/lopper@unpublished-feat-1492-stave-v2-production#internal/ui/summary_commands_test.go::TestSummaryCommandHandlersPagingAndShortcuts"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md"
+      ],
+      "status": "planned",
+      "milestone": "M7",
+      "notes": "The typed command and confirmation integration exists in the unpublished Lopper proving-client worktree; GA evidence requires a published, immutable Lopper revision."
+    },
+    {
+      "id": "FR-042",
+      "category": "functional_requirement",
+      "title": "Lopper adapter supports existing snapshot and non-interactive paths",
+      "sourceRef": ".doc/prd.md §8 FR-042",
+      "priority": "P0",
+      "plannedPackageAPI": [
+        "lopper/internal/ui.StavePreview.Snapshot",
+        "lopper/internal/ui.StavePreview.Start",
+        "render.Result.Plain"
+      ],
+      "verificationArtifacts": [
+        "external://github.com/ben-ranford/lopper@unpublished-feat-1492-stave-v2-production#internal/ui/stave_preview_test.go::TestStavePreviewSnapshotFileAndDisabledLegacy",
+        "external://github.com/ben-ranford/lopper@unpublished-feat-1492-stave-v2-production#internal/ui/stave_preview_test.go::TestStavePreviewDeterministicAndSanitized"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md"
+      ],
+      "status": "planned",
+      "milestone": "M7",
+      "notes": "The snapshot and non-interactive parity suite exists in the unpublished Lopper proving-client worktree; GA evidence requires a published, immutable Lopper revision."
+    },
+    {
+      "id": "FR-043",
+      "category": "functional_requirement",
+      "title": "A contrasting non-Lopper fixture uses the core before compatibility claims",
+      "sourceRef": ".doc/prd.md §8 FR-043",
+      "priority": "P0",
+      "plannedPackageAPI": [
+        "cmd/atlas",
+        "cmd/lopper",
+        "testfixture.Surface"
+      ],
+      "verificationArtifacts": [
+        "make atlas-check",
+        "cmd/lopper/main_test.go::TestLopperFixtureUsesIndependentTerminalProfile",
+        "internal/atlasrig/atlasrig_test.go::TestProofMatrixIsCompleteDeterministicAndProfileHonest",
+        "internal/atlasrig/atlasrig_test.go::TestProgramOwnsStateAndTranscriptReplays",
+        "internal/atlasrig/atlasrig_test.go::TestTypedActionsValidateAndConfirmationIsSingleUse",
+        "scripts/rigor/generated/atlas.render.txt",
+        "scripts/rigor/generated/atlas.matrix.json",
+        "internal/examples/theme_test.go::TestIndependentBrandThemesAcrossColourLadder"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "README.md#proof-points",
+        "docs/atlas-regression-rig.md",
+        "scripts/rigor/generated/atlas.render.txt",
+        "scripts/rigor/generated/atlas.matrix.json",
+        "docs/performance.md#contrast-and-brand-fixtures"
+      ],
+      "status": "implemented",
+      "milestone": "M7",
+      "notes": "Atlas is a distinct second client and regression rig with its own Program, action registry, semantic actions, deterministic replay, brand, seven semantic scenarios, and nine capability profiles. Its checked-in 63-case matrix and the Lopper render trace prove distinct application shapes over the same core contracts."
+    },
+    {
+      "id": "NFR-001",
+      "category": "non_functional_requirement",
+      "title": "Determinism",
+      "sourceRef": ".doc/prd.md §9 NFR-001",
+      "plannedPackageAPI": [
+        "semantic.Tree",
+        "session.Replay",
+        "render/headless.PlainRenderer"
+      ],
+      "verificationArtifacts": [
+        "session/session_test.go::TestSessionCheckpointAndReplayStayDeterministic",
+        "layout/layout_test.go::TestMeasureAndArrangeAreDeterministic"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "README.md#proof-points"
+      ],
+      "status": "implemented",
+      "milestone": "M2"
+    },
+    {
+      "id": "NFR-002",
+      "category": "non_functional_requirement",
+      "title": "Testability",
+      "sourceRef": ".doc/prd.md §9 NFR-002",
+      "plannedPackageAPI": [
+        "go test ./...",
+        "render/headless.PlainRenderer",
+        "session.Replay"
+      ],
+      "verificationArtifacts": [
+        "go test ./...",
+        "testfixture/catalog_test.go::TestPrimitiveManifestUsesRealConstructors"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "README.md#proof-points"
+      ],
+      "status": "implemented",
+      "milestone": "M2"
+    },
+    {
+      "id": "NFR-003",
+      "category": "non_functional_requirement",
+      "title": "Compatibility",
+      "sourceRef": ".doc/prd.md §9 NFR-003",
+      "plannedPackageAPI": [
+        "semantic.Tree",
+        "action.Definition",
+        "scripts/rigor/cmd/rigor"
+      ],
+      "verificationArtifacts": [
+        "make api-boundary",
+        "scripts/rigor/generated/public-api.txt"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "README.md#deliberate-limits"
+      ],
+      "status": "implemented",
+      "milestone": "M8"
+    },
+    {
+      "id": "NFR-004",
+      "category": "non_functional_requirement",
+      "title": "Performance",
+      "sourceRef": ".doc/prd.md §9 NFR-004",
+      "plannedPackageAPI": [
+        "performance.Report",
+        "layout.Arrange",
+        "session.Session"
+      ],
+      "verificationArtifacts": [
+        "make verify-performance",
+        "layout/layout_test.go::TestArrangeCancelsAndEnforcesBudgets",
+        "performance/performance_test.go::TestFixtureHasRequestedNodeCountAndStableHash"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md"
+      ],
+      "status": "implemented",
+      "milestone": "M8"
+    },
+    {
+      "id": "NFR-005",
+      "category": "non_functional_requirement",
+      "title": "Accessibility",
+      "sourceRef": ".doc/prd.md §9 NFR-005",
+      "plannedPackageAPI": [
+        "primitive/*",
+        "runtime/human.Keymap",
+        "semantic.Node"
+      ],
+      "verificationArtifacts": [
+        "primitive/primitive_test.go::TestHiddenAndDisabledPrimitivesCannotRemainFocusable",
+        "conformance/hostile_test.go::TestValidateTreeRejectsHiddenFocusableAndMissingFieldErrorRelation"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md"
+      ],
+      "status": "implemented",
+      "milestone": "M6"
+    },
+    {
+      "id": "NFR-006",
+      "category": "non_functional_requirement",
+      "title": "Security",
+      "sourceRef": ".doc/prd.md §9 NFR-006",
+      "plannedPackageAPI": [
+        "action.ConfirmationPolicy",
+        "diag.Diagnostic",
+        "runtime/agent.Server"
+      ],
+      "verificationArtifacts": [
+        "action/action_test.go::TestConcurrentConfirmationSingleUse",
+        "runtime/agent/server_test.go::TestServerInvokeUsesCamelCaseDTOAndSafeTypedError",
+        "internal/terminal/sanitize_test.go::FuzzSanitize"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "SECURITY.md"
+      ],
+      "status": "implemented",
+      "milestone": "M8"
+    },
+    {
+      "id": "NFR-007",
+      "category": "non_functional_requirement",
+      "title": "Degradation",
+      "sourceRef": ".doc/prd.md §9 NFR-007",
+      "plannedPackageAPI": [
+        "capability.Manifest",
+        "capability.Negotiation",
+        "render/headless.PlainRenderer"
+      ],
+      "verificationArtifacts": [
+        "capability/capability_test.go::TestCapabilityProfileMatrix",
+        "render/render_test.go::TestMachineAndPlainOutputsAvoidANSIAndPreserveSemantics"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "capability/capability.go"
+      ],
+      "status": "implemented",
+      "milestone": "M3"
+    },
+    {
+      "id": "NFR-008",
+      "category": "non_functional_requirement",
+      "title": "Observability",
+      "sourceRef": ".doc/prd.md §9 NFR-008",
+      "plannedPackageAPI": [
+        "diag.Diagnostic",
+        "diag.Observer",
+        "action.Result.Diagnostics"
+      ],
+      "verificationArtifacts": [
+        "session/session_test.go::TestSessionViewFailureRejectsLateMutationAndPublishesDiagnostic",
+        "runtime/agent/server_test.go::TestSnapshotEnvelopeTypedAndDiagnosticsIndependentOfActions"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "diag/diag.go"
+      ],
+      "status": "implemented",
+      "milestone": "M8"
+    },
+    {
+      "id": "NFR-009",
+      "category": "non_functional_requirement",
+      "title": "Portability",
+      "sourceRef": ".doc/prd.md §9 NFR-009",
+      "plannedPackageAPI": [
+        "runtime/human.Driver",
+        "runtime/agent.Server",
+        "adapters/*"
+      ],
+      "verificationArtifacts": [
+        "make adapters",
+        "capability/capability_test.go::TestCrossPlatformTerminalColourDetection",
+        ".github/workflows/ci.yml"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "README.md#deliberate-limits"
+      ],
+      "status": "implemented",
+      "milestone": "M5"
+    },
+    {
+      "id": "NFR-010",
+      "category": "non_functional_requirement",
+      "title": "Maintainability",
+      "sourceRef": ".doc/prd.md §9 NFR-010",
+      "plannedPackageAPI": [
+        "primitive/*",
+        "testfixture.Primitive",
+        "requirements/traceability.json"
+      ],
+      "verificationArtifacts": [
+        "requirements/traceability_test.go::TestTraceabilityMatrix",
+        "testfixture/catalog_test.go::TestPrimitiveManifestUsesRealConstructors",
+        "primitive/CONTRACT.md"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md"
+      ],
+      "status": "implemented",
+      "milestone": "M8"
+    },
+    {
+      "id": "PRIMITIVE-P0-TEXT-LABEL",
+      "category": "primitive",
+      "title": "P0 text or label primitive",
+      "sourceRef": ".doc/prd.md §13 P0",
+      "priority": "P0",
+      "plannedPackageAPI": [
+        "primitive/text.Label",
+        "semantic.Node"
+      ],
+      "verificationArtifacts": [
+        "testfixture/catalog_test.go::TestPrimitiveManifestUsesRealConstructors",
+        "semantic/semantic_test.go::TestSnapshotNodeRoundTripAndRedaction"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md"
+      ],
+      "status": "implemented",
+      "milestone": "M6"
+    },
+    {
+      "id": "PRIMITIVE-P0-STACK-ROW-GRID",
+      "category": "primitive",
+      "title": "P0 stack, row, and grid primitives",
+      "sourceRef": ".doc/prd.md §13 P0",
+      "priority": "P0",
+      "plannedPackageAPI": [
+        "primitive/layout.Stack",
+        "primitive/layout.Row",
+        "primitive/layout.Grid"
+      ],
+      "verificationArtifacts": [
+        "testfixture/catalog_test.go::TestPrimitiveManifestUsesRealConstructors",
+        "layout/layout_test.go::TestArrangeSupportsStackRowSplitGridScrollOverlayInsetConditionalAndRecords"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md"
+      ],
+      "status": "implemented",
+      "milestone": "M6"
+    },
+    {
+      "id": "PRIMITIVE-P0-SURFACE-FRAME",
+      "category": "primitive",
+      "title": "P0 surface or frame primitive",
+      "sourceRef": ".doc/prd.md §13 P0",
+      "priority": "P0",
+      "plannedPackageAPI": [
+        "primitive/frame.Surface",
+        "surface.Buffer"
+      ],
+      "verificationArtifacts": [
+        "testfixture/catalog_test.go::TestPrimitiveManifestUsesRealConstructors",
+        "surface/surface_test.go::TestPatchRoundTripAndDirtyRegions"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md"
+      ],
+      "status": "implemented",
+      "milestone": "M6"
+    },
+    {
+      "id": "PRIMITIVE-P0-TABLE-LIST",
+      "category": "primitive",
+      "title": "P0 table or list primitive",
+      "sourceRef": ".doc/prd.md §13 P0",
+      "priority": "P0",
+      "plannedPackageAPI": [
+        "primitive/table.Table",
+        "primitive/list.List"
+      ],
+      "verificationArtifacts": [
+        "conformance/primitive_test.go::TestTableContractAndStableRowIDs",
+        "primitive/primitive_test.go::TestTableExplicitStates"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md"
+      ],
+      "status": "implemented",
+      "milestone": "M6"
+    },
+    {
+      "id": "PRIMITIVE-P0-STATUS-CHIP",
+      "category": "primitive",
+      "title": "P0 status or chip primitive",
+      "sourceRef": ".doc/prd.md §13 P0",
+      "priority": "P0",
+      "plannedPackageAPI": [
+        "primitive/status.Status",
+        "primitive/status.Chip"
+      ],
+      "verificationArtifacts": [
+        "testfixture/catalog_test.go::TestPrimitiveManifestUsesRealConstructors",
+        "render/render_test.go::TestRenderConsumesStyleIntentAndStatusVariantsAcrossColorModes"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md"
+      ],
+      "status": "implemented",
+      "milestone": "M6"
+    },
+    {
+      "id": "PRIMITIVE-P0-FOCUS-INDICATOR",
+      "category": "primitive",
+      "title": "P0 focus indicator primitive",
+      "sourceRef": ".doc/prd.md §13 P0",
+      "priority": "P0",
+      "plannedPackageAPI": [
+        "primitive/focus.Indicator",
+        "runtime/human.FocusManager"
+      ],
+      "verificationArtifacts": [
+        "testfixture/catalog_test.go::TestPrimitiveManifestUsesRealConstructors",
+        "focus/focus_test.go::TestGraphScopePushAndPopRestoresPreviousFocus"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md"
+      ],
+      "status": "implemented",
+      "milestone": "M6"
+    },
+    {
+      "id": "PRIMITIVE-P0-DISCLOSURE",
+      "category": "primitive",
+      "title": "P0 disclosure primitive",
+      "sourceRef": ".doc/prd.md §13 P0",
+      "priority": "P0",
+      "plannedPackageAPI": [
+        "primitive/disclosure.Panel",
+        "action.Registry"
+      ],
+      "verificationArtifacts": [
+        "testfixture/catalog_test.go::TestPrimitiveManifestUsesRealConstructors",
+        "primitive/primitive_test.go::TestTableModalAndMasterDetailContracts"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md"
+      ],
+      "status": "implemented",
+      "milestone": "M6"
+    },
+    {
+      "id": "PRIMITIVE-P0-VIEWPORT",
+      "category": "primitive",
+      "title": "P0 viewport primitive",
+      "sourceRef": ".doc/prd.md §13 P0",
+      "priority": "P0",
+      "plannedPackageAPI": [
+        "primitive/viewport.View",
+        "layout.Size"
+      ],
+      "verificationArtifacts": [
+        "testfixture/catalog_test.go::TestPrimitiveManifestUsesRealConstructors",
+        "layout/layout_test.go::TestArrangeOmitsHiddenOffscreenAndZeroAreaFocusableNodes"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md"
+      ],
+      "status": "implemented",
+      "milestone": "M6"
+    },
+    {
+      "id": "PRIMITIVE-P0-INPUT",
+      "category": "primitive",
+      "title": "P0 input primitive including secure input",
+      "sourceRef": ".doc/prd.md §13 P0",
+      "priority": "P0",
+      "plannedPackageAPI": [
+        "primitive/input.Text",
+        "primitive/input.Secret",
+        "runtime/human.SecureInputProvider"
+      ],
+      "verificationArtifacts": [
+        "primitive/primitive_test.go::TestFieldPrimitivesExposeErrorRelations",
+        "input/input_test.go::TestMemorySecretStoreOnlyExposesOpaqueHandle"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md"
+      ],
+      "status": "implemented",
+      "milestone": "M6"
+    },
+    {
+      "id": "PRIMITIVE-P0-EMPTY-LOADING-ERROR",
+      "category": "primitive",
+      "title": "P0 empty, loading, and error state primitives",
+      "sourceRef": ".doc/prd.md §13 P0",
+      "priority": "P0",
+      "plannedPackageAPI": [
+        "primitive/state.Empty",
+        "primitive/state.Loading",
+        "primitive/state.Error"
+      ],
+      "verificationArtifacts": [
+        "primitive/primitive_test.go::TestTableExplicitStates",
+        "testfixture/catalog_test.go::TestPrimitiveManifestUsesRealConstructors"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md"
+      ],
+      "status": "implemented",
+      "milestone": "M6"
+    },
+    {
+      "id": "PRIMITIVE-P0-TERMINAL-WRITER",
+      "category": "primitive",
+      "title": "P0 terminal writer primitive",
+      "sourceRef": ".doc/prd.md §13 P0",
+      "priority": "P0",
+      "plannedPackageAPI": [
+        "render/terminal.Writer",
+        "runtime/human.Driver"
+      ],
+      "verificationArtifacts": [
+        "internal/terminal/sanitize_test.go::TestWriterSanitizesFinalSink",
+        "render/render_test.go::TestWriterExactANSISequenceFixture"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "README.md#deliberate-limits"
+      ],
+      "status": "implemented",
+      "milestone": "M5"
+    },
+    {
+      "id": "PRIMITIVE-P0-SEMANTIC-SNAPSHOT-NODE",
+      "category": "primitive",
+      "title": "P0 semantic snapshot node primitive",
+      "sourceRef": ".doc/prd.md §13 P0",
+      "priority": "P0",
+      "plannedPackageAPI": [
+        "semantic.Node",
+        "semantic.Tree",
+        "protocol.SnapshotV1"
+      ],
+      "verificationArtifacts": [
+        "semantic/semantic_test.go::TestSnapshotNodeRoundTripAndRedaction",
+        "semantic/semantic_test.go::TestTreeSnapshotRedaction"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "semantic/semantic.go",
+        "README.md#proof-points"
+      ],
+      "status": "implemented",
+      "milestone": "M1"
+    },
+    {
+      "id": "PRIMITIVE-P0-ACTION-DESCRIPTOR",
+      "category": "primitive",
+      "title": "P0 action descriptor primitive",
+      "sourceRef": ".doc/prd.md §13 P0",
+      "priority": "P0",
+      "plannedPackageAPI": [
+        "action.Definition",
+        "action.Registry",
+        "protocol.ActionManifestV1"
+      ],
+      "verificationArtifacts": [
+        "action/contract_freeze_test.go::TestRegistryDefinitionDeepImmutability",
+        "keymap/keymap_test.go::TestInventoryIsImmutableAndExposesVersionedActions"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "action/action.go",
+        "README.md#proof-points"
+      ],
+      "status": "implemented",
+      "milestone": "M1"
+    },
+    {
+      "id": "PRIMITIVE-P0-DIAGNOSTICS",
+      "category": "primitive",
+      "title": "P0 diagnostics primitive",
+      "sourceRef": ".doc/prd.md §13 P0",
+      "priority": "P0",
+      "plannedPackageAPI": [
+        "diag.Diagnostic",
+        "diag.Observer"
+      ],
+      "verificationArtifacts": [
+        "session/session_test.go::TestSessionViewFailureRejectsLateMutationAndPublishesDiagnostic",
+        "runtime/agent/server_test.go::TestSnapshotEnvelopeTypedAndDiagnosticsIndependentOfActions"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "diag/diag.go"
+      ],
+      "status": "implemented",
+      "milestone": "M4"
+    },
+    {
+      "id": "PRIMITIVE-P1-TABS",
+      "category": "primitive",
+      "title": "P1 tabs primitive",
+      "sourceRef": ".doc/prd.md §13 P1",
+      "priority": "P1",
+      "plannedPackageAPI": [
+        "primitive.Tabs",
+        "primitive.Tab",
+        "semantic.Node"
+      ],
+      "verificationArtifacts": [
+        "testfixture/catalog_test.go::TestPrimitiveManifestUsesRealConstructors",
+        "conformance/negative_test.go::TestPrimitiveRejectsInvalidBoundsAndAmbiguousTabs"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md"
+      ],
+      "status": "implemented",
+      "milestone": "M6"
+    },
+    {
+      "id": "PRIMITIVE-P1-PAGINATION",
+      "category": "primitive",
+      "title": "P1 pagination primitive",
+      "sourceRef": ".doc/prd.md §13 P1",
+      "priority": "P1",
+      "plannedPackageAPI": [
+        "primitive.Pagination",
+        "action.Registry"
+      ],
+      "verificationArtifacts": [
+        "testfixture/catalog_test.go::TestPrimitiveManifestUsesRealConstructors",
+        "primitive/primitive_test.go::TestTableRejectsInvalidWindowAndSelectionContracts"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md"
+      ],
+      "status": "implemented",
+      "milestone": "M6"
+    },
+    {
+      "id": "PRIMITIVE-P1-COMMAND-PALETTE",
+      "category": "primitive",
+      "title": "P1 command palette primitive",
+      "sourceRef": ".doc/prd.md §13 P1",
+      "priority": "P1",
+      "plannedPackageAPI": [
+        "primitive.CommandPalette",
+        "action.Registry"
+      ],
+      "verificationArtifacts": [
+        "testfixture/catalog_test.go::TestPrimitiveManifestUsesRealConstructors",
+        "conformance/primitive_test.go::TestInteractivePrimitiveActionsHaveKeyboardBindings"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md"
+      ],
+      "status": "implemented",
+      "milestone": "M6"
+    },
+    {
+      "id": "PRIMITIVE-P1-CHART-PRIMITIVES",
+      "category": "primitive",
+      "title": "P1 chart primitives",
+      "sourceRef": ".doc/prd.md §13 P1",
+      "priority": "P1",
+      "plannedPackageAPI": [
+        "primitive.BarChart",
+        "primitive.Sparkline"
+      ],
+      "verificationArtifacts": [
+        "testfixture/catalog_test.go::TestPrimitiveManifestUsesRealConstructors",
+        "render/render_test.go::TestMachineAndPlainOutputsAvoidANSIAndPreserveSemantics"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md"
+      ],
+      "status": "implemented",
+      "milestone": "M6"
+    },
+    {
+      "id": "PRIMITIVE-P1-INSPECTOR-LAYOUT-SLOT",
+      "category": "primitive",
+      "title": "P1 inspector layout slot",
+      "sourceRef": ".doc/prd.md §13 P1",
+      "priority": "P1",
+      "plannedPackageAPI": [
+        "primitive.Inspector",
+        "primitive.MasterDetail"
+      ],
+      "verificationArtifacts": [
+        "testfixture/catalog_test.go::TestPrimitiveManifestUsesRealConstructors",
+        "primitive/primitive_test.go::TestTableModalAndMasterDetailContracts"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md"
+      ],
+      "status": "implemented",
+      "milestone": "M6"
+    },
+    {
+      "id": "PRIMITIVE-P1-MODAL-CONFIRMATION-SHELL",
+      "category": "primitive",
+      "title": "P1 modal or confirmation shell",
+      "sourceRef": ".doc/prd.md §13 P1",
+      "priority": "P1",
+      "plannedPackageAPI": [
+        "primitive.Modal",
+        "primitive.Dialog",
+        "primitive.Confirmation"
+      ],
+      "verificationArtifacts": [
+        "testfixture/catalog_test.go::TestPrimitiveManifestUsesRealConstructors",
+        "primitive/primitive_test.go::TestTableModalAndMasterDetailContracts",
+        "focus/focus_test.go::TestGraphScopePushAndPopRestoresPreviousFocus"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md"
+      ],
+      "status": "implemented",
+      "milestone": "M6"
+    },
+    {
+      "id": "PRIMITIVE-P1-SSH-TRANSPORT-ADAPTER",
+      "category": "primitive",
+      "title": "P1 SSH transport adapter",
+      "sourceRef": ".doc/prd.md §13 P1",
+      "priority": "P1",
+      "plannedPackageAPI": [
+        "adapters/ssh.Handler",
+        "adapters/ssh.Middleware",
+        "runtime/human.Driver"
+      ],
+      "verificationArtifacts": [
+        "adapters/ssh/bridge_test.go::TestSSHTransportContract_MultiClientIsolation",
+        "adapters/ssh/bridge_test.go::TestSSHTransportContract_ProfileNegotiationAndNoninteractiveFallback"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md"
+      ],
+      "status": "implemented",
+      "milestone": "M5"
+    },
+    {
+      "id": "PRIMITIVE-P1-BUBBLE-TEA-LIP-GLOSS-ADAPTERS",
+      "category": "primitive",
+      "title": "P1 Bubble Tea or Lip Gloss adapters",
+      "sourceRef": ".doc/prd.md §13 P1",
+      "priority": "P1",
+      "plannedPackageAPI": [
+        "adapters/bubbletea.Model",
+        "adapters/lipgloss.RenderSurface",
+        "testfixture.Surface"
+      ],
+      "verificationArtifacts": [
+        "adapters/bubbletea/adapter_test.go::TestSharedAdapterSurfaceFixture",
+        "adapters/lipgloss/lipgloss_test.go::TestSharedAdapterSurfaceFixture"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md"
+      ],
+      "status": "implemented",
+      "milestone": "M5"
+    },
+    {
+      "id": "PRIMITIVE-P1-RICHER-ACCESSIBILITY-AGENT-TRANSPORTS",
+      "category": "primitive",
+      "title": "P1 richer accessibility or agent transports",
+      "sourceRef": ".doc/prd.md §13 P1",
+      "priority": "P1",
+      "plannedPackageAPI": [
+        "runtime/agent.Server",
+        "protocol.Request",
+        "adapters/ssh.Handler"
+      ],
+      "verificationArtifacts": [
+        "runtime/agent/server_test.go::TestServerHandshakeAndStdoutPurity",
+        "runtime/agent/server_test.go::TestServerCancellationReservedLaneWhileInvokeBlocks",
+        "adapters/ssh/bridge_test.go::TestSSHTransportContract_NoninteractiveFallback"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md"
+      ],
+      "status": "implemented",
+      "milestone": "M4"
+    },
+    {
+      "id": "AI-01",
+      "category": "architecture_invariant",
+      "title": "Brand ownership",
+      "sourceRef": ".doc/system-design.md §5 AI-01",
+      "plannedPackageAPI": [
+        "theme.Theme",
+        "brand.Provider",
+        "adapter/lopper"
+      ],
+      "verificationArtifacts": [
+        "go run ./cmd/lopper",
+        "make atlas-check",
+        "cmd/lopper/main_test.go::TestLopperFixtureUsesIndependentTerminalProfile",
+        "internal/atlasrig/atlasrig_test.go::TestProofMatrixIsCompleteDeterministicAndProfileHonest",
+        "scripts/rigor/generated/lopper.render.txt",
+        "scripts/rigor/generated/atlas.render.txt",
+        "scripts/rigor/generated/atlas.matrix.json"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "README.md#proof-points",
+        "cmd/lopper/main.go",
+        "scripts/rigor/generated/lopper.render.txt",
+        "scripts/rigor/generated/atlas.render.txt"
+      ],
+      "status": "implemented",
+      "milestone": "M3"
+    },
+    {
+      "id": "AI-02",
+      "category": "architecture_invariant",
+      "title": "Reusable core",
+      "sourceRef": ".doc/system-design.md §5 AI-02",
+      "plannedPackageAPI": [
+        "semantic",
+        "action",
+        "theme"
+      ],
+      "verificationArtifacts": [
+        "go run ./scripts/rigor/cmd/rigor boundary-check",
+        "scripts/rigor/generated/dependency-inventory.json"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "README.md#proof-points",
+        "go.mod"
+      ],
+      "status": "implemented",
+      "milestone": "M1"
+    },
+    {
+      "id": "AI-03",
+      "category": "architecture_invariant",
+      "title": "Adapter boundary",
+      "sourceRef": ".doc/system-design.md §5 AI-03",
+      "plannedPackageAPI": [
+        "lopper/internal/ui.StavePreview",
+        "cmd/lopper",
+        "cmd/atlas"
+      ],
+      "verificationArtifacts": [
+        "go run ./scripts/rigor/cmd/rigor boundary-check",
+        "external://github.com/ben-ranford/lopper@unpublished-feat-1492-stave-v2-production#internal/ui/stave_preview_test.go::TestStaveParityActualUnicodeEqualsLegacyAndPreservesUnicode"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "README.md#deliberate-limits"
+      ],
+      "status": "planned",
+      "milestone": "M7",
+      "notes": "The Lopper parity and consequential-action coverage is present locally but remains unpublished and therefore cannot satisfy the GA gate."
+    },
+    {
+      "id": "AI-04",
+      "category": "architecture_invariant",
+      "title": "Determinism",
+      "sourceRef": ".doc/system-design.md §5 AI-04",
+      "plannedPackageAPI": [
+        "semantic.Tree",
+        "session.Replay",
+        "render/headless.PlainRenderer"
+      ],
+      "verificationArtifacts": [
+        "session/session_test.go::TestSessionCheckpointAndReplayStayDeterministic",
+        "surface/surface_test.go::TestSurfaceDeterminismAndMergeDirty"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "README.md#proof-points",
+        "doc.go"
+      ],
+      "status": "implemented",
+      "milestone": "M2"
+    },
+    {
+      "id": "AI-05",
+      "category": "architecture_invariant",
+      "title": "Headless testability",
+      "sourceRef": ".doc/system-design.md §5 AI-05",
+      "plannedPackageAPI": [
+        "render/headless.PlainRenderer",
+        "session.Replay",
+        "semantic.Tree"
+      ],
+      "verificationArtifacts": [
+        "go test ./...",
+        "render/render_test.go::TestMachineAndPlainOutputsAvoidANSIAndPreserveSemantics"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "README.md#proof-points",
+        "doc.go"
+      ],
+      "status": "implemented",
+      "milestone": "M2"
+    },
+    {
+      "id": "AI-06",
+      "category": "architecture_invariant",
+      "title": "Human and agent parity",
+      "sourceRef": ".doc/system-design.md §5 AI-06",
+      "plannedPackageAPI": [
+        "action.Registry",
+        "runtime/human.Keymap",
+        "runtime/agent.Server"
+      ],
+      "verificationArtifacts": [
+        "conformance/primitive_test.go::TestInteractivePrimitiveActionsHaveKeyboardBindings",
+        "keymap/keymap_test.go::TestDispatcherRoutesActivateToTypedAction"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "README.md#proof-points",
+        "stave.go"
+      ],
+      "status": "implemented",
+      "milestone": "M6"
+    },
+    {
+      "id": "AI-07",
+      "category": "architecture_invariant",
+      "title": "Semantic machine interface",
+      "sourceRef": ".doc/system-design.md §5 AI-07",
+      "plannedPackageAPI": [
+        "semantic.Target",
+        "runtime/agent.Server",
+        "protocol.ActionTarget"
+      ],
+      "verificationArtifacts": [
+        "runtime/agent/server_test.go::TestSnapshotEnvelopeTypedAndDiagnosticsIndependentOfActions",
+        "runtime/agent/server_test.go::TestServerInvokeUsesCamelCaseDTOAndSafeTypedError"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "README.md#proof-points",
+        "semantic/semantic.go"
+      ],
+      "status": "implemented",
+      "milestone": "M4"
+    },
+    {
+      "id": "AI-08",
+      "category": "architecture_invariant",
+      "title": "Adaptive degradation",
+      "sourceRef": ".doc/system-design.md §5 AI-08",
+      "plannedPackageAPI": [
+        "capability.Manifest",
+        "capability.Negotiation",
+        "render/headless.PlainRenderer"
+      ],
+      "verificationArtifacts": [
+        "capability/capability_test.go::TestCapabilityProfileMatrix",
+        "render/render_test.go::TestMachineAndPlainOutputsAvoidANSIAndPreserveSemantics"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "capability/capability.go"
+      ],
+      "status": "implemented",
+      "milestone": "M3"
+    },
+    {
+      "id": "AI-09",
+      "category": "architecture_invariant",
+      "title": "Replaceable edges",
+      "sourceRef": ".doc/system-design.md §5 AI-09",
+      "plannedPackageAPI": [
+        "runtime/human.Driver",
+        "render/terminal.Renderer",
+        "diag.Observer"
+      ],
+      "verificationArtifacts": [
+        "make adapters",
+        "go run ./scripts/rigor/cmd/rigor boundary-check"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "README.md#deliberate-limits"
+      ],
+      "status": "implemented",
+      "milestone": "M5"
+    },
+    {
+      "id": "AI-10",
+      "category": "architecture_invariant",
+      "title": "Go API discipline",
+      "sourceRef": ".doc/system-design.md §5 AI-10",
+      "plannedPackageAPI": [
+        "semantic",
+        "action",
+        "theme"
+      ],
+      "verificationArtifacts": [
+        "make api-boundary",
+        "scripts/rigor/generated/public-api.txt"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "README.md#proof-points",
+        "go.mod"
+      ],
+      "status": "implemented",
+      "milestone": "M1"
+    },
+    {
+      "id": "AI-11",
+      "category": "architecture_invariant",
+      "title": "Immutable semantics",
+      "sourceRef": ".doc/system-design.md §5 AI-11",
+      "plannedPackageAPI": [
+        "semantic.Node",
+        "semantic.Tree"
+      ],
+      "verificationArtifacts": [
+        "semantic/semantic_test.go::TestTreeValidationAndPatch",
+        "action/contract_freeze_test.go::TestRegistryDefinitionAccessorClonesConcurrently"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "semantic/semantic.go",
+        "README.md#proof-points"
+      ],
+      "status": "implemented",
+      "milestone": "M1"
+    },
+    {
+      "id": "AI-12",
+      "category": "architecture_invariant",
+      "title": "Effect isolation",
+      "sourceRef": ".doc/system-design.md §5 AI-12",
+      "plannedPackageAPI": [
+        "session.Effect",
+        "stave.EffectExecutor"
+      ],
+      "verificationArtifacts": [
+        "session/session_test.go::TestSessionDeliversEffectResultsInDeclarationOrder",
+        "effect/effect_test.go::TestExecutorDeliversDeclarationOrderDespiteParallelCompletion"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "README.md#deliberate-limits"
+      ],
+      "status": "implemented",
+      "milestone": "M2"
+    },
+    {
+      "id": "AI-13",
+      "category": "architecture_invariant",
+      "title": "Trusted control plane",
+      "sourceRef": ".doc/system-design.md §5 AI-13",
+      "plannedPackageAPI": [
+        "runtime/agent.Server",
+        "action.Registry",
+        "render/terminal.Renderer"
+      ],
+      "verificationArtifacts": [
+        "runtime/agent/server_test.go::TestServerRequiresInitialization",
+        "action/action_test.go::TestConcurrentConfirmationSingleUse"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "SECURITY.md",
+        "README.md#proof-points"
+      ],
+      "status": "implemented",
+      "milestone": "M4"
+    },
+    {
+      "id": "AI-14",
+      "category": "architecture_invariant",
+      "title": "Secret exclusion",
+      "sourceRef": ".doc/system-design.md §5 AI-14",
+      "plannedPackageAPI": [
+        "primitive/input.Secret",
+        "diag.Diagnostic",
+        "protocol.SnapshotV1"
+      ],
+      "verificationArtifacts": [
+        "event/event_test.go::TestSensitivePayloadsAreRedactedOnSerialization",
+        "state/state_test.go::TestCheckpointSanitizeExcludesSecrets",
+        "secret/secret_test.go::TestMemoryStoreOpaqueSingleUseAndDestroy"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "README.md#deliberate-limits"
+      ],
+      "status": "implemented",
+      "milestone": "M4"
+    },
+    {
+      "id": "AI-15",
+      "category": "architecture_invariant",
+      "title": "Final-sink safety",
+      "sourceRef": ".doc/system-design.md §5 AI-15",
+      "plannedPackageAPI": [
+        "render/terminal.Writer",
+        "render/terminal.Renderer"
+      ],
+      "verificationArtifacts": [
+        "internal/terminal/sanitize_test.go::TestWriterSanitizesFinalSink",
+        "internal/terminal/sanitize_test.go::FuzzSanitize"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "SECURITY.md",
+        "README.md#proof-points"
+      ],
+      "status": "implemented",
+      "milestone": "M5"
+    },
+    {
+      "id": "M0",
+      "category": "milestone",
+      "title": "Contracts and spike harness",
+      "sourceRef": ".doc/system-design.md §40 M0",
+      "plannedPackageAPI": [
+        "semantic.NodeID",
+        "conformance/fixtures",
+        "adr/*"
+      ],
+      "verificationArtifacts": [
+        "requirements/traceability_test.go::TestTraceabilityMatrix",
+        "semantic/semantic_test.go::TestNodeIDGoldenVectors",
+        "docs/adr/README.md"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "README.md#deliberate-limits"
+      ],
+      "status": "implemented",
+      "milestone": "M0"
+    },
+    {
+      "id": "M1",
+      "category": "milestone",
+      "title": "Semantic and action core",
+      "sourceRef": ".doc/system-design.md §40 M1",
+      "plannedPackageAPI": [
+        "semantic",
+        "action",
+        "schema/semantic-snapshot-v1.json"
+      ],
+      "verificationArtifacts": [
+        "semantic/semantic_test.go::TestSnapshotNodeRoundTripAndRedaction",
+        "action/contract_freeze_test.go::TestNumericEnumExactEqualityInputAndOutput"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "README.md#deliberate-limits",
+        "doc.go"
+      ],
+      "status": "implemented",
+      "milestone": "M1"
+    },
+    {
+      "id": "M2",
+      "category": "milestone",
+      "title": "Reducer, session, and replay",
+      "sourceRef": ".doc/system-design.md §40 M2",
+      "plannedPackageAPI": [
+        "session",
+        "event",
+        "replay"
+      ],
+      "verificationArtifacts": [
+        "session/session_test.go::TestSessionCheckpointAndReplayStayDeterministic",
+        "effect/effect_test.go::TestExecutorDeliversDeclarationOrderDespiteParallelCompletion"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "README.md#deliberate-limits"
+      ],
+      "status": "implemented",
+      "milestone": "M2"
+    },
+    {
+      "id": "M3",
+      "category": "milestone",
+      "title": "Capabilities, theme, layout, and surface",
+      "sourceRef": ".doc/system-design.md §40 M3",
+      "plannedPackageAPI": [
+        "capability",
+        "theme",
+        "layout",
+        "surface"
+      ],
+      "verificationArtifacts": [
+        "capability/capability_test.go::TestCapabilityProfileMatrix",
+        "theme/theme_test.go::TestSemanticContrastAcrossColourLadder",
+        "layout/layout_test.go::TestMeasureAndArrangeAreDeterministic"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "README.md#deliberate-limits"
+      ],
+      "status": "implemented",
+      "milestone": "M3"
+    },
+    {
+      "id": "M4",
+      "category": "milestone",
+      "title": "Headless and agent runtime",
+      "sourceRef": ".doc/system-design.md §40 M4",
+      "plannedPackageAPI": [
+        "render/headless",
+        "runtime/agent",
+        "protocol"
+      ],
+      "verificationArtifacts": [
+        "runtime/agent/server_test.go::TestServerHandshakeAndStdoutPurity",
+        "runtime/agent/server_test.go::TestServerInvokeUsesCamelCaseDTOAndSafeTypedError"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "README.md#deliberate-limits"
+      ],
+      "status": "implemented",
+      "milestone": "M4"
+    },
+    {
+      "id": "M5",
+      "category": "milestone",
+      "title": "Human runtime and optional adapters",
+      "sourceRef": ".doc/system-design.md §40 M5",
+      "plannedPackageAPI": [
+        "runtime/human",
+        "adapter/bubbletea",
+        "adapter/lipgloss"
+      ],
+      "verificationArtifacts": [
+        "runtime/human/human_test.go::TestRuntimeSignalAndPanicRestore",
+        "make adapters"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "README.md#deliberate-limits"
+      ],
+      "status": "implemented",
+      "milestone": "M5"
+    },
+    {
+      "id": "M6",
+      "category": "milestone",
+      "title": "Primitives",
+      "sourceRef": ".doc/system-design.md §40 M6",
+      "plannedPackageAPI": [
+        "primitive/*",
+        "conformance/primitive_manifest.json"
+      ],
+      "verificationArtifacts": [
+        "testfixture/catalog_test.go::TestPrimitiveManifestUsesRealConstructors",
+        "conformance/primitive_test.go::TestInteractivePrimitiveActionsHaveKeyboardBindings"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md"
+      ],
+      "status": "implemented",
+      "milestone": "M6"
+    },
+    {
+      "id": "M7",
+      "category": "milestone",
+      "title": "Lopper adoption",
+      "sourceRef": ".doc/system-design.md §40 M7",
+      "plannedPackageAPI": [
+        "lopper/internal/ui.StavePreview",
+        "lopper/internal/ui.ParityFrame",
+        "cmd/atlas"
+      ],
+      "verificationArtifacts": [
+        "external://github.com/ben-ranford/lopper@unpublished-feat-1492-stave-v2-production#internal/ui/stave_preview_test.go::TestStaveParityActualASCIIEqualsLegacy",
+        "external://github.com/ben-ranford/lopper@unpublished-feat-1492-stave-v2-production#internal/ui/stave_preview_test.go::TestStavePreviewPreservesCommandAndConsequentialActionGrammar",
+        "go run ./cmd/atlas"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md"
+      ],
+      "status": "planned",
+      "milestone": "M7",
+      "notes": "The opt-in Lopper proving-client integration, semantic parity harness, command/action preservation, snapshots, and rollback flag exist in the Lopper worktree; the proof references are portable external citations until the worktree is published. Atlas independently proves a second brand/client shape."
+    },
+    {
+      "id": "M8",
+      "category": "milestone",
+      "title": "Hardening and v1",
+      "sourceRef": ".doc/system-design.md §40 M8",
+      "plannedPackageAPI": [
+        "Makefile",
+        "docs/runbooks/*",
+        ".github/workflows/release.yml"
+      ],
+      "verificationArtifacts": [
+        "make fmt-check vet test race fuzz-smoke benchmark-smoke verify-performance license-inventory govulncheck",
+        "make release-contract",
+        "make release-ga-contract",
+        "make release-dry-run"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "README.md#deliberate-limits"
+      ],
+      "status": "implemented",
+      "milestone": "M8"
+    },
+    {
+      "id": "AC-01",
+      "category": "acceptance_criterion",
+      "title": "Root public API contains no Bubble Tea, Lip Gloss, Bubbles, tcell, or Lopper type",
+      "sourceRef": ".doc/system-design.md §41 AC-01",
+      "plannedPackageAPI": [
+        "stave.Program[M]",
+        "semantic",
+        "action",
+        "theme"
+      ],
+      "verificationArtifacts": [
+        "make api-boundary",
+        "scripts/rigor/generated/public-api.txt"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "go.mod"
+      ],
+      "status": "implemented",
+      "milestone": "M1"
+    },
+    {
+      "id": "AC-02",
+      "category": "acceptance_criterion",
+      "title": "Root dependency graph excludes Lopper and optional adapter dependencies",
+      "sourceRef": ".doc/system-design.md §41 AC-02",
+      "plannedPackageAPI": [
+        "go.mod",
+        "semantic",
+        "action"
+      ],
+      "verificationArtifacts": [
+        "go run ./scripts/rigor/cmd/rigor boundary-check",
+        "scripts/rigor/generated/dependency-inventory.json"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "go.mod",
+        "README.md#proof-points"
+      ],
+      "status": "implemented",
+      "milestone": "M1"
+    },
+    {
+      "id": "AC-03",
+      "category": "acceptance_criterion",
+      "title": "Themes produce visibly distinct output without changing primitives",
+      "sourceRef": ".doc/system-design.md §41 AC-03",
+      "plannedPackageAPI": [
+        "theme.Theme",
+        "render/headless.PlainRenderer",
+        "cmd/lopper",
+        "cmd/atlas"
+      ],
+      "verificationArtifacts": [
+        "go run ./cmd/lopper",
+        "make atlas-check",
+        "cmd/lopper/main_test.go::TestLopperFixtureUsesIndependentTerminalProfile",
+        "internal/atlasrig/atlasrig_test.go::TestProofMatrixIsCompleteDeterministicAndProfileHonest",
+        "scripts/rigor/generated/lopper.render.txt",
+        "scripts/rigor/generated/atlas.render.txt",
+        "scripts/rigor/generated/atlas.matrix.json"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "README.md#proof-points",
+        "cmd/lopper/main.go"
+      ],
+      "status": "implemented",
+      "milestone": "M3"
+    },
+    {
+      "id": "AC-04",
+      "category": "acceptance_criterion",
+      "title": "Reordering keyed rows preserves NodeIDs",
+      "sourceRef": ".doc/system-design.md §41 AC-04",
+      "plannedPackageAPI": [
+        "semantic.NodeKey",
+        "primitive/table.Table"
+      ],
+      "verificationArtifacts": [
+        "conformance/primitive_test.go::TestTableContractAndStableRowIDs",
+        "semantic/semantic_test.go::TestNodeIdentityStable"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "semantic/semantic.go"
+      ],
+      "status": "implemented",
+      "milestone": "M1"
+    },
+    {
+      "id": "AC-05",
+      "category": "acceptance_criterion",
+      "title": "Replacing a node changes generation and rejects stale actions",
+      "sourceRef": ".doc/system-design.md §41 AC-05",
+      "plannedPackageAPI": [
+        "semantic.Target",
+        "action.Registry",
+        "session.Replay"
+      ],
+      "verificationArtifacts": [
+        "replay/replay_test.go::TestValidateFailsClosedAtFirstEventMismatchWithRemap",
+        "stave_test.go::TestProgramRejectsUnregisteredSemanticActions"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "README.md#proof-points",
+        "stave.go"
+      ],
+      "status": "implemented",
+      "milestone": "M2"
+    },
+    {
+      "id": "AC-06",
+      "category": "acceptance_criterion",
+      "title": "Same replay inputs produce identical revision, tree, and surface hashes",
+      "sourceRef": ".doc/system-design.md §41 AC-06",
+      "plannedPackageAPI": [
+        "session.Replay",
+        "surface.Buffer",
+        "semantic.Tree"
+      ],
+      "verificationArtifacts": [
+        "session/session_test.go::TestSessionCheckpointAndReplayStayDeterministic",
+        "surface/surface_test.go::TestSurfaceDeterminismAndMergeDirty"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "README.md#proof-points"
+      ],
+      "status": "implemented",
+      "milestone": "M2"
+    },
+    {
+      "id": "AC-07",
+      "category": "acceptance_criterion",
+      "title": "Reducer, view, layout, and headless render pass without a TTY",
+      "sourceRef": ".doc/system-design.md §41 AC-07",
+      "plannedPackageAPI": [
+        "session",
+        "layout",
+        "render/headless"
+      ],
+      "verificationArtifacts": [
+        "render/render_test.go::TestMachineAndPlainOutputsAvoidANSIAndPreserveSemantics",
+        "go test ./session ./layout ./render"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "README.md#proof-points"
+      ],
+      "status": "implemented",
+      "milestone": "M4"
+    },
+    {
+      "id": "AC-08",
+      "category": "acceptance_criterion",
+      "title": "Every interactive primitive has accessible role, name, action, and focus semantics",
+      "sourceRef": ".doc/system-design.md §41 AC-08",
+      "plannedPackageAPI": [
+        "primitive/*",
+        "semantic.Node"
+      ],
+      "verificationArtifacts": [
+        "conformance/primitive_test.go::TestInteractivePrimitiveActionsHaveKeyboardBindings",
+        "conformance/hostile_test.go::TestValidateTreeRejectsHiddenFocusableAndMissingFieldErrorRelation"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md"
+      ],
+      "status": "implemented",
+      "milestone": "M6"
+    },
+    {
+      "id": "AC-09",
+      "category": "acceptance_criterion",
+      "title": "Every human command has a typed machine equivalent",
+      "sourceRef": ".doc/system-design.md §41 AC-09",
+      "plannedPackageAPI": [
+        "runtime/human.Keymap",
+        "action.Registry",
+        "runtime/agent.Server"
+      ],
+      "verificationArtifacts": [
+        "keymap/keymap_test.go::TestDispatcherKeepsAllDefaultBindingsMapped",
+        "conformance/primitive_test.go::TestInteractivePrimitiveActionsHaveKeyboardBindings"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "README.md#proof-points"
+      ],
+      "status": "implemented",
+      "milestone": "M6"
+    },
+    {
+      "id": "AC-10",
+      "category": "acceptance_criterion",
+      "title": "No-colour, ASCII, narrow, non-TTY, CI, reduced-motion, and accessible-line profiles retain complete meaning",
+      "sourceRef": ".doc/system-design.md §41 AC-10",
+      "plannedPackageAPI": [
+        "capability.Negotiation",
+        "render/headless.PlainRenderer",
+        "runtime/human.Driver"
+      ],
+      "verificationArtifacts": [
+        "capability/capability_test.go::TestCapabilityProfileMatrix",
+        "render/render_test.go::TestMachineAndPlainOutputsAvoidANSIAndPreserveSemantics",
+        "theme/theme_test.go::TestReducedMotionZeroesDurations"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "capability/capability.go"
+      ],
+      "status": "implemented",
+      "milestone": "M5"
+    },
+    {
+      "id": "AC-11",
+      "category": "acceptance_criterion",
+      "title": "Machine output contains no ANSI, banners, prompts, or progress decoration",
+      "sourceRef": ".doc/system-design.md §41 AC-11",
+      "plannedPackageAPI": [
+        "protocol/jsonl.Server",
+        "render/headless.PlainRenderer"
+      ],
+      "verificationArtifacts": [
+        "runtime/agent/server_test.go::TestServerHandshakeAndStdoutPurity",
+        "render/render_test.go::TestMachineAndPlainOutputsAvoidANSIAndPreserveSemantics"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "README.md#deliberate-limits"
+      ],
+      "status": "implemented",
+      "milestone": "M4"
+    },
+    {
+      "id": "AC-12",
+      "category": "acceptance_criterion",
+      "title": "Prompt-injection strings remain inert content",
+      "sourceRef": ".doc/system-design.md §41 AC-12",
+      "plannedPackageAPI": [
+        "render/terminal.Renderer",
+        "action.Registry",
+        "runtime/agent.Server"
+      ],
+      "verificationArtifacts": [
+        "internal/terminal/sanitize_test.go::FuzzSanitize",
+        "conformance/negative_test.go::FuzzPrimitiveTextControlBytes"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "SECURITY.md",
+        "README.md#proof-points"
+      ],
+      "status": "implemented",
+      "milestone": "M4"
+    },
+    {
+      "id": "AC-13",
+      "category": "acceptance_criterion",
+      "title": "Secret values do not appear in snapshots, protocol, logs, diagnostics, replay, or surfaces",
+      "sourceRef": ".doc/system-design.md §41 AC-13",
+      "plannedPackageAPI": [
+        "primitive/input.Secret",
+        "diag.Diagnostic",
+        "protocol.SnapshotV1"
+      ],
+      "verificationArtifacts": [
+        "event/event_test.go::TestSensitivePayloadsAreRedactedOnSerialization",
+        "state/state_test.go::TestCheckpointSanitizeExcludesSecrets",
+        "adapters/ssh/bridge_test.go::TestSSHTransportContract_NoSecretDiagnosticLeakage"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "README.md#deliberate-limits"
+      ],
+      "status": "implemented",
+      "milestone": "M4"
+    },
+    {
+      "id": "AC-14",
+      "category": "acceptance_criterion",
+      "title": "Consequential actions require valid policy or confirmation and reject replay",
+      "sourceRef": ".doc/system-design.md §41 AC-14",
+      "plannedPackageAPI": [
+        "action.ConfirmationPolicy",
+        "action.Confirmation",
+        "session.Replay"
+      ],
+      "verificationArtifacts": [
+        "action/action_test.go::TestConfirmationWhitespaceAndReplay",
+        "action/action_test.go::TestConcurrentConfirmationSingleUse"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "action/action.go"
+      ],
+      "status": "implemented",
+      "milestone": "M4"
+    },
+    {
+      "id": "AC-15",
+      "category": "acceptance_criterion",
+      "title": "Queue saturation is bounded and observable",
+      "sourceRef": ".doc/system-design.md §41 AC-15",
+      "plannedPackageAPI": [
+        "runtime/human.Driver",
+        "diag.Observer",
+        "internal/queue"
+      ],
+      "verificationArtifacts": [
+        "runtime/human/human_test.go::TestQueueCoalescesResizeAndDropsOnlyWhenFull",
+        "session/session_test.go::TestSessionQueueBackpressureAndCoalescing"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md"
+      ],
+      "status": "implemented",
+      "milestone": "M5"
+    },
+    {
+      "id": "AC-16",
+      "category": "acceptance_criterion",
+      "title": "Cancellation restores the terminal and prevents late mutation",
+      "sourceRef": ".doc/system-design.md §41 AC-16",
+      "plannedPackageAPI": [
+        "runtime/human.Driver",
+        "session.Program.Run"
+      ],
+      "verificationArtifacts": [
+        "runtime/human/human_test.go::TestRuntimeRestoresOnEOFAndClosesOnce",
+        "session/session_test.go::TestSessionCancellationDiscardsLateEffectResults",
+        "go test -race ./..."
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "README.md#deliberate-limits"
+      ],
+      "status": "implemented",
+      "milestone": "M5"
+    },
+    {
+      "id": "AC-17",
+      "category": "acceptance_criterion",
+      "title": "Lopper Start or Snapshot flows, commands, TTY refresh, sanitization, baseline, and codemod safety stay covered",
+      "sourceRef": ".doc/system-design.md §41 AC-17",
+      "plannedPackageAPI": [
+        "lopper/internal/ui.StavePreview",
+        "lopper/internal/ui.Summary",
+        "lopper/internal/ui.SummaryActionRunner"
+      ],
+      "verificationArtifacts": [
+        "external://github.com/ben-ranford/lopper@unpublished-feat-1492-stave-v2-production#internal/ui/stave_preview_test.go::TestStavePreviewPreservesCommandAndConsequentialActionGrammar",
+        "external://github.com/ben-ranford/lopper@unpublished-feat-1492-stave-v2-production#internal/ui/stave_preview_test.go::TestStavePreviewDeterministicAndSanitized",
+        "external://github.com/ben-ranford/lopper@unpublished-feat-1492-stave-v2-production#internal/ui/summary_commands_test.go::TestSummaryHelperBranches"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md"
+      ],
+      "status": "planned",
+      "milestone": "M7",
+      "notes": "The Lopper parity and consequential-action coverage is present locally but remains unpublished and therefore cannot satisfy the GA gate."
+    },
+    {
+      "id": "AC-18",
+      "category": "acceptance_criterion",
+      "title": "Lopper adapter imports Stave and Stave never imports Lopper",
+      "sourceRef": ".doc/system-design.md §41 AC-18",
+      "plannedPackageAPI": [
+        "lopper/internal/ui.StavePreview",
+        "go.mod",
+        "scripts/rigor/cmd/rigor"
+      ],
+      "verificationArtifacts": [
+        "go run ./scripts/rigor/cmd/rigor boundary-check",
+        "external://github.com/ben-ranford/lopper@unpublished-feat-1492-stave-v2-production#go.mod",
+        "external://github.com/ben-ranford/lopper@unpublished-feat-1492-stave-v2-production#internal/ui/stave_preview.go"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "README.md#proof-points"
+      ],
+      "status": "planned",
+      "milestone": "M7",
+      "notes": "Stave's import boundary is proven locally; the reciprocal Lopper dependency proof requires a published Lopper revision and consumable Stave module version."
+    },
+    {
+      "id": "AC-19",
+      "category": "acceptance_criterion",
+      "title": "Bubble Tea and Lip Gloss adapters pass the same semantic or surface fixtures",
+      "sourceRef": ".doc/system-design.md §41 AC-19",
+      "plannedPackageAPI": [
+        "adapters/bubbletea",
+        "adapters/lipgloss",
+        "testfixture.Surface"
+      ],
+      "verificationArtifacts": [
+        "adapters/bubbletea/adapter_test.go::TestSharedAdapterSurfaceFixture",
+        "adapters/lipgloss/lipgloss_test.go::TestSharedAdapterSurfaceFixture",
+        "testfixture/surface.go"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md"
+      ],
+      "status": "implemented",
+      "milestone": "M5"
+    },
+    {
+      "id": "AC-20",
+      "category": "acceptance_criterion",
+      "title": "Formatting, vet, tests, race, fuzz smoke, vulnerability, licence, and benchmark gates pass fresh",
+      "sourceRef": ".doc/system-design.md §41 AC-20",
+      "plannedPackageAPI": [
+        "Makefile",
+        ".github/workflows/ci.yml",
+        "scripts/rigor/*"
+      ],
+      "verificationArtifacts": [
+        "make fmt-check vet test race fuzz-smoke benchmark-smoke license-inventory govulncheck",
+        ".github/workflows/ci.yml"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md",
+        "docs/release.md",
+        ".github/workflows/ci.yml"
+      ],
+      "status": "implemented",
+      "milestone": "M8"
+    },
+    {
+      "id": "AC-21",
+      "category": "acceptance_criterion",
+      "title": "All proposed performance targets are measured or accepted via ADR",
+      "sourceRef": ".doc/system-design.md §41 AC-21",
+      "plannedPackageAPI": [
+        "performance.Report",
+        "cmd/stave-performance",
+        "docs/adr/ADR-017.md"
+      ],
+      "verificationArtifacts": [
+        "make verify-performance",
+        "scripts/rigor/refresh-generated.sh performance-report",
+        "adapters/ssh/bridge_test.go::TestSSHTransportPerformanceBudget",
+        "docs/adr/ADR-017.md"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md"
+      ],
+      "status": "implemented",
+      "milestone": "M8"
+    },
+    {
+      "id": "AC-22",
+      "category": "acceptance_criterion",
+      "title": "Rollback to the legacy Lopper UI remains possible during pilot",
+      "sourceRef": ".doc/system-design.md §41 AC-22",
+      "plannedPackageAPI": [
+        "lopper/internal/featureflags",
+        "lopper/internal/ui.StavePreview",
+        "docs/lopper-migration.md"
+      ],
+      "verificationArtifacts": [
+        "external://github.com/ben-ranford/lopper@unpublished-feat-1492-stave-v2-production#internal/cli/parse_tui_test.go::TestParseArgsTUIStavePreviewRequiresExplicitEnablement",
+        "external://github.com/ben-ranford/lopper@unpublished-feat-1492-stave-v2-production#internal/ui/stave_preview_test.go::TestStavePreviewSnapshotFileAndDisabledLegacy",
+        "docs/lopper-migration.md"
+      ],
+      "documentationEvidence": [
+        "requirements/TRACEABILITY.md"
+      ],
+      "status": "planned",
+      "milestone": "M7",
+      "notes": "The rollback flag and legacy path are covered in the unpublished Lopper proving-client worktree; GA evidence requires a published, immutable Lopper revision."
+    }
+  ]
+}

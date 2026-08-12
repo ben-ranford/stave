@@ -1,0 +1,39 @@
+name: Feature request
+description: Propose a feature, API addition, or rigor uplift for the Stave library.
+title: "[feature] "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user need or release gap should this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: Describe the preferred shape of the feature or workflow.
+    validations:
+      required: true
+  - type: textarea
+    id: api
+    attributes:
+      label: API and compatibility impact
+      description: Call out exported API, config schema, or release implications.
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation plan
+      description: Explain how success should be verified locally and in CI.
+    validations:
+      required: true
+  - type: textarea
+    id: rollout
+    attributes:
+      label: Release notes
+      description: Note any changelog or migration guidance needed for consumers.

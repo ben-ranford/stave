@@ -1,0 +1,138 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    tags-ignore:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GO_VERSION_MINIMUM: "1.22.0"
+  GO_VERSION_CURRENT: "1.26.5"
+
+jobs:
+  minimum:
+    name: ci / go-minimum
+    runs-on: stave-arc
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: ${{ env.GO_VERSION_MINIMUM }}
+          cache: true
+      - name: Install build tools
+        run: |
+          if ! command -v make >/dev/null 2>&1 || ! command -v rg >/dev/null 2>&1 || ! command -v gcc >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y build-essential ripgrep
+          fi
+      - name: Validate minimum floor
+        run: make fmt-check vet test coverage-threshold
+
+  current:
+    name: ci / go-current
+    runs-on: stave-arc
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: ${{ env.GO_VERSION_CURRENT }}
+          cache: true
+      - name: Install build tools
+        run: |
+          if ! command -v make >/dev/null 2>&1 || ! command -v rg >/dev/null 2>&1 || ! command -v gcc >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y build-essential ripgrep
+          fi
+      - name: Run canonical verification
+        env:
+          CGO_ENABLED: "1"
+        run: make verify
+
+  security:
+    name: ci / security
+    runs-on: stave-arc
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: ${{ env.GO_VERSION_CURRENT }}
+          cache: true
+      - name: Install build tools
+        run: |
+          if ! command -v make >/dev/null 2>&1 || ! command -v rg >/dev/null 2>&1 || ! command -v gcc >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y build-essential ripgrep
+          fi
+      - name: Run security and dependency gates
+        run: make dependency-inventory license-inventory govulncheck
+
+  contracts:
+    name: ci / contracts
+    runs-on: stave-arc
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: ${{ env.GO_VERSION_CURRENT }}
+          cache: true
+      - name: Install build tools
+        run: |
+          if ! command -v make >/dev/null 2>&1 || ! command -v rg >/dev/null 2>&1 || ! command -v gcc >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y build-essential ripgrep
+          fi
+      - name: Run contract and workflow gates
+        env:
+          CGO_ENABLED: "1"
+        run: make api-boundary schema-freshness adapters workflow-validate release-contract
+
+  portability:
+    name: ci / portability
+    runs-on: stave-arc
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: ${{ env.GO_VERSION_CURRENT }}
+          cache: true
+      - name: Verify cross-platform terminal capability fixtures
+        run: go test ./capability -run 'TestCrossPlatformTerminalColourDetection|TestCapabilityProfileMatrix' -count=20
+      - name: Cross-compile public packages
+        run: |
+          while IFS= read -r target; do
+            export GOOS="${target%/*}"
+            export GOARCH="${target#*/}"
+            go build ./...
+          done <<'TARGETS'
+          linux/amd64
+          darwin/amd64
+          darwin/arm64
+          windows/amd64
+          TARGETS

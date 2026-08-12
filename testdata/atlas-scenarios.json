@@ -1,0 +1,50 @@
+{
+  "schemaVersion": "atlas-proof-rig/v1",
+  "scenarios": [
+    {"name": "ready", "description": "normal operational command deck", "tier": "core"},
+    {"name": "empty", "description": "no routes are available", "tier": "core"},
+    {"name": "loading", "description": "route data is loading", "tier": "core"},
+    {"name": "error", "description": "route loading failed safely", "tier": "core"},
+    {"name": "invalid-form", "description": "operator form exposes accessible validation", "tier": "breadth"},
+    {"name": "modal-confirmation", "description": "consequential action requires a modal confirmation", "tier": "breadth"},
+    {"name": "dense-table", "description": "windowed route table, chart, tabs and pagination", "tier": "breadth"}
+  ],
+  "profiles": [
+    {
+      "name": "machine-json", "description": "non-interactive machine output",
+      "capabilities": {"protocolVersions":["1.0"],"outputMode":"machine-json","interactive":false,"tty":false,"width":80,"height":24,"color":"none","hardwareColor":"none","unicode":"ascii","cursorAddressing":false,"alternateScreen":false,"mouse":false,"bracketedPaste":false,"reducedMotion":false,"screenReader":false,"secureInput":false,"clipboard":false,"coordinateFallback":false,"snapshotModes":["full","patch"],"actionFamilies":["stave.atlas.route","stave.primitive.core"],"limits":{"maxTreeNodes":4096,"maxMessageBytes":4194304,"maxInputBytes":65536}}
+    },
+    {
+      "name": "truecolor", "description": "interactive 24-bit colour terminal",
+      "capabilities": {"protocolVersions":["1.0"],"outputMode":"auto","interactive":true,"tty":true,"width":100,"height":24,"color":"truecolor","hardwareColor":"truecolor","unicode":"full","cursorAddressing":true,"alternateScreen":true,"mouse":true,"bracketedPaste":true,"reducedMotion":false,"screenReader":false,"secureInput":true,"clipboard":false,"coordinateFallback":false,"snapshotModes":["full","patch"],"actionFamilies":["stave.atlas.route","stave.primitive.core"],"limits":{"maxTreeNodes":4096,"maxMessageBytes":4194304,"maxInputBytes":65536}}
+    },
+    {
+      "name": "ansi256", "description": "interactive 256-colour terminal",
+      "capabilities": {"protocolVersions":["1.0"],"outputMode":"auto","interactive":true,"tty":true,"width":100,"height":24,"color":"ansi256","hardwareColor":"ansi256","unicode":"full","cursorAddressing":true,"alternateScreen":true,"mouse":true,"bracketedPaste":true,"reducedMotion":false,"screenReader":false,"secureInput":true,"clipboard":false,"coordinateFallback":false,"snapshotModes":["full","patch"],"actionFamilies":["stave.atlas.route","stave.primitive.core"],"limits":{"maxTreeNodes":4096,"maxMessageBytes":4194304,"maxInputBytes":65536}}
+    },
+    {
+      "name": "ansi16", "description": "interactive 16-colour terminal",
+      "capabilities": {"protocolVersions":["1.0"],"outputMode":"auto","interactive":true,"tty":true,"width":100,"height":24,"color":"ansi16","hardwareColor":"ansi16","unicode":"full","cursorAddressing":true,"alternateScreen":true,"mouse":true,"bracketedPaste":true,"reducedMotion":false,"screenReader":false,"secureInput":true,"clipboard":false,"coordinateFallback":false,"snapshotModes":["full","patch"],"actionFamilies":["stave.atlas.route","stave.primitive.core"],"limits":{"maxTreeNodes":4096,"maxMessageBytes":4194304,"maxInputBytes":65536}}
+    },
+    {
+      "name": "monochrome", "description": "interactive terminal with semantic emphasis but no colour",
+      "capabilities": {"protocolVersions":["1.0"],"outputMode":"auto","interactive":true,"tty":true,"width":100,"height":24,"color":"monochrome","hardwareColor":"monochrome","unicode":"full","cursorAddressing":true,"alternateScreen":true,"mouse":true,"bracketedPaste":true,"reducedMotion":false,"screenReader":false,"secureInput":true,"clipboard":false,"coordinateFallback":false,"snapshotModes":["full","patch"],"actionFamilies":["stave.atlas.route","stave.primitive.core"],"limits":{"maxTreeNodes":4096,"maxMessageBytes":4194304,"maxInputBytes":65536}}
+    },
+    {
+      "name": "ascii-narrow", "description": "narrow ASCII-only terminal",
+      "capabilities": {"protocolVersions":["1.0"],"outputMode":"auto","interactive":true,"tty":true,"width":28,"height":24,"color":"none","hardwareColor":"none","unicode":"ascii","cursorAddressing":true,"alternateScreen":true,"mouse":true,"bracketedPaste":true,"reducedMotion":false,"screenReader":false,"secureInput":true,"clipboard":false,"coordinateFallback":false,"snapshotModes":["full","patch"],"actionFamilies":["stave.atlas.route","stave.primitive.core"],"limits":{"maxTreeNodes":4096,"maxMessageBytes":4194304,"maxInputBytes":65536}}
+    },
+    {
+      "name": "non-tty", "description": "redirected deterministic plain output",
+      "capabilities": {"protocolVersions":["1.0"],"outputMode":"plain","interactive":false,"tty":false,"width":80,"height":24,"color":"none","hardwareColor":"none","unicode":"ascii","cursorAddressing":false,"alternateScreen":false,"mouse":false,"bracketedPaste":false,"reducedMotion":false,"screenReader":false,"secureInput":false,"clipboard":false,"coordinateFallback":false,"snapshotModes":["full","patch"],"actionFamilies":["stave.atlas.route","stave.primitive.core"],"limits":{"maxTreeNodes":4096,"maxMessageBytes":4194304,"maxInputBytes":65536}}
+    },
+    {
+      "name": "reduced-motion", "description": "interactive terminal with reduced motion",
+      "capabilities": {"protocolVersions":["1.0"],"outputMode":"auto","interactive":true,"tty":true,"width":80,"height":24,"color":"none","hardwareColor":"none","unicode":"ascii","cursorAddressing":true,"alternateScreen":true,"mouse":true,"bracketedPaste":true,"reducedMotion":true,"screenReader":false,"secureInput":true,"clipboard":false,"coordinateFallback":false,"snapshotModes":["full","patch"],"actionFamilies":["stave.atlas.route","stave.primitive.core"],"limits":{"maxTreeNodes":4096,"maxMessageBytes":4194304,"maxInputBytes":65536}}
+    },
+    {
+      "name": "accessible", "description": "screen-reader-oriented line output",
+      "capabilities": {"protocolVersions":["1.0"],"outputMode":"accessible-line","interactive":false,"tty":false,"width":80,"height":24,"color":"none","hardwareColor":"none","unicode":"ascii","cursorAddressing":false,"alternateScreen":false,"mouse":false,"bracketedPaste":false,"reducedMotion":true,"screenReader":true,"secureInput":false,"clipboard":false,"coordinateFallback":false,"snapshotModes":["full","patch"],"actionFamilies":["stave.atlas.route","stave.primitive.core"],"limits":{"maxTreeNodes":4096,"maxMessageBytes":4194304,"maxInputBytes":65536}}
+    }
+  ]
+}
