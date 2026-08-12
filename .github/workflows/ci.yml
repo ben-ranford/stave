@@ -12,6 +12,10 @@ jobs:
       - run: test -z "$(gofmt -l .)"
       - run: go vet ./...
       - run: go test ./...
+      - name: Install race detector toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends --yes gcc libc6-dev
       - run: go test -race ./...
         env:
           CGO_ENABLED: 1
