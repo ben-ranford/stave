@@ -34,9 +34,9 @@ jobs:
           cache: true
       - name: Install build tools
         run: |
-          if ! command -v make >/dev/null 2>&1 || ! command -v rg >/dev/null 2>&1; then
+          if ! command -v make >/dev/null 2>&1 || ! command -v rg >/dev/null 2>&1 || ! command -v gcc >/dev/null 2>&1; then
             sudo apt-get update
-            sudo apt-get install -y make ripgrep
+            sudo apt-get install -y build-essential ripgrep
           fi
       - name: Validate minimum floor
         run: make fmt-check vet test coverage-threshold
@@ -57,11 +57,13 @@ jobs:
           cache: true
       - name: Install build tools
         run: |
-          if ! command -v make >/dev/null 2>&1 || ! command -v rg >/dev/null 2>&1; then
+          if ! command -v make >/dev/null 2>&1 || ! command -v rg >/dev/null 2>&1 || ! command -v gcc >/dev/null 2>&1; then
             sudo apt-get update
-            sudo apt-get install -y make ripgrep
+            sudo apt-get install -y build-essential ripgrep
           fi
       - name: Run canonical verification
+        env:
+          CGO_ENABLED: "1"
         run: make verify
 
   security:
@@ -78,9 +80,9 @@ jobs:
           cache: true
       - name: Install build tools
         run: |
-          if ! command -v make >/dev/null 2>&1 || ! command -v rg >/dev/null 2>&1; then
+          if ! command -v make >/dev/null 2>&1 || ! command -v rg >/dev/null 2>&1 || ! command -v gcc >/dev/null 2>&1; then
             sudo apt-get update
-            sudo apt-get install -y make ripgrep
+            sudo apt-get install -y build-essential ripgrep
           fi
       - name: Run security and dependency gates
         run: make dependency-inventory license-inventory govulncheck
@@ -99,11 +101,13 @@ jobs:
           cache: true
       - name: Install build tools
         run: |
-          if ! command -v make >/dev/null 2>&1 || ! command -v rg >/dev/null 2>&1; then
+          if ! command -v make >/dev/null 2>&1 || ! command -v rg >/dev/null 2>&1 || ! command -v gcc >/dev/null 2>&1; then
             sudo apt-get update
-            sudo apt-get install -y make ripgrep
+            sudo apt-get install -y build-essential ripgrep
           fi
       - name: Run contract and workflow gates
+        env:
+          CGO_ENABLED: "1"
         run: make api-boundary schema-freshness adapters workflow-validate release-contract
 
   portability:
