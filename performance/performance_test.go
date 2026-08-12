@@ -89,6 +89,7 @@ func BenchmarkFixtureValidate2K(b *testing.B) {
 }
 func BenchmarkLayout2K120x40(b *testing.B) {
 	tree, _ := Fixture(2000)
+	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		if _, err := layout.Arrange(context.Background(), tree.Root(), layout.Size{Width: 120, Height: 40}, 100000); err != nil {
