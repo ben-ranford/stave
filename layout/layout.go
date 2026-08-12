@@ -200,6 +200,13 @@ type edgeInsets struct {
 
 var nodeInfoPool = sync.Pool{New: func() any { return new(nodeInfo) }}
 
+const maxPooledHashBuffer = 512 << 10
+
+var planHashBufferPool = sync.Pool{New: func() any {
+	buf := make([]byte, 0, 64)
+	return &buf
+}}
+
 func (e DefaultEngine) prepare(ctx context.Context, root semantic.Node) (*engineState, error) {
 	opts := e.Options
 	if opts.TabWidth <= 0 {
@@ -339,7 +346,17 @@ func (s *engineState) intrinsicSize(info *nodeInfo) Size {
 	name := info.node.Name()
 	value := info.node.Value()
 	measuredWidth := 0
-	if strings.ContainsAny(name, "\t\n\r") || strings.ContainsAny(value.Text, "\t\n\r") {
+	nameWidth, plainName := plainASCIIWidth(name)
+	valueWidth, plainValue := plainASCIIWidth(value.Text)
+	if plainName && plainValue {
+		measuredWidth = nameWidth
+		if value.HasValue && !value.Redacted && value.Text != "" {
+			if name != "" {
+				measuredWidth += 2
+			}
+			measuredWidth += valueWidth
+		}
+	} else if strings.ContainsAny(name, "\t\n\r") || strings.ContainsAny(value.Text, "\t\n\r") {
 		measuredWidth = policy.StringWidth(width.NormalizeTabs(nodeLine(info.node), s.options.TabWidth))
 	} else {
 		if name != "" {
@@ -351,9 +368,9 @@ func (s *engineState) intrinsicSize(info *nodeInfo) Size {
 			}
 			measuredWidth += policy.StringWidth(value.Text)
 		}
-		if measuredWidth == 0 {
-			measuredWidth = policy.StringWidth(string(info.node.Role()))
-		}
+	}
+	if measuredWidth == 0 {
+		measuredWidth = policy.StringWidth(string(info.node.Role()))
 	}
 	size := Size{Width: measuredWidth, Height: 1}
 	if info.meta.width > 0 {
@@ -363,6 +380,15 @@ func (s *engineState) intrinsicSize(info *nodeInfo) Size {
 		size.Height = info.meta.height
 	}
 	return clampMeta(size, info.meta)
+}
+
+func plainASCIIWidth(value string) (int, bool) {
+	for index := 0; index < len(value); index++ {
+		if value[index] < 0x20 || value[index] >= 0x7f {
+			return 0, false
+		}
+	}
+	return len(value), true
 }
 
 func (s *engineState) measureStack(ctx context.Context, info *nodeInfo, constraints Constraints, meta nodeMeta) (Size, error) {
@@ -1003,7 +1029,12 @@ func intersect(a, b Rect) Rect {
 }
 
 func hashPlan(plan Plan) [32]byte {
-	buf := make([]byte, 0, len(plan.Boxes)*104+64)
+	required := len(plan.Boxes)*104 + 64
+	pooled := planHashBufferPool.Get().(*[]byte)
+	buf := (*pooled)[:0]
+	if cap(buf) < required {
+		buf = make([]byte, 0, required)
+	}
 	buf = appendRectSize(buf, Size{Width: plan.Viewport.Width, Height: plan.Viewport.Height})
 	buf = appendRect(buf, plan.Window)
 	buf = appendRectSize(buf, plan.Content)
@@ -1017,7 +1048,12 @@ func hashPlan(plan Plan) [32]byte {
 		binary.BigEndian.PutUint32(scratch[:], uint32(box.Z))
 		buf = append(buf, scratch[:]...)
 	}
-	return sha256.Sum256(buf)
+	hash := sha256.Sum256(buf)
+	if cap(buf) <= maxPooledHashBuffer {
+		*pooled = buf[:0]
+		planHashBufferPool.Put(pooled)
+	}
+	return hash
 }
 
 func (b Box) GenerationCmp(other Box) int {

@@ -47,6 +47,9 @@ Keep a Changelog and Stave uses Semantic Versioning.
 - Replaced the initial root-package spike with the production `Program` facade
   over the renderer-neutral core packages.
 - Set the release candidate and dry-run base version to `v1.0.0`.
+- Reduced 2,000-node layout allocation churn with a bounded reusable plan-hash
+  buffer and a printable-ASCII measurement fast path, preserving the 8 ms p95
+  gate on slower release runners without changing layout semantics.
 
 ### Security
 

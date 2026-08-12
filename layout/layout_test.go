@@ -121,6 +121,59 @@ func TestMeasureAndArrangeAreDeterministic(t *testing.T) {
 	}
 }
 
+func TestHashPlanGolden(t *testing.T) {
+	t.Parallel()
+	plan := Plan{
+		Viewport: Size{Width: 120, Height: 40},
+		Window:   Rect{X: 2, Y: 3, Width: 80, Height: 20},
+		Content:  Size{Width: 160, Height: 80},
+		Boxes: []Box{{
+			NodeID:     semantic.NodeID("n1_aaaaaaaaaaaaaaaaaaaaaaaaaa"),
+			Generation: 7,
+			Rect:       Rect{X: 4, Y: 5, Width: 60, Height: 10},
+			Clip:       Rect{X: 6, Y: 7, Width: 50, Height: 8},
+			Z:          -2,
+		}},
+	}
+	const want = "75343cd6daaec47a7c782414b8764a469f817e27d521630e0d892e351cff5b1f"
+	if got := fmt.Sprintf("%x", hashPlan(plan)); got != want {
+		t.Fatalf("plan hash = %s, want %s", got, want)
+	}
+}
+
+func TestMeasureIntrinsicTextWidthAcrossFastAndUnicodePaths(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		value semantic.Value
+		width int
+	}{
+		{name: "node", value: semantic.Value{HasValue: true, Text: "value"}, width: 11},
+		{name: "界", value: semantic.Value{HasValue: true, Text: "a\u0301"}, width: 5},
+		{name: "a\tb", width: 5},
+		{width: len("text")},
+		{value: semantic.SecretValue(), width: len("text")},
+		{value: semantic.Value{Text: "ignored"}, width: len("text")},
+	}
+	for index, test := range tests {
+		id, err := semantic.NodeIDFor(semantic.NodeKey{AppNamespace: "a", View: "v", Kind: "text", Entity: fmt.Sprint(index), Slot: "intrinsic"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		n, err := semantic.NewNode(semantic.NodeSpec{ID: id, Role: "text", Name: test.name, Value: test.value, Flags: semantic.Flags{Visible: true}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		measurement, err := (DefaultEngine{Options: DefaultOptions()}).Measure(context.Background(), n, Constraints{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if measurement.Size.Width != test.width {
+			t.Fatalf("intrinsic width for %q/%q = %d, want %d", test.name, test.value.Text, measurement.Size.Width, test.width)
+		}
+	}
+}
+
 func TestArrangeCanonicalizesOverlayPaintOrderAndHash(t *testing.T) {
 	t.Parallel()
 	root := visibleNode(t, "root", map[string]string{"layout.kind": "overlay"},
