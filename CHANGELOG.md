@@ -1,0 +1,54 @@
+# Changelog
+
+All notable changes to this repository are tracked here. The format follows
+Keep a Changelog and Stave uses Semantic Versioning.
+
+## [Unreleased]
+
+## [1.0.0-rc.1] - 2026-08-13
+
+### Target
+
+- `v1.0.0-rc.1`; this root-module candidate freezes the public v1 contracts
+  while Lopper proving-client evidence remains a GA promotion gate.
+
+### Added
+
+- Application-neutral semantic trees with stable identities, immutable
+  snapshots, typed actions, versioned schemas, deterministic replay, and
+  explicit effect boundaries.
+- Human and agent runtimes sharing one action authority, with JSON-RPC 2.0 over
+  JSONL stdio, capability negotiation, bounded queues, cancellation, safe
+  diagnostics, and secret exclusion.
+- Adaptive layout, surface diffing, headless and terminal rendering, and full
+  truecolor, ANSI-256, ANSI-16, monochrome, and no-colour support.
+- Semantic themes, density and reduced-motion policies, pluggable glyph/assets,
+  and independent Lopper and Atlas brand fixtures.
+- Foundational and P1 primitives including tables, forms, tabs, pagination,
+  command palette, charts, inspector/master-detail, dialogs, confirmations, and
+  progress/state surfaces.
+- Optional SSH, Bubble Tea, and Lip Gloss adapter modules with shared fixture
+  conformance.
+- Deterministic performance fixtures, percentile reports, ADRs, operational
+  runbooks, release automation, repository hooks, schemas, and traceability.
+- Lopper proving-client integration behind the explicit `stave-tui-preview`
+  feature flag, with parity, snapshots, consequential-action coverage, and
+  legacy rollback.
+
+### Release scope
+
+- Publishes the root `github.com/ben-ranford/stave` module and source evidence.
+- Keeps the Bubble Tea, Lip Gloss, and SSH nested modules internal until their
+  independent module versions and tags consume a published root release.
+
+### Changed
+
+- Replaced the initial root-package spike with the production `Program` facade
+  over the renderer-neutral core packages.
+- Set the release candidate and dry-run base version to `v1.0.0`.
+
+### Security
+
+- Added final-sink control-sequence sanitization, opaque secret handles,
+  redacted events/checkpoints/diagnostics, protocol resource limits, and
+  single-use confirmation enforcement.

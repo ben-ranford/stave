@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "stave.config/v1",
+  "type": "object", "additionalProperties": false,
+  "required": ["schemaVersion", "app", "theme", "viewport", "capabilities", "keymap", "runtime", "protocol", "security", "diagnostics"],
+  "properties": {
+    "schemaVersion": {"const": "stave.config/v1"},
+    "app": {"$ref": "#/$defs/app"}, "theme": {"$ref": "#/$defs/theme"}, "viewport": {"$ref": "#/$defs/viewport"},
+    "capabilities": {"$ref": "#/$defs/capabilities"}, "keymap": {"$ref": "#/$defs/keymap"}, "runtime": {"$ref": "#/$defs/runtime"},
+    "protocol": {"$ref": "#/$defs/protocol"}, "security": {"$ref": "#/$defs/security"}, "diagnostics": {"$ref": "#/$defs/diagnostics"}
+  },
+  "$defs": {
+    "app": {"type": "object", "additionalProperties": false, "properties": {"id": {"type": "string", "maxLength": 128}, "version": {"type": "string", "maxLength": 64}}},
+    "theme": {"type": "object", "additionalProperties": false, "properties": {"id": {"type": "string", "maxLength": 128}, "mode": {"enum": ["auto", "light", "dark"]}, "density": {"enum": ["compact", "dense", "comfortable"]}}},
+    "viewport": {"type": "object", "additionalProperties": false, "properties": {"width": {"type": "integer", "minimum": 0}, "height": {"type": "integer", "minimum": 0}}},
+    "capabilities": {"type": "object", "additionalProperties": false, "properties": {"color": {"enum": ["auto", "never", "none", "mono", "ansi16", "ansi256", "truecolor", "always"]}, "unicode": {"enum": ["auto", "none", "ascii", "full"]}, "motion": {"enum": ["auto", "full", "reduced"]}, "mouse": {"enum": ["auto", "enabled", "disabled"]}, "alternateScreen": {"enum": ["auto", "enabled", "disabled"]}}},
+    "keymap": {"type": "object", "additionalProperties": false, "properties": {"profile": {"type": "string", "maxLength": 128}, "bindings": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true}}},
+    "runtime": {"type": "object", "additionalProperties": false, "properties": {"mode": {"enum": ["auto", "terminal", "headless"]}, "inputQueue": {"type": "integer", "minimum": 1}, "actionQueue": {"type": "integer", "minimum": 1}, "restoreOnPanic": {"type": "boolean"}}},
+    "protocol": {"type": "object", "additionalProperties": false, "properties": {"enabled": {"type": "boolean"}, "transport": {"enum": ["stdio-jsonl", "stdio-json", "none"]}, "maxMessageBytes": {"type": "integer", "minimum": 1}}},
+    "security": {"type": "object", "additionalProperties": false, "properties": {"allowClipboard": {"type": "boolean"}, "allowCoordinateFallback": {"type": "boolean"}, "confirmationTTL": {"type": "string", "minLength": 1}, "maxTreeNodes": {"type": "integer", "minimum": 1}}},
+    "diagnostics": {"type": "object", "additionalProperties": false, "properties": {"level": {"enum": ["debug", "info", "warn", "error", "none"]}, "format": {"enum": ["text", "json"]}}}
+  }
+}

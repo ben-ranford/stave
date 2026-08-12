@@ -1,0 +1,6 @@
+{
+  "schemaVersion": "stave.primitive.conformance.v1",
+  "modes": ["tty-color", "tty-no-color", "ascii", "narrow", "non-tty", "reduced-motion"],
+  "fixtures": ["brand-a", "brand-b", "text", "label", "stack", "row", "grid", "surface", "frame", "table", "list", "status", "chip", "focus", "disclosure", "viewport", "input", "secure-input", "empty", "loading", "error", "terminal-writer", "semantic-snapshot", "action-descriptor", "diagnostics", "tabs", "pagination", "command-palette", "bar-chart", "sparkline", "inspector", "master-detail", "modal", "dialog", "confirmation", "form", "progress", "overlay"],
+  "invariants": ["stable-node-ids", "accessible-names", "keyboard-agent-parity", "colour-not-meaning", "secret-redaction"]
+}

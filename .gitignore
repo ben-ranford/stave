@@ -1,2 +1,8 @@
 .doc/
 .omx/
+.cache/
+.codex-artifacts/
+.coverage/
+.artifacts/
+.lopper-cache/
+coverage.out

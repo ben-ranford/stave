@@ -1,0 +1,882 @@
+# Public API inventory
+module github.com/ben-ranford/stave
+
+[github.com/ben-ranford/stave]
+method (Program[M]) NewSession(ctx context.Context, opts SessionOptions) (*Prepared[M], error)
+method (ReduceContext) Deadline() (deadline time.Time, ok bool)
+method (ReduceContext) Done() <-chan struct{}
+method (ReduceContext) Err() error
+method (ReduceContext) Value(key any) any
+method (ViewContext) Deadline() (deadline time.Time, ok bool)
+method (ViewContext) Done() <-chan struct{}
+method (ViewContext) Err() error
+method (ViewContext) Value(key any) any
+type Prepared
+type Program
+type ReduceContext
+type Reducer
+type SessionOptions
+type View
+type ViewContext
+
+[github.com/ben-ranford/stave/action]
+const ActionNotFound
+const AmbiguousTarget
+const Cancelled
+const CapabilityMismatch
+const ConfirmationInvalid
+const ConfirmationRequired
+const Conflict
+const Consequential
+const DeadlineExceeded
+const Destructive
+const Forbidden
+const Idempotent
+const Internal
+const InvalidArgument
+const InvalidRequest
+const NodeNotFound
+const NodeReplaced
+const NonIdempotent
+const OutputSchemaViolation
+const ReadOnly
+const ResourceLimit
+const ResultOK
+const ResultRejected
+const Reversible
+const StaleSnapshot
+func NewConfirmation(session string, d Definition, target semantic.Target, args json.RawMessage, expiry time.Time) (Confirmation, error)
+func NewConfirmationE(session string, d Definition, target semantic.Target, args json.RawMessage, expiry time.Time) (Confirmation, error)
+func NewRegistry() *Registry
+func Register[In, Out any](r *Registry, d Definition, decode func(json.RawMessage) (In, error), encode func(Out) (json.RawMessage, error), h func(context.Context, Call, In) (Out, error)) error
+method (*Error) Error() string
+method (*Registry) Definition(id ID) (Definition, bool)
+method (*Registry) Invoke(ctx context.Context, c Call) Result
+method (*Registry) IssueConfirmation(c Confirmation) error
+method (*Registry) Manifest() []Definition
+method (*Registry) Register(d Definition, h Handler) error
+method (Definition) EffectiveIdempotency() Idempotency
+method (Definition) Validate() error
+method (Schema) Validate(b json.RawMessage) (any, error)
+type Call
+type Code
+type Confirmation
+type ConfirmationPolicy
+type Definition
+type Error
+type Handler
+type ID
+type Idempotency
+type Registry
+type Result
+type ResultStatus
+type Safety
+type Schema
+var ErrNumericLimit
+
+[github.com/ben-ranford/stave/capability]
+const ColorANSI16
+const ColorANSI16Level
+const ColorANSI256
+const ColorANSI256Level
+const ColorAlways
+const ColorAuto
+const ColorMonochrome
+const ColorNever
+const ColorNoColor
+const ColorNone
+const ColorTrueColor
+const ColorTruecolor
+const OutputAccessibleLine
+const OutputAuto
+const OutputDumb
+const OutputMachineJSON
+const OutputMachineJSONL
+const OutputPlain
+const ProfileANSI16
+const ProfileANSI256
+const ProfileAccessibleLine
+const ProfileDumb
+const ProfileFullScreen
+const ProfileMachineJSON
+const ProfileMachineJSONL
+const ProfileMonochrome
+const ProfileNoColor
+const ProfilePlain
+const ProfileTrueColor
+const UnicodeASCII
+const UnicodeFull
+const UnicodeNone
+func Detect(p Probe) Manifest
+func DetectEnv(env map[string]string, tty bool, width, height int) Manifest
+func DetectEnvWithDiagnostics(env map[string]string, tty bool, width, height int) (Manifest, []Diagnostic)
+func DetectWithDiagnostics(p Probe) (Manifest, []Diagnostic)
+method (*ColorLevel) UnmarshalJSON(data []byte) error
+method (*UnicodeLevel) UnmarshalJSON(data []byte) error
+method (ColorLevel) MarshalJSON() ([]byte, error)
+method (ColorLevel) String() string
+method (ColorLevel) Valid() bool
+method (Manifest) Clone() Manifest
+method (Manifest) Profiles() []string
+method (Negotiation) Resolve() (Manifest, []Diagnostic)
+method (UnicodeLevel) MarshalJSON() ([]byte, error)
+method (UnicodeLevel) String() string
+method (UnicodeLevel) Valid() bool
+type ColorLevel
+type ColorPolicy
+type Diagnostic
+type ID
+type Limits
+type Manifest
+type Negotiation
+type OutputMode
+type Overrides
+type Policy
+type Probe
+type Profile
+type SecurityPolicy
+type UnicodeLevel
+
+[github.com/ben-ranford/stave/config]
+func CanonicalJSON(c Config) []byte
+func CanonicalJSONE(c Config) ([]byte, error)
+func CanonicalVersion(c Config) string
+func Defaults() Config
+func Hash(c Config) [32]byte
+func HashString(c Config) string
+func Keys(c Config) []string
+func KnownEnvKeys() []string
+func KnownFlagKeys() []string
+func LayerFromEnv(env map[string]string) (Layer, error)
+func LayerFromFlags(flags map[string]string) (Layer, error)
+func Merge(values ...Config) Config
+func MergeLayers(explicit Config, layers ...Layer) (Config, error)
+func Parse(data []byte) (Config, error)
+func ParseLayer(data []byte) (Layer, error)
+func Validate(c Config) error
+method (ValidationError) Error() string
+type App
+type Capabilities
+type Config
+type Diagnostics
+type Keymap
+type Layer
+type Problem
+type Protocol
+type Runtime
+type Security
+type Theme
+type ValidationError
+type Viewport
+
+[github.com/ben-ranford/stave/conformance]
+func CheckAdapter(a Adapter, tree semantic.Node, modes []Mode) Report
+func CheckClient(client Client, fixtures []ClientFixture) ClientReport
+func ValidateTree(root semantic.Node) []Failure
+func ValidateTreeWithManifest(root semantic.Node, manifest ActionManifest) []Failure
+method (Failure) Error() string
+type ActionManifest
+type Adapter
+type Client
+type ClientFixture
+type ClientReport
+type Failure
+type Mode
+type Report
+
+[github.com/ben-ranford/stave/diag]
+const ErrorSeverity
+const Info
+const Warning
+method (Diagnostic) MarshalJSON() ([]byte, error)
+type Diagnostic
+type Severity
+
+[github.com/ben-ranford/stave/effect]
+const CompletionOrder
+const DeclarationOrder
+const IDAlgorithm
+const SchemaVersion
+const StatusCancelled
+const StatusCompleted
+const StatusFailed
+const StatusTimedOut
+func Bind(sessionID string, sequence, revision uint64, requests []Request) ([]Call, error)
+func ID(sessionID string, sequence uint64, ordinal uint32, kind string) string
+func NewExecutor(opts Options) *Executor
+method (*Executor) Close()
+method (*Executor) Deliver(ctx context.Context, calls []Call, sink Sink) error
+method (Outcome) Event() event.Event
+method (PortFunc) Run(ctx context.Context, call Call) (any, error)
+method (Request) Validate() error
+method (Spec) Validate() error
+type Call
+type Delivery
+type Executor
+type Options
+type Outcome
+type Port
+type PortFunc
+type Request
+type Sink
+type Spec
+type Status
+var ErrBackpressure
+var ErrClosed
+var ErrMissingPort
+
+[github.com/ben-ranford/stave/event]
+const ActionInvoked
+const Blur
+const Cancel
+const Diagnostic
+const EffectResult
+const Focus
+const Key
+const MaxPayloadTextBytes
+const MaxViewportDimension
+const Pointer
+const Resize
+const SchemaVersion
+const SecureInput
+const Shutdown
+const Text
+const Tick
+func Equal(a, b Event) bool
+func New(kind Kind, payload any) (Event, error)
+method (*Event) UnmarshalJSON(data []byte) error
+method (Event) CanonicalJSON() ([]byte, error)
+method (Event) Clone() (Event, error)
+method (Event) Coalescible() bool
+method (Event) CoalescingKey() string
+method (Event) Hash() ([32]byte, error)
+method (Event) HashString() (string, error)
+method (Event) MarshalJSON() ([]byte, error)
+method (Event) Validate() error
+method (Event) WithAccepted(sequence, revision uint64) Event
+type ActionInvokedPayload
+type DiagnosticPayload
+type EffectResultPayload
+type Event
+type KeyPayload
+type Kind
+type LogicalTime
+type Metadata
+type PointerPayload
+type Redaction
+type ResizePayload
+type SecureInputPayload
+type Target
+type TextPayload
+
+[github.com/ben-ranford/stave/focus]
+func NewGraph(tree semantic.Tree) Graph
+method (Graph) Contains(target semantic.Target) bool
+method (Graph) First(scope semantic.NodeID) (semantic.Target, bool)
+method (Graph) Focusable() []semantic.Target
+method (Graph) Initial(scope semantic.NodeID) (State, bool)
+method (Graph) Last(scope semantic.NodeID) (semantic.Target, bool)
+method (Graph) Next(state State) (State, bool)
+method (Graph) PopScope(state State) (State, bool)
+method (Graph) Previous(state State) (State, bool)
+method (Graph) PushScope(state State, scope semantic.NodeID) (State, bool)
+method (Graph) Repair(state State) State
+method (Graph) RepairFrom(previous Graph, state State) State
+method (Graph) Revision() uint64
+method (Graph) Root() semantic.NodeID
+method (Graph) Validate(state State) error
+type FocusState
+type Graph
+type State
+
+[github.com/ben-ranford/stave/input]
+const DefaultMaxPasteBytes
+const DefaultMaxTextBytes
+const KeyBackspace
+const KeyDelete
+const KeyDown
+const KeyEnd
+const KeyEnter
+const KeyEscape
+const KeyHome
+const KeyLeft
+const KeyPageDown
+const KeyPageUp
+const KeyRight
+const KeyRune
+const KeySpace
+const KeyTab
+const KeyUp
+const ModAlt
+const ModCtrl
+const ModMeta
+const ModShift
+const SecretEventKind
+const SourcePaste
+const SourceTyped
+func EOFEvent() staveevent.Event
+func KeyEvent(chord KeyChord) staveevent.Event
+func NewMemorySecretStore() *MemorySecretStore
+func NormalizePaste(raw []byte, maxBytes int) (Text, []Diagnostic, error)
+func NormalizeText(raw string, maxBytes int) (Text, []Diagnostic, error)
+func ParseKey(raw string) (KeyChord, error)
+func ResizeEvent(width, height int) staveevent.Event
+func SecretInputEvent(handle SecretHandle) staveevent.Event
+func SignalEvent(name string) staveevent.Event
+func TextEvent(text Text) staveevent.Event
+method (KeyChord) Normalize() KeyChord
+type Diagnostic
+type EOF
+type KeyChord
+type KeyCode
+type MemorySecretStore
+type Mod
+type Resize
+type SecretHandle
+type SecretPrompt
+type SecretStore
+type SecureProvider
+type Signal
+type Text
+type TextSource
+var ErrSecretNotFound
+
+[github.com/ben-ranford/stave/keymap]
+const CommandActivate
+const CommandCancel
+const CommandFocusFirst
+const CommandFocusLast
+const CommandFocusNext
+const CommandFocusPrevious
+const CommandPageDown
+const CommandPageUp
+const CommandShutdown
+const RouteAction
+const RouteEvent
+const StatusMatch
+const StatusNoMatch
+const StatusPending
+func Default() (Map, error)
+func New(profile string, mappings []Mapping) (Map, error)
+func NewDispatcher(keymap Map) *Dispatcher
+method (*Dispatcher) Expire(now time.Time) bool
+method (*Dispatcher) Feed(chord input.KeyChord, scope semantic.NodeID, target semantic.Target, deadline time.Time) (Resolution, error)
+method (*Dispatcher) Pending() bool
+method (*Dispatcher) Reset()
+method (Map) ActionIDs() []action.ID
+method (Map) Bindings() []Mapping
+method (Map) Hints(command CommandID) []string
+method (Map) Inventory() []BindingInventory
+method (Map) Profile() string
+type Binding
+type BindingInventory
+type CommandID
+type Dispatcher
+type Map
+type Mapping
+type Resolution
+type ResolutionStatus
+type Route
+type RouteKind
+
+[github.com/ben-ranford/stave/layout]
+func Arrange(ctx context.Context, root semantic.Node, viewport Size, maxNodes int) (Plan, error)
+func DefaultOptions() Options
+func MeasureText(s string) int
+method (Box) GenerationCmp(other Box) int
+method (DefaultEngine) Arrange(ctx context.Context, root semantic.Node, rect Rect) (Plan, error)
+method (DefaultEngine) Measure(ctx context.Context, root semantic.Node, constraints Constraints) (Measurement, error)
+type Box
+type Budgets
+type Constraints
+type DefaultEngine
+type Engine
+type Measurement
+type Options
+type Plan
+type Rect
+type Size
+
+[github.com/ben-ranford/stave/observer]
+method (Func) Observe(ctx context.Context, e Event)
+method (Nop) Observe(context.Context, Event)
+type Event
+type Func
+type Nop
+type Observer
+
+[github.com/ben-ranford/stave/performance]
+const Samples
+func ActionAckLine() ([]byte, error)
+func Context() context.Context
+func Fixture(n int) (semantic.Tree, error)
+func Measure(fn func()) time.Duration
+func MeasureIdleCPU(window time.Duration) RatioMeasurement
+func OrdinaryEvent() event.Event
+func Percentiles(samples []time.Duration) (p50, p95, p99 time.Duration, err error)
+func ReduceCounter(ctx context.Context, count int, ev event.Event) (int, []effect.Request, error)
+func ResizeStormRecovery(count int) error
+func SurfaceFixture(w, h int) (surface.Surface, error)
+func TerminalRestoreAfterCancellation() error
+method (*measurementDriver) Close() error
+method (*measurementDriver) Draw(context.Context, surface.Surface, surface.Patch) error
+method (*measurementDriver) Events() <-chan event.Event
+method (*measurementDriver) Open(context.Context, capability.Policy) (capability.Manifest, error)
+method (*measurementDriver) ReadSecret(context.Context, input.SecretPrompt) (secret.Handle, error)
+method (*measurementDriver) Restore(context.Context) error
+type Attempt
+type Budget
+type Measurement
+type RatioMeasurement
+type Report
+type Reproducibility
+
+[github.com/ben-ranford/stave/primitive]
+const Grid
+const Horizontal
+const Vertical
+func Action(id, label string, def bool) semantic.ActionRef
+func Alert(o Options, text string) (semantic.Node, error)
+func BarChart(o Options, values []int, description string) (semantic.Node, error)
+func Button(o Options, label string) (semantic.Node, error)
+func CanonicalActionID(id string) semantic.ActionID
+func Chart(o Options, description string) (semantic.Node, error)
+func Checkbox(c CheckboxOptions, label string) (semantic.Node, error)
+func Chip(o Options, text string) (semantic.Node, error)
+func CodeBlock(o Options, text string) (semantic.Node, error)
+func CommandPalette(o Options, query string, commands ...semantic.Node) (semantic.Node, error)
+func Confirmation(o Options, prompt string) (semantic.Node, error)
+func Dialog(o Options, child semantic.Node) (semantic.Node, error)
+func Disclosure(o Options, title string, expanded bool, children ...semantic.Node) (semantic.Node, error)
+func Divider(o Options) (semantic.Node, error)
+func Empty(o Options, text string) (semantic.Node, error)
+func ErrorState(o Options, text string) (semantic.Node, error)
+func FocusIndicator(o Options, child semantic.Node) (semantic.Node, error)
+func Form(o Options, fields ...semantic.Node) (semantic.Node, error)
+func Frame(o Options, children ...semantic.Node) (semantic.Node, error)
+func GridLayout(o Options, children ...semantic.Node) (semantic.Node, error)
+func Heading(o Options, text string) (semantic.Node, error)
+func Input(i InputOptions) (semantic.Node, error)
+func Inspector(o Options, children ...semantic.Node) (semantic.Node, error)
+func Label(o Options, text string) (semantic.Node, error)
+func Link(o Options, label string) (semantic.Node, error)
+func List(o Options, items ...semantic.Node) (semantic.Node, error)
+func Loading(o Options, text string) (semantic.Node, error)
+func MasterDetail(o Options, master, detail semantic.Node) (semantic.Node, error)
+func Modal(o Options, child semantic.Node) (semantic.Node, error)
+func NumberInput(n NumberOptions) (semantic.Node, error)
+func Overlay(o Options, child semantic.Node) (semantic.Node, error)
+func Pagination(o Options, page, pages int) (semantic.Node, error)
+func Progress(o Options, current, total int, indeterminate bool) (semantic.Node, error)
+func RadioGroup(r RadioGroupOptions) (semantic.Node, error)
+func Row(o Options, children ...semantic.Node) (semantic.Node, error)
+func Section(o Options, children ...semantic.Node) (semantic.Node, error)
+func SecureInput(i InputOptions) (semantic.Node, error)
+func Select(s SelectOptions) (semantic.Node, error)
+func Spacer(o Options) (semantic.Node, error)
+func Sparkline(o Options, values []int, description string) (semantic.Node, error)
+func Stack(o Options, children ...semantic.Node) (semantic.Node, error)
+func Status(o Options, text string) (semantic.Node, error)
+func Surface(o Options, children ...semantic.Node) (semantic.Node, error)
+func Table(t TableOptions) (semantic.Node, error)
+func Tabs(o Options, tabs ...Tab) (semantic.Node, error)
+func Text(o Options, text string) (semantic.Node, error)
+func Viewport(v ViewportOptions) (semantic.Node, error)
+type CheckboxOptions
+type Choice
+type Column
+type Direction
+type InputOptions
+type NumberOptions
+type Options
+type RadioGroupOptions
+type SecretHandle
+type SelectOptions
+type Tab
+type TableOptions
+type TableRow
+type ViewportOptions
+
+[github.com/ben-ranford/stave/protocol]
+const Backpressure
+const Cancelled
+const CapabilityMismatch
+const ConfirmationInvalid
+const ConfirmationRequired
+const ContextCancelled
+const ContextDeadline
+const DeadlineExceeded
+const Forbidden
+const InternalError
+const InvalidParams
+const InvalidRequest
+const JSONRPC
+const MethodNotFound
+const NotInitialized
+const OutputLimit
+const ParseError
+const RequestTooLarge
+const ResourceLimit
+const SchemaViolation
+const StaleTarget
+const UnsupportedVersion
+const Version
+func DecodeLine(line []byte, max int) (Request, error)
+func Errorf(code int, format string, args ...any) *Error
+func Marshal(v any) ([]byte, error)
+method (ID) Valid() bool
+type ActionErrorData
+type Application
+type ConfirmParams
+type ConfirmationPresentation
+type Error
+type ID
+type InitializeParams
+type InitializeResult
+type InvokeParams
+type InvokeResult
+type Limits
+type Notification
+type Request
+type Response
+type SnapshotParams
+type SnapshotResult
+var ErrBatch
+
+[github.com/ben-ranford/stave/render]
+func ANSI(text string, level capability.ColorLevel, fg string) string
+func Render(r Request) (Result, error)
+method (Writer) Render(s surface.Surface) (string, error)
+type Budgets
+type EventContext
+type Request
+type Result
+type Writer
+
+[github.com/ben-ranford/stave/replay]
+const DivergenceCapability
+const DivergenceCheckpoint
+const DivergenceConfigHash
+const DivergenceDelivery
+const DivergenceEvent
+const DivergenceModelHash
+const DivergenceNodeID
+const DivergenceRecordCount
+const DivergenceRevision
+const DivergenceSchemaVersion
+const DivergenceSequence
+const DivergenceSessionID
+const DivergenceSurfaceHash
+const DivergenceThemeHash
+const DivergenceTreeHash
+const DivergenceWidthPolicy
+const SchemaVersion
+func DigestFromState[M any](snapshot state.State[M]) Digest
+func Encode(record Record) ([]byte, error)
+func Execute(ctx context.Context, transcript Transcript, apply ApplyFunc) (Transcript, error)
+func NewTranscript(sessionID string, versions state.Versions, initial state.Checkpoint) Transcript
+func Validate(expected, actual Transcript) error
+method (*Divergence) Error() string
+method (*Transcript) Append(record Record)
+method (Transcript) CanonicalJSON() ([]byte, error)
+method (Transcript) Clone() (Transcript, error)
+type ApplyFunc
+type Digest
+type Divergence
+type DivergenceCode
+type Record
+type RemapMetadata
+type Transcript
+
+[github.com/ben-ranford/stave/requirements]
+
+[github.com/ben-ranford/stave/runtime/agent]
+func New(opts Options) *Server
+method (*Server) Close()
+method (*Server) Notifications() <-chan protocol.Notification
+method (*Server) Notify(n protocol.Notification) error
+method (*Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) error
+type AuthorizeCall
+type AuthorizePreparedCall
+type CapabilityNegotiator
+type ConfirmCall
+type Options
+type Server
+type SnapshotEnvelope
+type SnapshotEnvelopeProvider
+type SnapshotPatchProvider
+type SnapshotProvider
+var ErrBackpressure
+var ErrOutputLimit
+
+[github.com/ben-ranford/stave/runtime/human]
+const ProfileAccessibleLine
+const ProfileFullScreen
+const ProfileLine
+const ProfileNonTTY
+const ProfilePlain
+func New(opts Options) (*Runtime, error)
+func NewEvent(chord input.KeyChord) event.Event
+func NewLineDriver(opts LineDriverOptions) (*LineDriver, error)
+func Run(ctx context.Context, opts Options) error
+method (*LineDriver) Close() error
+method (*LineDriver) Draw(_ context.Context, next surface.Surface, _ surface.Patch) error
+method (*LineDriver) Events() <-chan event.Event
+method (*LineDriver) Open(ctx context.Context, _ capability.Policy) (capability.Manifest, error)
+method (*LineDriver) ReadSecret(context.Context, input.SecretPrompt) (secret.Handle, error)
+method (*LineDriver) Restore(context.Context) error
+method (*Runtime) Manifest() capability.Manifest
+method (*Runtime) Open(ctx context.Context) (capability.Manifest, error)
+method (*Runtime) Profile() Profile
+method (*Runtime) ReadSecret(ctx context.Context, prompt input.SecretPrompt) (secret.Handle, error)
+method (*Runtime) Run(ctx context.Context) (err error)
+method (*Runtime) String() string
+type Backend
+type Driver
+type EventSource
+type LineDriver
+type LineDriverOptions
+type Options
+type OutputSink
+type Profile
+type Runtime
+type SecretProvider
+var ErrBackpressure
+var ErrEventSourceClosed
+var ErrInvalidEvent
+var ErrNoDriver
+var ErrNotInteractive
+var ErrOpenFailed
+var ErrRuntimePanic
+var ErrSecureInputDenied
+var ErrStopped
+
+[github.com/ben-ranford/stave/schema/config]
+const SchemaPath
+const Version
+var EnvKeys
+var FlagKeys
+var JSONPaths
+var Required
+
+[github.com/ben-ranford/stave/schema/protocol]
+const Version
+
+[github.com/ben-ranford/stave/secret]
+func NewMemoryStore() *MemoryStore
+method (*MemoryStore) Destroy(h Handle) error
+method (*MemoryStore) Put(value []byte) (Handle, error)
+method (*MemoryStore) Use(h Handle, fn func([]byte) error) error
+type Handle
+type MemoryStore
+type Store
+var ErrEmptySecret
+var ErrInvalidHandle
+var ErrUnavailable
+
+[github.com/ben-ranford/stave/semantic]
+const LiveAssertive
+const LiveNone
+const LivePolite
+const NodeIDNormalizationPolicy
+const SnapshotStability
+const Stable
+func Diff(a, b Tree) Patch
+func NewNode(s NodeSpec) (Node, error)
+func NewTombstones() *Tombstones
+func NewTree(revision uint64, root Node) (Tree, error)
+func NodeIDFor(k NodeKey) (NodeID, error)
+func SecretValue() Value
+method (*Tombstones) Get(id NodeID) (Tombstone, bool)
+method (*Tombstones) Remove(id NodeID, g uint32, r uint64)
+method (*Tombstones) RestoreGeneration(id NodeID) uint32
+method (Node) Actions() []ActionRef
+method (Node) Child(index int) (Node, bool)
+method (Node) ChildCount() int
+method (Node) Children() []Node
+method (Node) Description() string
+method (Node) Flags() Flags
+method (Node) Generation() uint32
+method (Node) ID() NodeID
+method (Node) Layout() LayoutSpec
+method (Node) MarshalJSON() ([]byte, error)
+method (Node) Metadata() map[string]string
+method (Node) MetadataLen() int
+method (Node) Name() string
+method (Node) RangeMetadata(yield func(key, value string) bool)
+method (Node) Relations() []Relation
+method (Node) Role() Role
+method (Node) States() []State
+method (Node) Style() StyleIntent
+method (Node) Value() Value
+method (Node) WithChildren(c ...Node) (Node, error)
+method (NodeID) String() string
+method (NodeID) Valid() bool
+method (Patch) Validate() error
+method (Snapshot) Validate() error
+method (Tree) Hash() string
+method (Tree) MarshalJSON() ([]byte, error)
+method (Tree) Revision() uint64
+method (Tree) Root() Node
+method (Tree) SchemaVersion() string
+method (Tree) Snapshot() Snapshot
+method (Tree) Validate() error
+method (Tree) WithRevision(revision uint64) (Tree, error)
+type ActionID
+type ActionRef
+type Flags
+type LayoutSpec
+type LiveMode
+type Node
+type NodeID
+type NodeKey
+type NodeSpec
+type Patch
+type Relation
+type RelationKind
+type Role
+type Snapshot
+type Stability
+type State
+type StyleIntent
+type Target
+type Tombstone
+type Tombstones
+type Tree
+type Value
+
+[github.com/ben-ranford/stave/session]
+const LifecycleCancelling
+const LifecycleClosed
+const LifecycleRunning
+const LifecycleStarting
+func New[M any](ctx context.Context, opts Options[M]) (*Session[M], error)
+method (*Session[M]) Cancel()
+method (*Session[M]) Checkpoint() (state.Checkpoint, error)
+method (*Session[M]) Close()
+method (*Session[M]) Diagnostics() []Diagnostic
+method (*Session[M]) Lifecycle() Lifecycle
+method (*Session[M]) Send(ev event.Event) error
+method (*Session[M]) Snapshot() (state.State[M], error)
+method (*Session[M]) Transcript() (replay.Transcript, error)
+method (*Session[M]) Wait(ctx context.Context, predicate func(state.State[M]) bool) error
+type Diagnostic
+type Lifecycle
+type Options
+type Reducer
+type Session
+type View
+type ViewResult
+var ErrBackpressure
+var ErrReducerNil
+var ErrSessionClosed
+var ErrViewRequired
+
+[github.com/ben-ranford/stave/state]
+const CheckpointSchemaVersion
+const DefaultWidthPolicy
+const ReplaySchemaVersion
+func Clone[T any](value T) (T, error)
+func HashString(v any) (string, error)
+func New[M any](sessionID string, model M, tree semantic.Tree, meta Meta, policy ModelPolicy[M]) (State[M], error)
+func ValidateSupportedVersions(v Versions) error
+method (Checkpoint) CanonicalJSON() ([]byte, error)
+method (Checkpoint) VerifyChecksum() error
+method (State[M]) Checkpoint(policy ModelPolicy[M]) (Checkpoint, error)
+method (State[M]) Clone(policy ModelPolicy[M]) (State[M], error)
+type Checkpoint
+type Hashes
+type Meta
+type ModelPolicy
+type State
+type Versions
+
+[github.com/ben-ranford/stave/surface]
+func Diff(a, b Surface) Patch
+func MergeDirty(regions []Region) []Region
+func New(w, h int) Surface
+func NewBounded(w, h, maxCells int) (Surface, error)
+func NewBuilder(w, h, maxCells int) (*Builder, error)
+method (*Builder) Surface() Surface
+method (*Builder) WithText(x, y int, text string, style ResolvedStyle, link string, nodeID semantic.NodeID, generation uint32, clip layout.Rect) error
+method (*Surface) Apply(p Patch) error
+method (*Surface) Finalize()
+method (*Surface) Put(x, y int, c Cell)
+method (Surface) ApplyPatch(p Patch) (Surface, error)
+method (Surface) At(x, y int) Cell
+method (Surface) Cells() []Cell
+method (Surface) Hash() [32]byte
+method (Surface) Links() []string
+method (Surface) String() string
+method (Surface) Styles() []ResolvedStyle
+method (Surface) WithCell(x, y int, cell Cell) Surface
+method (Surface) WithStyledGrapheme(x, y int, grapheme string, style ResolvedStyle, link string, nodeID semantic.NodeID, generation uint32, clip layout.Rect) (Surface, error)
+method (Surface) WithText(x, y int, text string, style ResolvedStyle, link string, nodeID semantic.NodeID, generation uint32, clip layout.Rect) (Surface, error)
+type Builder
+type Cell
+type LinkID
+type Patch
+type Region
+type ResolvedStyle
+type Run
+type StyleID
+type Surface
+
+[github.com/ben-ranford/stave/testfixture]
+func BrandTree(namespace, status string) (semantic.Node, error)
+func Must(n semantic.Node, err error) semantic.Node
+func Primitive(name, namespace string) (semantic.Node, error)
+func Surface() (surface.Surface, error)
+func TableTree(namespace string) (semantic.Node, error)
+
+[github.com/ben-ranford/stave/theme]
+const DensityComfortable
+const DensityCompact
+const DensityDense
+const KindBool
+const KindColor
+const KindDuration
+const KindNumber
+const KindString
+const MinimumSemanticContrast
+const ModeAuto
+const ModeDark
+const ModeLight
+func ContrastPairs() []ContrastPair
+func ContrastRatio(foreground, background string) (float64, error)
+func FromDTCG(data []byte) (Theme, error)
+func FromJSON(data []byte) (Theme, error)
+func Quantize(hexColor string, level capability.ColorLevel) string
+func RequiredRoleIDs() []TokenID
+method (Resolved) Asset(id string) (AssetRef, bool)
+method (Resolved) Assets() map[string]AssetRef
+method (Resolved) Glyph(id string) (Glyph, bool)
+method (Resolved) Glyphs() GlyphSet
+method (Resolved) HashString() string
+method (Resolved) StableJSON() []byte
+method (Resolved) Token(id TokenID) (ResolvedValue, bool)
+method (Resolved) Tokens() map[TokenID]ResolvedValue
+method (Resolved) Valid() bool
+method (Resolved) ValidateContrast(minimum float64) error
+method (Theme) CanonicalJSON() ([]byte, error)
+method (Theme) CanonicalVersion() string
+method (Theme) Hash() [32]byte
+method (Theme) HashString() string
+method (Theme) Resolve(mode Mode, density Density, c capability.Manifest) (Resolved, error)
+method (Theme) ToDTCG() ([]byte, error)
+method (Theme) ToJSON() ([]byte, error)
+method (Theme) Validate() error
+type AssetRef
+type ContrastPair
+type Density
+type Glyph
+type GlyphSet
+type Kind
+type Metadata
+type Mode
+type Resolved
+type ResolvedValue
+type Theme
+type TokenID
+type TokenSet
+type Value

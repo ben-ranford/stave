@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "stave.protocol/v1",
+  "oneOf": [{"$ref": "#/$defs/request"}, {"$ref": "#/$defs/notification"}, {"$ref": "#/$defs/response"}],
+  "$defs": {
+    "request": {"type": "object", "additionalProperties": false, "required": ["jsonrpc", "id", "method"], "properties": {"jsonrpc": {"const": "2.0"}, "id": {"$ref": "#/$defs/id"}, "method": {"type": "string", "minLength": 1, "maxLength": 256}, "params": {}}},
+    "notification": {"type": "object", "additionalProperties": false, "required": ["jsonrpc", "method"], "properties": {"jsonrpc": {"const": "2.0"}, "method": {"type": "string", "minLength": 1, "maxLength": 256}, "params": {}}},
+    "response": {"type": "object", "additionalProperties": false, "required": ["jsonrpc", "id"], "properties": {"jsonrpc": {"const": "2.0"}, "id": {"$ref": "#/$defs/id"}, "result": {}, "error": {"$ref": "#/$defs/error"}}},
+    "id": {"oneOf": [{"type": "string", "minLength": 1, "maxLength": 256}, {"type": "integer"}]},
+    "error": {"type": "object", "additionalProperties": false, "required": ["code", "message"], "properties": {"code": {"type": "integer"}, "message": {"type": "string", "minLength": 1, "maxLength": 1024}, "data": {}}},
+    "limits": {"type": "object", "additionalProperties": false, "properties": {"maxMessageBytes": {"type": "integer", "minimum": 0}, "maxOutputBytes": {"type": "integer", "minimum": 0}, "maxTreeNodes": {"type": "integer", "minimum": 0}}},
+    "application": {"type": "object", "additionalProperties": false, "required": ["id", "version"], "properties": {"id": {"type": "string", "minLength": 1}, "version": {"type": "string", "minLength": 1}}},
+    "initializeParams": {"type": "object", "additionalProperties": false, "required": ["protocolVersions"], "properties": {"protocolVersions": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1}, "client": {}, "capabilities": {"type": "object"}, "limits": {"$ref": "#/$defs/limits"}}},
+    "initializeResult": {"type": "object", "additionalProperties": false, "required": ["protocolVersion", "sessionId", "application", "limits"], "properties": {"protocolVersion": {"type": "string", "minLength": 1}, "sessionId": {"type": "string", "minLength": 1}, "server": {"type": "string"}, "application": {"$ref": "#/$defs/application"}, "schemas": {"type": "object", "additionalProperties": {"type": "string"}}, "capabilities": {}, "limits": {"$ref": "#/$defs/limits"}, "manifest": {}, "resolvedManifest": {}}},
+    "snapshotParams": {"type": "object", "additionalProperties": false, "properties": {"mode": {"enum": ["full", "patch", "hash", "action", "diagnostic"]}, "includeActions": {"type": "boolean"}, "sinceRevision": {"type": "integer", "minimum": 0}}},
+    "invokeParams": {"type": "object", "additionalProperties": false, "required": ["callId", "actionId"], "properties": {"callId": {"type": "string", "minLength": 1}, "actionId": {"type": "string", "minLength": 1}, "target": {}, "arguments": {}, "confirmation": {}, "deadlineMs": {"type": "integer"}, "sessionId": {"type": "string"}}},
+    "snapshotResult": {"type": "object", "additionalProperties": false, "required": ["schemaVersion", "sessionId", "sequence", "mode", "revision", "treeHash", "capabilityHash", "semanticVersion", "configHash", "themeHash", "widthVersion"], "properties": {"schemaVersion": {"type": "string", "minLength": 1}, "sessionId": {"type": "string", "minLength": 1}, "sequence": {"type": "integer", "minimum": 0}, "mode": {"enum": ["full", "patch", "hash", "action", "diagnostic"]}, "snapshot": {}, "patch": {}, "revision": {"type": "integer", "minimum": 0}, "treeHash": {"type": "string"}, "capabilityHash": {"type": "string"}, "semanticVersion": {"type": "string"}, "configHash": {"type": "string"}, "themeHash": {"type": "string"}, "widthVersion": {"type": "string"}, "actions": {"type": "array"}, "diagnostics": {"type": "array"}}}
+  }
+}
