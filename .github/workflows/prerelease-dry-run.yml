@@ -35,9 +35,9 @@ jobs:
           cache: true
       - name: Install build tools
         run: |
-          if ! command -v make >/dev/null 2>&1; then
+          if ! command -v make >/dev/null 2>&1 || ! command -v rg >/dev/null 2>&1; then
             sudo apt-get update
-            sudo apt-get install -y make
+            sudo apt-get install -y make ripgrep
           fi
       - name: Run canonical CI
         run: make ci

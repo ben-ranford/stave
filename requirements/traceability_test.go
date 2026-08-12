@@ -262,6 +262,9 @@ func validateEvidenceString(t *testing.T, id, field, value string) {
 	if strings.HasPrefix(value, "/") || strings.Contains(value, "OMX") {
 		t.Fatalf("entry %s %s contains non-portable path evidence %q", id, field, value)
 	}
+	if strings.HasPrefix(value, ".doc/") || strings.HasPrefix(value, ".artifacts/") {
+		t.Fatalf("entry %s %s contains ignored local source evidence %q", id, field, value)
+	}
 	if strings.Contains(value, "://") && !strings.HasPrefix(value, "external://") {
 		t.Fatalf("entry %s %s contains unsupported evidence scheme %q", id, field, value)
 	}

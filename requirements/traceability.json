@@ -18,8 +18,7 @@
         "go run ./scripts/rigor/cmd/rigor boundary-check"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §8 FR-001",
-        ".doc/system-design.md §7",
+        "requirements/TRACEABILITY.md",
         "README.md#proof-points"
       ],
       "status": "implemented",
@@ -42,9 +41,7 @@
         "session/session_test.go::TestSessionCheckpointAndReplayStayDeterministic"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §8 FR-002",
-        ".doc/system-design.md §8.1",
-        ".doc/system-design.md §8.2"
+        "requirements/TRACEABILITY.md"
       ],
       "status": "implemented",
       "milestone": "M2"
@@ -65,8 +62,7 @@
         "action/contract_freeze_test.go::TestNumericEnumExactEqualityInputAndOutput"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §8 FR-003",
-        ".doc/system-design.md §10",
+        "requirements/TRACEABILITY.md",
         "action/action.go"
       ],
       "status": "implemented",
@@ -88,9 +84,7 @@
         "effect/effect_test.go::TestExecutorDeliversDeclarationOrderDespiteParallelCompletion"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §8 FR-004",
-        ".doc/system-design.md §5 AI-12",
-        ".doc/system-design.md §6"
+        "requirements/TRACEABILITY.md"
       ],
       "status": "implemented",
       "milestone": "M2"
@@ -111,8 +105,7 @@
         "state/state_test.go::TestCheckpointRoundTrip"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §8 FR-005",
-        ".doc/system-design.md §10",
+        "requirements/TRACEABILITY.md",
         "README.md#deliberate-limits"
       ],
       "status": "implemented",
@@ -134,9 +127,7 @@
         "runtime/agent/server_test.go::TestSnapshotEnvelopeTypedAndDiagnosticsIndependentOfActions"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §8 FR-010",
-        ".doc/prd.md §10",
-        ".doc/system-design.md §8"
+        "requirements/TRACEABILITY.md"
       ],
       "status": "implemented",
       "milestone": "M4"
@@ -157,8 +148,7 @@
         "semantic/semantic_test.go::TestNodeIDGoldenVectors"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §8 FR-011",
-        ".doc/system-design.md §9",
+        "requirements/TRACEABILITY.md",
         "semantic/semantic.go"
       ],
       "status": "implemented",
@@ -180,9 +170,7 @@
         "replay/replay_test.go::TestValidateDetectsVersionAndHashDivergences"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §8 FR-012",
-        ".doc/prd.md §10 Replay",
-        ".doc/system-design.md §12"
+        "requirements/TRACEABILITY.md"
       ],
       "status": "implemented",
       "milestone": "M2"
@@ -203,9 +191,7 @@
         "keymap/keymap_test.go::TestDispatcherKeepsAllDefaultBindingsMapped"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §8 FR-013",
-        ".doc/system-design.md §5 AI-06",
-        ".doc/system-design.md §27"
+        "requirements/TRACEABILITY.md"
       ],
       "status": "implemented",
       "milestone": "M6"
@@ -226,9 +212,7 @@
         "runtime/agent/server_test.go::TestServerNegotiationDoesNotEchoClientOffer"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §8 FR-014",
-        ".doc/prd.md §12",
-        ".doc/system-design.md §13"
+        "requirements/TRACEABILITY.md"
       ],
       "status": "implemented",
       "milestone": "M4"
@@ -249,8 +233,7 @@
         "event/event_test.go::TestSensitivePayloadsAreRedactedOnSerialization"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §8 FR-015",
-        ".doc/prd.md §9 NFR-008",
+        "requirements/TRACEABILITY.md",
         "action/action.go"
       ],
       "status": "implemented",
@@ -272,8 +255,7 @@
         "protocol/jsonl_test.go::TestDecodeLineRejectsDuplicateAndTrailing"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §8 FR-016",
-        ".doc/system-design.md §19",
+        "requirements/TRACEABILITY.md",
         "README.md#deliberate-limits"
       ],
       "status": "implemented",
@@ -295,9 +277,7 @@
         "capability/capability_test.go::TestContradictoryOverridesDegradeSafely"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §8 FR-017",
-        ".doc/prd.md §24",
-        ".doc/system-design.md §14"
+        "requirements/TRACEABILITY.md"
       ],
       "status": "implemented",
       "milestone": "M4"
@@ -318,8 +298,7 @@
         "theme/theme_test.go::TestThemeMissingRequiredTokensFails"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §8 FR-020",
-        ".doc/prd.md §11",
+        "requirements/TRACEABILITY.md",
         "theme/theme.go"
       ],
       "status": "implemented",
@@ -341,8 +320,7 @@
         "render/render_test.go::TestRenderConsumesStyleIntentAndStatusVariantsAcrossColorModes"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §8 FR-021",
-        ".doc/system-design.md §11",
+        "requirements/TRACEABILITY.md",
         "README.md#proof-points"
       ],
       "status": "implemented",
@@ -364,8 +342,7 @@
         "capability/capability_test.go::TestCapabilityProfileMatrix"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §8 FR-022",
-        ".doc/prd.md §11",
+        "requirements/TRACEABILITY.md",
         "theme/theme.go"
       ],
       "status": "implemented",
@@ -387,8 +364,7 @@
         "conformance/primitive_test.go::TestTwoBrandsShareSemanticContract"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §8 FR-023",
-        ".doc/system-design.md §17",
+        "requirements/TRACEABILITY.md",
         "theme/theme.go"
       ],
       "status": "implemented",
@@ -410,8 +386,7 @@
         "render/render_test.go::TestRenderConsumesStyleIntentAndStatusVariantsAcrossColorModes"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §8 FR-024",
-        ".doc/system-design.md §23.4",
+        "requirements/TRACEABILITY.md",
         "theme/theme.go"
       ],
       "status": "implemented",
@@ -433,8 +408,7 @@
         "internal/examples/theme_test.go::TestIndependentBrandThemesAcrossColourLadder"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §8 FR-025",
-        ".doc/system-design.md §24",
+        "requirements/TRACEABILITY.md",
         "theme/theme.go"
       ],
       "status": "implemented",
@@ -456,9 +430,7 @@
         "layout/layout_test.go::TestMeasureAndArrangeAreDeterministic"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §8 FR-030",
-        ".doc/system-design.md §7",
-        ".doc/system-design.md §8.1"
+        "requirements/TRACEABILITY.md"
       ],
       "status": "implemented",
       "milestone": "M3"
@@ -478,7 +450,7 @@
         "go run ./cmd/atlas"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §8 FR-031",
+        "requirements/TRACEABILITY.md",
         "README.md#proof-points",
         "stave.go"
       ],
@@ -501,8 +473,7 @@
         "internal/terminal/sanitize_test.go::FuzzSanitize"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §8 FR-032",
-        ".doc/system-design.md §16",
+        "requirements/TRACEABILITY.md",
         "README.md#deliberate-limits"
       ],
       "status": "implemented",
@@ -526,9 +497,7 @@
         "conformance/negative_test.go::TestPrimitiveRejectsInvalidBoundsAndAmbiguousTabs"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §8 FR-033",
-        ".doc/prd.md §13",
-        ".doc/system-design.md §23"
+        "requirements/TRACEABILITY.md"
       ],
       "status": "implemented",
       "milestone": "M6"
@@ -549,9 +518,7 @@
         "primitive/primitive_test.go::TestTableRejectsInvalidWindowAndSelectionContracts"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §8 FR-034",
-        ".doc/system-design.md §23.1",
-        ".doc/system-design.md §27"
+        "requirements/TRACEABILITY.md"
       ],
       "status": "implemented",
       "milestone": "M6"
@@ -572,8 +539,7 @@
         "render/render_test.go::TestMachineAndPlainOutputsAvoidANSIAndPreserveSemantics"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §8 FR-035",
-        ".doc/prd.md §12",
+        "requirements/TRACEABILITY.md",
         "capability/capability.go"
       ],
       "status": "implemented",
@@ -595,8 +561,7 @@
         "go run ./scripts/rigor/cmd/rigor boundary-check"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §8 FR-040",
-        ".doc/system-design.md §25",
+        "requirements/TRACEABILITY.md",
         "README.md#proof-points"
       ],
       "status": "planned",
@@ -619,9 +584,7 @@
         "external://github.com/ben-ranford/lopper@unpublished-feat-1492-stave-v2-production#internal/ui/summary_commands_test.go::TestSummaryCommandHandlersPagingAndShortcuts"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §8 FR-041",
-        ".doc/system-design.md §25.1",
-        ".doc/system-design.md §25.3"
+        "requirements/TRACEABILITY.md"
       ],
       "status": "planned",
       "milestone": "M7",
@@ -643,9 +606,7 @@
         "external://github.com/ben-ranford/lopper@unpublished-feat-1492-stave-v2-production#internal/ui/stave_preview_test.go::TestStavePreviewDeterministicAndSanitized"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §8 FR-042",
-        ".doc/prd.md §18",
-        ".doc/system-design.md §25.3"
+        "requirements/TRACEABILITY.md"
       ],
       "status": "planned",
       "milestone": "M7",
@@ -673,7 +634,7 @@
         "internal/examples/theme_test.go::TestIndependentBrandThemesAcrossColourLadder"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §8 FR-043",
+        "requirements/TRACEABILITY.md",
         "README.md#proof-points",
         "docs/atlas-regression-rig.md",
         "scripts/rigor/generated/atlas.render.txt",
@@ -699,8 +660,7 @@
         "layout/layout_test.go::TestMeasureAndArrangeAreDeterministic"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §9 NFR-001",
-        ".doc/system-design.md §5 AI-04",
+        "requirements/TRACEABILITY.md",
         "README.md#proof-points"
       ],
       "status": "implemented",
@@ -721,8 +681,7 @@
         "testfixture/catalog_test.go::TestPrimitiveManifestUsesRealConstructors"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §9 NFR-002",
-        ".doc/system-design.md §32.1",
+        "requirements/TRACEABILITY.md",
         "README.md#proof-points"
       ],
       "status": "implemented",
@@ -743,8 +702,7 @@
         "scripts/rigor/generated/public-api.txt"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §9 NFR-003",
-        ".doc/system-design.md §33",
+        "requirements/TRACEABILITY.md",
         "README.md#deliberate-limits"
       ],
       "status": "implemented",
@@ -766,9 +724,7 @@
         "performance/performance_test.go::TestFixtureHasRequestedNodeCountAndStableHash"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §9 NFR-004",
-        ".doc/system-design.md §30",
-        ".doc/system-design.md §41 AC-21"
+        "requirements/TRACEABILITY.md"
       ],
       "status": "implemented",
       "milestone": "M8"
@@ -788,9 +744,7 @@
         "conformance/hostile_test.go::TestValidateTreeRejectsHiddenFocusableAndMissingFieldErrorRelation"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §9 NFR-005",
-        ".doc/system-design.md §27",
-        ".doc/system-design.md §23"
+        "requirements/TRACEABILITY.md"
       ],
       "status": "implemented",
       "milestone": "M6"
@@ -811,8 +765,7 @@
         "internal/terminal/sanitize_test.go::FuzzSanitize"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §9 NFR-006",
-        ".doc/system-design.md §16",
+        "requirements/TRACEABILITY.md",
         "SECURITY.md"
       ],
       "status": "implemented",
@@ -833,8 +786,7 @@
         "render/render_test.go::TestMachineAndPlainOutputsAvoidANSIAndPreserveSemantics"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §9 NFR-007",
-        ".doc/prd.md §12",
+        "requirements/TRACEABILITY.md",
         "capability/capability.go"
       ],
       "status": "implemented",
@@ -855,8 +807,7 @@
         "runtime/agent/server_test.go::TestSnapshotEnvelopeTypedAndDiagnosticsIndependentOfActions"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §9 NFR-008",
-        ".doc/system-design.md §31",
+        "requirements/TRACEABILITY.md",
         "diag/diag.go"
       ],
       "status": "implemented",
@@ -878,8 +829,7 @@
         ".github/workflows/ci.yml"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §9 NFR-009",
-        ".doc/system-design.md §7",
+        "requirements/TRACEABILITY.md",
         "README.md#deliberate-limits"
       ],
       "status": "implemented",
@@ -901,9 +851,7 @@
         "primitive/CONTRACT.md"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §9 NFR-010",
-        ".doc/system-design.md §23",
-        ".doc/system-design.md §35"
+        "requirements/TRACEABILITY.md"
       ],
       "status": "implemented",
       "milestone": "M8"
@@ -923,8 +871,7 @@
         "semantic/semantic_test.go::TestSnapshotNodeRoundTripAndRedaction"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §13",
-        ".doc/system-design.md §23.6"
+        "requirements/TRACEABILITY.md"
       ],
       "status": "implemented",
       "milestone": "M6"
@@ -945,8 +892,7 @@
         "layout/layout_test.go::TestArrangeSupportsStackRowSplitGridScrollOverlayInsetConditionalAndRecords"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §13",
-        ".doc/system-design.md §23.6"
+        "requirements/TRACEABILITY.md"
       ],
       "status": "implemented",
       "milestone": "M6"
@@ -966,8 +912,7 @@
         "surface/surface_test.go::TestPatchRoundTripAndDirtyRegions"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §13",
-        ".doc/system-design.md §7"
+        "requirements/TRACEABILITY.md"
       ],
       "status": "implemented",
       "milestone": "M6"
@@ -987,9 +932,7 @@
         "primitive/primitive_test.go::TestTableExplicitStates"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §13",
-        ".doc/system-design.md §23.1",
-        ".doc/system-design.md §23.6"
+        "requirements/TRACEABILITY.md"
       ],
       "status": "implemented",
       "milestone": "M6"
@@ -1009,8 +952,7 @@
         "render/render_test.go::TestRenderConsumesStyleIntentAndStatusVariantsAcrossColorModes"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §13",
-        ".doc/system-design.md §23.6"
+        "requirements/TRACEABILITY.md"
       ],
       "status": "implemented",
       "milestone": "M6"
@@ -1030,8 +972,7 @@
         "focus/focus_test.go::TestGraphScopePushAndPopRestoresPreviousFocus"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §13",
-        ".doc/system-design.md §27"
+        "requirements/TRACEABILITY.md"
       ],
       "status": "implemented",
       "milestone": "M6"
@@ -1051,8 +992,7 @@
         "primitive/primitive_test.go::TestTableModalAndMasterDetailContracts"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §13",
-        ".doc/system-design.md §23.1"
+        "requirements/TRACEABILITY.md"
       ],
       "status": "implemented",
       "milestone": "M6"
@@ -1072,9 +1012,7 @@
         "layout/layout_test.go::TestArrangeOmitsHiddenOffscreenAndZeroAreaFocusableNodes"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §13",
-        ".doc/prd.md §12",
-        ".doc/system-design.md §21"
+        "requirements/TRACEABILITY.md"
       ],
       "status": "implemented",
       "milestone": "M6"
@@ -1095,9 +1033,7 @@
         "input/input_test.go::TestMemorySecretStoreOnlyExposesOpaqueHandle"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §13",
-        ".doc/system-design.md §23.3",
-        ".doc/system-design.md §16"
+        "requirements/TRACEABILITY.md"
       ],
       "status": "implemented",
       "milestone": "M6"
@@ -1118,8 +1054,7 @@
         "testfixture/catalog_test.go::TestPrimitiveManifestUsesRealConstructors"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §13",
-        ".doc/system-design.md §23.4"
+        "requirements/TRACEABILITY.md"
       ],
       "status": "implemented",
       "milestone": "M6"
@@ -1139,8 +1074,7 @@
         "render/render_test.go::TestWriterExactANSISequenceFixture"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §13",
-        ".doc/system-design.md §21",
+        "requirements/TRACEABILITY.md",
         "README.md#deliberate-limits"
       ],
       "status": "implemented",
@@ -1162,7 +1096,7 @@
         "semantic/semantic_test.go::TestTreeSnapshotRedaction"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §13",
+        "requirements/TRACEABILITY.md",
         "semantic/semantic.go",
         "README.md#proof-points"
       ],
@@ -1185,7 +1119,7 @@
         "keymap/keymap_test.go::TestInventoryIsImmutableAndExposesVersionedActions"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §13",
+        "requirements/TRACEABILITY.md",
         "action/action.go",
         "README.md#proof-points"
       ],
@@ -1207,8 +1141,7 @@
         "runtime/agent/server_test.go::TestSnapshotEnvelopeTypedAndDiagnosticsIndependentOfActions"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §13",
-        ".doc/system-design.md §31",
+        "requirements/TRACEABILITY.md",
         "diag/diag.go"
       ],
       "status": "implemented",
@@ -1230,8 +1163,7 @@
         "conformance/negative_test.go::TestPrimitiveRejectsInvalidBoundsAndAmbiguousTabs"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §13",
-        ".doc/system-design.md §23.6"
+        "requirements/TRACEABILITY.md"
       ],
       "status": "implemented",
       "milestone": "M6"
@@ -1251,8 +1183,7 @@
         "primitive/primitive_test.go::TestTableRejectsInvalidWindowAndSelectionContracts"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §13",
-        ".doc/system-design.md §23.1"
+        "requirements/TRACEABILITY.md"
       ],
       "status": "implemented",
       "milestone": "M6"
@@ -1272,8 +1203,7 @@
         "conformance/primitive_test.go::TestInteractivePrimitiveActionsHaveKeyboardBindings"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §13",
-        ".doc/system-design.md §23.5"
+        "requirements/TRACEABILITY.md"
       ],
       "status": "implemented",
       "milestone": "M6"
@@ -1293,8 +1223,7 @@
         "render/render_test.go::TestMachineAndPlainOutputsAvoidANSIAndPreserveSemantics"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §13",
-        ".doc/prd.md §11"
+        "requirements/TRACEABILITY.md"
       ],
       "status": "implemented",
       "milestone": "M6"
@@ -1314,8 +1243,7 @@
         "primitive/primitive_test.go::TestTableModalAndMasterDetailContracts"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §13",
-        ".doc/prd.md §24"
+        "requirements/TRACEABILITY.md"
       ],
       "status": "implemented",
       "milestone": "M6"
@@ -1337,8 +1265,7 @@
         "focus/focus_test.go::TestGraphScopePushAndPopRestoresPreviousFocus"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §13",
-        ".doc/system-design.md §23.5"
+        "requirements/TRACEABILITY.md"
       ],
       "status": "implemented",
       "milestone": "M6"
@@ -1359,8 +1286,7 @@
         "adapters/ssh/bridge_test.go::TestSSHTransportContract_ProfileNegotiationAndNoninteractiveFallback"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §13",
-        ".doc/system-design.md §7"
+        "requirements/TRACEABILITY.md"
       ],
       "status": "implemented",
       "milestone": "M5"
@@ -1381,9 +1307,7 @@
         "adapters/lipgloss/lipgloss_test.go::TestSharedAdapterSurfaceFixture"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §13",
-        ".doc/system-design.md §4.2",
-        ".doc/system-design.md §40 M5"
+        "requirements/TRACEABILITY.md"
       ],
       "status": "implemented",
       "milestone": "M5"
@@ -1405,8 +1329,7 @@
         "adapters/ssh/bridge_test.go::TestSSHTransportContract_NoninteractiveFallback"
       ],
       "documentationEvidence": [
-        ".doc/prd.md §13",
-        ".doc/system-design.md §19"
+        "requirements/TRACEABILITY.md"
       ],
       "status": "implemented",
       "milestone": "M4"
@@ -1431,7 +1354,7 @@
         "scripts/rigor/generated/atlas.matrix.json"
       ],
       "documentationEvidence": [
-        ".doc/system-design.md §5 AI-01",
+        "requirements/TRACEABILITY.md",
         "README.md#proof-points",
         "cmd/lopper/main.go",
         "scripts/rigor/generated/lopper.render.txt",
@@ -1455,7 +1378,7 @@
         "scripts/rigor/generated/dependency-inventory.json"
       ],
       "documentationEvidence": [
-        ".doc/system-design.md §5 AI-02",
+        "requirements/TRACEABILITY.md",
         "README.md#proof-points",
         "go.mod"
       ],
@@ -1477,8 +1400,7 @@
         "external://github.com/ben-ranford/lopper@unpublished-feat-1492-stave-v2-production#internal/ui/stave_preview_test.go::TestStaveParityActualUnicodeEqualsLegacyAndPreservesUnicode"
       ],
       "documentationEvidence": [
-        ".doc/system-design.md §5 AI-03",
-        ".doc/system-design.md §25.1",
+        "requirements/TRACEABILITY.md",
         "README.md#deliberate-limits"
       ],
       "status": "planned",
@@ -1500,7 +1422,7 @@
         "surface/surface_test.go::TestSurfaceDeterminismAndMergeDirty"
       ],
       "documentationEvidence": [
-        ".doc/system-design.md §5 AI-04",
+        "requirements/TRACEABILITY.md",
         "README.md#proof-points",
         "doc.go"
       ],
@@ -1522,7 +1444,7 @@
         "render/render_test.go::TestMachineAndPlainOutputsAvoidANSIAndPreserveSemantics"
       ],
       "documentationEvidence": [
-        ".doc/system-design.md §5 AI-05",
+        "requirements/TRACEABILITY.md",
         "README.md#proof-points",
         "doc.go"
       ],
@@ -1544,7 +1466,7 @@
         "keymap/keymap_test.go::TestDispatcherRoutesActivateToTypedAction"
       ],
       "documentationEvidence": [
-        ".doc/system-design.md §5 AI-06",
+        "requirements/TRACEABILITY.md",
         "README.md#proof-points",
         "stave.go"
       ],
@@ -1566,7 +1488,7 @@
         "runtime/agent/server_test.go::TestServerInvokeUsesCamelCaseDTOAndSafeTypedError"
       ],
       "documentationEvidence": [
-        ".doc/system-design.md §5 AI-07",
+        "requirements/TRACEABILITY.md",
         "README.md#proof-points",
         "semantic/semantic.go"
       ],
@@ -1588,8 +1510,7 @@
         "render/render_test.go::TestMachineAndPlainOutputsAvoidANSIAndPreserveSemantics"
       ],
       "documentationEvidence": [
-        ".doc/system-design.md §5 AI-08",
-        ".doc/prd.md §12",
+        "requirements/TRACEABILITY.md",
         "capability/capability.go"
       ],
       "status": "implemented",
@@ -1610,8 +1531,7 @@
         "go run ./scripts/rigor/cmd/rigor boundary-check"
       ],
       "documentationEvidence": [
-        ".doc/system-design.md §5 AI-09",
-        ".doc/system-design.md §7",
+        "requirements/TRACEABILITY.md",
         "README.md#deliberate-limits"
       ],
       "status": "implemented",
@@ -1632,7 +1552,7 @@
         "scripts/rigor/generated/public-api.txt"
       ],
       "documentationEvidence": [
-        ".doc/system-design.md §5 AI-10",
+        "requirements/TRACEABILITY.md",
         "README.md#proof-points",
         "go.mod"
       ],
@@ -1653,7 +1573,7 @@
         "action/contract_freeze_test.go::TestRegistryDefinitionAccessorClonesConcurrently"
       ],
       "documentationEvidence": [
-        ".doc/system-design.md §5 AI-11",
+        "requirements/TRACEABILITY.md",
         "semantic/semantic.go",
         "README.md#proof-points"
       ],
@@ -1674,8 +1594,7 @@
         "effect/effect_test.go::TestExecutorDeliversDeclarationOrderDespiteParallelCompletion"
       ],
       "documentationEvidence": [
-        ".doc/system-design.md §5 AI-12",
-        ".doc/system-design.md §6",
+        "requirements/TRACEABILITY.md",
         "README.md#deliberate-limits"
       ],
       "status": "implemented",
@@ -1696,7 +1615,7 @@
         "action/action_test.go::TestConcurrentConfirmationSingleUse"
       ],
       "documentationEvidence": [
-        ".doc/system-design.md §5 AI-13",
+        "requirements/TRACEABILITY.md",
         "SECURITY.md",
         "README.md#proof-points"
       ],
@@ -1719,8 +1638,7 @@
         "secret/secret_test.go::TestMemoryStoreOpaqueSingleUseAndDestroy"
       ],
       "documentationEvidence": [
-        ".doc/system-design.md §5 AI-14",
-        ".doc/system-design.md §16",
+        "requirements/TRACEABILITY.md",
         "README.md#deliberate-limits"
       ],
       "status": "implemented",
@@ -1740,7 +1658,7 @@
         "internal/terminal/sanitize_test.go::FuzzSanitize"
       ],
       "documentationEvidence": [
-        ".doc/system-design.md §5 AI-15",
+        "requirements/TRACEABILITY.md",
         "SECURITY.md",
         "README.md#proof-points"
       ],
@@ -1763,8 +1681,7 @@
         "docs/adr/README.md"
       ],
       "documentationEvidence": [
-        ".doc/system-design.md §40 M0",
-        ".doc/prd.md §21 M0",
+        "requirements/TRACEABILITY.md",
         "README.md#deliberate-limits"
       ],
       "status": "implemented",
@@ -1785,7 +1702,7 @@
         "action/contract_freeze_test.go::TestNumericEnumExactEqualityInputAndOutput"
       ],
       "documentationEvidence": [
-        ".doc/system-design.md §40 M1",
+        "requirements/TRACEABILITY.md",
         "README.md#deliberate-limits",
         "doc.go"
       ],
@@ -1807,8 +1724,7 @@
         "effect/effect_test.go::TestExecutorDeliversDeclarationOrderDespiteParallelCompletion"
       ],
       "documentationEvidence": [
-        ".doc/system-design.md §40 M2",
-        ".doc/prd.md §21 M1",
+        "requirements/TRACEABILITY.md",
         "README.md#deliberate-limits"
       ],
       "status": "implemented",
@@ -1831,8 +1747,7 @@
         "layout/layout_test.go::TestMeasureAndArrangeAreDeterministic"
       ],
       "documentationEvidence": [
-        ".doc/system-design.md §40 M3",
-        ".doc/prd.md §21 M2",
+        "requirements/TRACEABILITY.md",
         "README.md#deliberate-limits"
       ],
       "status": "implemented",
@@ -1853,8 +1768,7 @@
         "runtime/agent/server_test.go::TestServerInvokeUsesCamelCaseDTOAndSafeTypedError"
       ],
       "documentationEvidence": [
-        ".doc/system-design.md §40 M4",
-        ".doc/prd.md §21 M4",
+        "requirements/TRACEABILITY.md",
         "README.md#deliberate-limits"
       ],
       "status": "implemented",
@@ -1875,8 +1789,7 @@
         "make adapters"
       ],
       "documentationEvidence": [
-        ".doc/system-design.md §40 M5",
-        ".doc/system-design.md §4.2",
+        "requirements/TRACEABILITY.md",
         "README.md#deliberate-limits"
       ],
       "status": "implemented",
@@ -1896,9 +1809,7 @@
         "conformance/primitive_test.go::TestInteractivePrimitiveActionsHaveKeyboardBindings"
       ],
       "documentationEvidence": [
-        ".doc/system-design.md §40 M6",
-        ".doc/prd.md §13",
-        ".doc/system-design.md §23"
+        "requirements/TRACEABILITY.md"
       ],
       "status": "implemented",
       "milestone": "M6"
@@ -1919,9 +1830,7 @@
         "go run ./cmd/atlas"
       ],
       "documentationEvidence": [
-        ".doc/system-design.md §40 M7",
-        ".doc/prd.md §18",
-        ".doc/system-design.md §25.3"
+        "requirements/TRACEABILITY.md"
       ],
       "status": "planned",
       "milestone": "M7",
@@ -1944,8 +1853,7 @@
         "make release-dry-run"
       ],
       "documentationEvidence": [
-        ".doc/system-design.md §40 M8",
-        ".doc/system-design.md §35",
+        "requirements/TRACEABILITY.md",
         "README.md#deliberate-limits"
       ],
       "status": "implemented",
@@ -1967,8 +1875,7 @@
         "scripts/rigor/generated/public-api.txt"
       ],
       "documentationEvidence": [
-        ".doc/system-design.md §41 AC-01",
-        ".doc/system-design.md §4.1",
+        "requirements/TRACEABILITY.md",
         "go.mod"
       ],
       "status": "implemented",
@@ -1989,7 +1896,7 @@
         "scripts/rigor/generated/dependency-inventory.json"
       ],
       "documentationEvidence": [
-        ".doc/system-design.md §41 AC-02",
+        "requirements/TRACEABILITY.md",
         "go.mod",
         "README.md#proof-points"
       ],
@@ -2017,7 +1924,7 @@
         "scripts/rigor/generated/atlas.matrix.json"
       ],
       "documentationEvidence": [
-        ".doc/system-design.md §41 AC-03",
+        "requirements/TRACEABILITY.md",
         "README.md#proof-points",
         "cmd/lopper/main.go"
       ],
@@ -2038,8 +1945,7 @@
         "semantic/semantic_test.go::TestNodeIdentityStable"
       ],
       "documentationEvidence": [
-        ".doc/system-design.md §41 AC-04",
-        ".doc/system-design.md §9",
+        "requirements/TRACEABILITY.md",
         "semantic/semantic.go"
       ],
       "status": "implemented",
@@ -2060,7 +1966,7 @@
         "stave_test.go::TestProgramRejectsUnregisteredSemanticActions"
       ],
       "documentationEvidence": [
-        ".doc/system-design.md §41 AC-05",
+        "requirements/TRACEABILITY.md",
         "README.md#proof-points",
         "stave.go"
       ],
@@ -2082,8 +1988,7 @@
         "surface/surface_test.go::TestSurfaceDeterminismAndMergeDirty"
       ],
       "documentationEvidence": [
-        ".doc/system-design.md §41 AC-06",
-        ".doc/system-design.md §12",
+        "requirements/TRACEABILITY.md",
         "README.md#proof-points"
       ],
       "status": "implemented",
@@ -2104,8 +2009,7 @@
         "go test ./session ./layout ./render"
       ],
       "documentationEvidence": [
-        ".doc/system-design.md §41 AC-07",
-        ".doc/system-design.md §32.1",
+        "requirements/TRACEABILITY.md",
         "README.md#proof-points"
       ],
       "status": "implemented",
@@ -2125,9 +2029,7 @@
         "conformance/hostile_test.go::TestValidateTreeRejectsHiddenFocusableAndMissingFieldErrorRelation"
       ],
       "documentationEvidence": [
-        ".doc/system-design.md §41 AC-08",
-        ".doc/system-design.md §27",
-        ".doc/system-design.md §23"
+        "requirements/TRACEABILITY.md"
       ],
       "status": "implemented",
       "milestone": "M6"
@@ -2147,8 +2049,7 @@
         "conformance/primitive_test.go::TestInteractivePrimitiveActionsHaveKeyboardBindings"
       ],
       "documentationEvidence": [
-        ".doc/system-design.md §41 AC-09",
-        ".doc/system-design.md §27",
+        "requirements/TRACEABILITY.md",
         "README.md#proof-points"
       ],
       "status": "implemented",
@@ -2170,8 +2071,7 @@
         "theme/theme_test.go::TestReducedMotionZeroesDurations"
       ],
       "documentationEvidence": [
-        ".doc/system-design.md §41 AC-10",
-        ".doc/prd.md §12",
+        "requirements/TRACEABILITY.md",
         "capability/capability.go"
       ],
       "status": "implemented",
@@ -2191,8 +2091,7 @@
         "render/render_test.go::TestMachineAndPlainOutputsAvoidANSIAndPreserveSemantics"
       ],
       "documentationEvidence": [
-        ".doc/system-design.md §41 AC-11",
-        ".doc/system-design.md §19",
+        "requirements/TRACEABILITY.md",
         "README.md#deliberate-limits"
       ],
       "status": "implemented",
@@ -2213,7 +2112,7 @@
         "conformance/negative_test.go::FuzzPrimitiveTextControlBytes"
       ],
       "documentationEvidence": [
-        ".doc/system-design.md §41 AC-12",
+        "requirements/TRACEABILITY.md",
         "SECURITY.md",
         "README.md#proof-points"
       ],
@@ -2236,8 +2135,7 @@
         "adapters/ssh/bridge_test.go::TestSSHTransportContract_NoSecretDiagnosticLeakage"
       ],
       "documentationEvidence": [
-        ".doc/system-design.md §41 AC-13",
-        ".doc/system-design.md §16",
+        "requirements/TRACEABILITY.md",
         "README.md#deliberate-limits"
       ],
       "status": "implemented",
@@ -2258,8 +2156,7 @@
         "action/action_test.go::TestConcurrentConfirmationSingleUse"
       ],
       "documentationEvidence": [
-        ".doc/system-design.md §41 AC-14",
-        ".doc/system-design.md §16",
+        "requirements/TRACEABILITY.md",
         "action/action.go"
       ],
       "status": "implemented",
@@ -2280,9 +2177,7 @@
         "session/session_test.go::TestSessionQueueBackpressureAndCoalescing"
       ],
       "documentationEvidence": [
-        ".doc/system-design.md §41 AC-15",
-        ".doc/system-design.md §30",
-        ".doc/system-design.md §31"
+        "requirements/TRACEABILITY.md"
       ],
       "status": "implemented",
       "milestone": "M5"
@@ -2302,8 +2197,7 @@
         "go test -race ./..."
       ],
       "documentationEvidence": [
-        ".doc/system-design.md §41 AC-16",
-        ".doc/system-design.md §21",
+        "requirements/TRACEABILITY.md",
         "README.md#deliberate-limits"
       ],
       "status": "implemented",
@@ -2325,9 +2219,7 @@
         "external://github.com/ben-ranford/lopper@unpublished-feat-1492-stave-v2-production#internal/ui/summary_commands_test.go::TestSummaryHelperBranches"
       ],
       "documentationEvidence": [
-        ".doc/system-design.md §41 AC-17",
-        ".doc/system-design.md §25.3",
-        ".doc/prd.md §25"
+        "requirements/TRACEABILITY.md"
       ],
       "status": "planned",
       "milestone": "M7",
@@ -2349,8 +2241,7 @@
         "external://github.com/ben-ranford/lopper@unpublished-feat-1492-stave-v2-production#internal/ui/stave_preview.go"
       ],
       "documentationEvidence": [
-        ".doc/system-design.md §41 AC-18",
-        ".doc/system-design.md §25",
+        "requirements/TRACEABILITY.md",
         "README.md#proof-points"
       ],
       "status": "planned",
@@ -2373,9 +2264,7 @@
         "testfixture/surface.go"
       ],
       "documentationEvidence": [
-        ".doc/system-design.md §41 AC-19",
-        ".doc/system-design.md §4.2",
-        ".doc/system-design.md §40 M5"
+        "requirements/TRACEABILITY.md"
       ],
       "status": "implemented",
       "milestone": "M5"
@@ -2395,7 +2284,7 @@
         ".github/workflows/ci.yml"
       ],
       "documentationEvidence": [
-        ".doc/system-design.md §41 AC-20",
+        "requirements/TRACEABILITY.md",
         "docs/release.md",
         ".github/workflows/ci.yml"
       ],
@@ -2414,15 +2303,12 @@
       ],
       "verificationArtifacts": [
         "make verify-performance",
-        ".artifacts/performance/report.json",
         "scripts/rigor/refresh-generated.sh performance-report",
         "adapters/ssh/bridge_test.go::TestSSHTransportPerformanceBudget",
         "docs/adr/ADR-017.md"
       ],
       "documentationEvidence": [
-        ".doc/system-design.md §41 AC-21",
-        ".doc/system-design.md §30",
-        ".doc/system-design.md §38"
+        "requirements/TRACEABILITY.md"
       ],
       "status": "implemented",
       "milestone": "M8"
@@ -2443,9 +2329,7 @@
         "docs/lopper-migration.md"
       ],
       "documentationEvidence": [
-        ".doc/system-design.md §41 AC-22",
-        ".doc/system-design.md §25.3",
-        ".doc/prd.md §18"
+        "requirements/TRACEABILITY.md"
       ],
       "status": "planned",
       "milestone": "M7",
