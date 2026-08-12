@@ -25,6 +25,21 @@ func TestMeasureIdleCPUReportsFiniteRatio(t *testing.T) {
 	if got.Name == "" || got.Window <= 0 || math.IsNaN(got.Value) || math.IsInf(got.Value, 0) || got.Value < 0 {
 		t.Fatalf("invalid idle CPU measurement: %+v", got)
 	}
+	if len(got.Attempts) != 3 {
+		t.Fatalf("idle CPU attempts = %d, want 3", len(got.Attempts))
+	}
+	minAttempt := got.Attempts[0]
+	for _, attempt := range got.Attempts {
+		if math.IsNaN(attempt) || math.IsInf(attempt, 0) || attempt < 0 {
+			t.Fatalf("invalid idle CPU attempt %.3f", attempt)
+		}
+		if attempt < minAttempt {
+			minAttempt = attempt
+		}
+	}
+	if got.Value != minAttempt {
+		t.Fatalf("idle CPU best = %.3f, want minimum attempt %.3f", got.Value, minAttempt)
+	}
 }
 
 func TestFixtureHasRequestedNodeCountAndStableHash(t *testing.T) {

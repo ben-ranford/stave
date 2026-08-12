@@ -396,6 +396,7 @@
         "github.com/ben-ranford/stave/secret",
         "github.com/ben-ranford/stave/semantic",
         "github.com/ben-ranford/stave/surface",
+        "runtime",
         "runtime/metrics",
         "sort",
         "time"
