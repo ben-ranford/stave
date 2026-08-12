@@ -246,7 +246,7 @@ func renderPublicAPI(modulePath string, pkgs []goListPackage) (string, error) {
 							for _, spec := range d.Specs {
 								typeSpec, ok := spec.(*ast.TypeSpec)
 								if ok && ast.IsExported(typeSpec.Name.Name) {
-									entries = append(entries, fmt.Sprintf("type %s", typeSpec.Name.Name))
+									entries = append(entries, typeDeclaration(fset, typeSpec))
 								}
 							}
 						}
@@ -603,7 +603,7 @@ func execCommand(ctx context.Context, name string, args ...string) ([]byte, erro
 	return stdout.Bytes(), nil
 }
 
-func exprString(fset *token.FileSet, expr ast.Expr) string {
+func exprString(fset *token.FileSet, expr any) string {
 	var buf bytes.Buffer
 	_ = printer.Fprint(&buf, fset, expr)
 	return buf.String()
@@ -613,6 +613,101 @@ func funcSignature(fset *token.FileSet, fn *ast.FuncType) string {
 	var buf bytes.Buffer
 	_ = printer.Fprint(&buf, fset, fn)
 	return strings.TrimPrefix(buf.String(), "func")
+}
+
+func typeDeclaration(fset *token.FileSet, spec *ast.TypeSpec) string {
+	var out strings.Builder
+	out.WriteString("type ")
+	out.WriteString(spec.Name.Name)
+	if spec.TypeParams != nil {
+		out.WriteString(typeParameterList(fset, spec.TypeParams))
+	}
+	if spec.Assign.IsValid() {
+		out.WriteString(" =")
+	}
+	out.WriteByte(' ')
+	switch typ := spec.Type.(type) {
+	case *ast.StructType:
+		out.WriteString("struct { ")
+		out.WriteString(strings.Join(publicStructFields(fset, typ.Fields), "; "))
+		out.WriteString(" }")
+	case *ast.InterfaceType:
+		out.WriteString("interface { ")
+		out.WriteString(strings.Join(publicInterfaceElements(fset, typ.Methods), "; "))
+		out.WriteString(" }")
+	default:
+		out.WriteString(exprString(fset, spec.Type))
+	}
+	return out.String()
+}
+
+func publicStructFields(fset *token.FileSet, fields *ast.FieldList) []string {
+	if fields == nil {
+		return nil
+	}
+	out := make([]string, 0, len(fields.List))
+	for _, field := range fields.List {
+		names := exportedFieldNames(field.Names)
+		if len(field.Names) > 0 && len(names) == 0 {
+			continue
+		}
+		declaration := exprString(fset, field.Type)
+		if len(names) > 0 {
+			declaration = strings.Join(names, ", ") + " " + declaration
+		}
+		if field.Tag != nil {
+			declaration += " " + field.Tag.Value
+		}
+		out = append(out, declaration)
+	}
+	return out
+}
+
+func publicInterfaceElements(fset *token.FileSet, fields *ast.FieldList) []string {
+	if fields == nil {
+		return nil
+	}
+	out := make([]string, 0, len(fields.List))
+	for _, field := range fields.List {
+		names := exportedFieldNames(field.Names)
+		if len(field.Names) > 0 && len(names) == 0 {
+			continue
+		}
+		declaration := exprString(fset, field.Type)
+		if fn, ok := field.Type.(*ast.FuncType); ok {
+			declaration = funcSignature(fset, fn)
+		}
+		if len(names) > 0 {
+			declaration = strings.Join(names, ", ") + declaration
+		}
+		out = append(out, declaration)
+	}
+	return out
+}
+
+func typeParameterList(fset *token.FileSet, fields *ast.FieldList) string {
+	if fields == nil || len(fields.List) == 0 {
+		return ""
+	}
+	parameters := make([]string, 0, len(fields.List))
+	for _, field := range fields.List {
+		names := make([]string, 0, len(field.Names))
+		for _, name := range field.Names {
+			names = append(names, name.Name)
+		}
+		parameters = append(parameters, strings.Join(names, ", ")+" "+exprString(fset, field.Type))
+	}
+	return "[" + strings.Join(parameters, ", ") + "]"
+}
+
+func exportedFieldNames(names []*ast.Ident) []string {
+	exported := make([]string, 0, len(names))
+	for _, name := range names {
+		if ast.IsExported(name.Name) {
+			exported = append(exported, name.Name)
+		}
+	}
+	return exported
 }
 
 func sortedCopy(values []string) []string {
