@@ -4,7 +4,10 @@
 
 Lopper is Stave's first proving client, not a core product boundary. Atlas is the contrasting second-client and brand fixture; the Bubble Tea and Lip Gloss modules also consume one shared adapter-neutral surface fixture. Lopper proof references are published as portable `external://` citations until the proving-client worktree is mirrored into this repository.
 
-Release validation: `STAVE_RELEASE_GATE=1 go test ./requirements -count=1`. The v1.0.0 gate remains blocked while any P0, P1, or acceptance-criterion entry is planned.
+Release validation has two explicit levels: `make release-contract` validates a
+prerelease candidate, while `make release-ga-contract` rejects every planned
+normative entry or unpublished external proof. The v1.0.0 GA gate remains
+blocked while any P0, P1, or acceptance-criterion entry is planned.
 
 ## Functional requirements
 
@@ -115,7 +118,7 @@ Release validation: `STAVE_RELEASE_GATE=1 go test ./requirements -count=1`. The 
 | `M5` | Human runtime and optional adapters | `runtime/human/human_test.go::TestRuntimeSignalAndPanicRestore`<br>`make adapters` | implemented | M5 |
 | `M6` | Primitives | `testfixture/catalog_test.go::TestPrimitiveManifestUsesRealConstructors`<br>`conformance/primitive_test.go::TestInteractivePrimitiveActionsHaveKeyboardBindings` | implemented | M6 |
 | `M7` | Lopper adoption | `external://github.com/ben-ranford/lopper@unpublished-feat-1492-stave-v2-production#internal/ui/stave_preview_test.go::TestStaveParityActualASCIIEqualsLegacy`<br>`external://github.com/ben-ranford/lopper@unpublished-feat-1492-stave-v2-production#internal/ui/stave_preview_test.go::TestStavePreviewPreservesCommandAndConsequentialActionGrammar`<br>`go run ./cmd/atlas` | planned | M7 |
-| `M8` | Hardening and v1 | `make fmt-check vet test race fuzz-smoke benchmark-smoke verify-performance license-inventory govulncheck`<br>`STAVE_RELEASE_GATE=1 go test ./requirements -count=1`<br>`make release-dry-run` | implemented | M8 |
+| `M8` | Hardening and v1 | `make fmt-check vet test race fuzz-smoke benchmark-smoke verify-performance license-inventory govulncheck`<br>`make release-contract`<br>`make release-ga-contract`<br>`make release-dry-run` | implemented | M8 |
 
 ## Acceptance criteria
 
@@ -146,4 +149,8 @@ Release validation: `STAVE_RELEASE_GATE=1 go test ./requirements -count=1`. The 
 
 ## Current v1.0.0 status
 
-All traced requirements are implemented. Publication still requires reviewed remote CI for the exact tag commit.
+The release-candidate contract is implemented. Eight entries remain planned for
+GA: `FR-040`, `FR-041`, `FR-042`, `AI-03`, `M7`, `AC-17`, `AC-18`, and
+`AC-22`. They require published, immutable Lopper proving-client integration,
+parity, and rollback evidence. Candidate publication also requires reviewed
+remote CI for the exact commit being tagged.

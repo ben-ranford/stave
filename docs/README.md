@@ -11,7 +11,7 @@ These documents translate the approved Stave v1 proposal, PRD, and system design
 ## Current repo status
 
 - The checked-in implementation proves the package split, semantic nodes, capability negotiation (including full-colour degradation), deterministic snapshots/replay, typed actions, bounded runtime paths, secret handling, layout/cells, protocol transport, P0 primitives, and the synthetic/component performance report. Live SSH loopback evidence remains separate in the SSH adapter test.
-- Remaining release blockers are the root facade/API freeze, external Lopper application migration and rollback evidence, platform terminal soak, and completion of P1 breadth.
+- The root facade, P0/P1 primitives, colour ladder, portability checks, and measured performance evidence are implemented. The remaining GA blockers are the published Lopper proving-client integration, parity, and rollback evidence tracked in the traceability ledger; they do not block the root-module release candidate.
 - When a document says `Planned`, it is a required contract that is not yet fully evidenced by this branch; it is not a claim that the package is absent.
 
 ## Reading order

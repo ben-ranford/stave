@@ -11,14 +11,15 @@ base_version="1.0.0"
 if [[ -n "${last_tag}" ]]; then
 	base_version="${last_tag#v}"
 	base_version="${base_version%%-*}"
+	base_version="${base_version%%+*}"
 fi
 
 timestamp="$(date -u +%Y%m%d%H%M%S)"
 sha="$(git rev-parse --short=7 HEAD)"
-candidate_tag="v${base_version}-rolling.${timestamp}.${sha}"
+candidate_tag="v${base_version}-rolling.${timestamp}.g${sha}"
 
 channel="$("$(dirname "${BASH_SOURCE[0]}")/check-release-tag.sh" "${candidate_tag}")"
-if [[ "${channel}" != prerelease ]] || [[ ! "${candidate_tag}" =~ -rolling\.[0-9]{14}\.[0-9a-f]{7}$ ]]; then
+if [[ "${channel}" != prerelease ]] || [[ ! "${candidate_tag}" =~ -rolling\.[0-9]{14}\.g[0-9a-f]{7}$ ]]; then
 	printf 'invalid rolling prerelease tag %s\n' "${candidate_tag}" >&2
 	exit 1
 fi

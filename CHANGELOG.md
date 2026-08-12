@@ -31,9 +31,10 @@ Keep a Changelog and Stave uses Semantic Versioning.
   conformance.
 - Deterministic performance fixtures, percentile reports, ADRs, operational
   runbooks, release automation, repository hooks, schemas, and traceability.
-- Lopper proving-client integration behind the explicit `stave-tui-preview`
-  feature flag, with parity, snapshots, consequential-action coverage, and
-  legacy rollback.
+- Lopper proving-client migration contracts and local worktree evidence for the
+  explicit `stave-tui-preview` feature flag, parity, snapshots,
+  consequential-action coverage, and legacy rollback. Published immutable
+  Lopper evidence remains a GA promotion requirement.
 
 ### Release scope
 

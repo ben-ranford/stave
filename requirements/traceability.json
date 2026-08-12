@@ -1939,7 +1939,8 @@
       ],
       "verificationArtifacts": [
         "make fmt-check vet test race fuzz-smoke benchmark-smoke verify-performance license-inventory govulncheck",
-        "STAVE_RELEASE_GATE=1 go test ./requirements -count=1",
+        "make release-contract",
+        "make release-ga-contract",
         "make release-dry-run"
       ],
       "documentationEvidence": [

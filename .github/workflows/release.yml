@@ -20,6 +20,8 @@ jobs:
   verify:
     name: release / verify
     if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
+    outputs:
+      channel: ${{ steps.release_tag.outputs.channel }}
     runs-on: stave-arc
     timeout-minutes: 30
     steps:
@@ -32,13 +34,19 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION_CURRENT }}
           cache: true
-      - name: Run release verification
+      - name: Validate release tag
+        id: release_tag
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           channel="$(./scripts/rigor/check-release-tag.sh "${RELEASE_TAG}")"
+          printf 'channel=%s\n' "${channel}" >> "${GITHUB_OUTPUT}"
+      - name: Run release verification
+        env:
+          RELEASE_CHANNEL: ${{ steps.release_tag.outputs.channel }}
+        run: |
           make ci
-          if [[ "${channel}" == prerelease ]]; then
+          if [[ "${RELEASE_CHANNEL}" == prerelease ]]; then
             make release-contract
           else
             make release-ga-contract
@@ -72,7 +80,7 @@ jobs:
         uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631 # v2.0.8
         with:
           generate_release_notes: true
-          prerelease: ${{ contains(github.ref_name, '-') }}
+          prerelease: ${{ needs.verify.outputs.channel == 'prerelease' }}
           files: |
             CHANGELOG.md
             LICENSE
