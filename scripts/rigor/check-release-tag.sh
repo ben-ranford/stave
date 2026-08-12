@@ -11,7 +11,6 @@ fi
 version_without_build="${tag%%+*}"
 if [[ "${version_without_build}" == *-* ]]; then
 	prerelease="${version_without_build#*-}"
-	prerelease="${prerelease%%+*}"
 	IFS='.' read -r -a identifiers <<< "${prerelease}"
 	for identifier in "${identifiers[@]}"; do
 		if [[ "${identifier}" =~ ^[0-9]+$ && "${identifier}" != "0" && "${identifier}" == 0* ]]; then

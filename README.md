@@ -4,7 +4,7 @@ Stave is a renderer-independent Go UI primitives framework for branded human and
 
 ## Current v1 status
 
-This branch contains the production package implementation and its conformance, replay, protocol, security, adapter, full-colour, and measured performance evidence. The first root-module publication is `v1.0.0-rc.1`; GA remains gated on published Lopper proving-client evidence and exact-tag release review.
+This release candidate contains the production package implementation and its conformance, replay, protocol, security, adapter, full-colour, and measured performance evidence. The first root-module publication is `v1.0.0-rc.1`; GA remains gated on published Lopper proving-client evidence and exact-tag release review.
 
 Implemented package surfaces include `semantic`, `action`, `event`, `effect`, `state`, `session`, `replay`, `capability`, `theme`, `config`, `layout`, `surface`, `render`, `runtime/human`, `runtime/agent`, `primitive`, `protocol`, `diag`, `focus`, `keymap`, `input`, `secret`, `observer`, and `conformance`. Optional Bubble Tea, Lip Gloss, and SSH adapters remain nested modules so core consumers do not inherit adapter dependencies.
 
