@@ -1,0 +1,28 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^\\.github/workflows/(?:ci|release|prerelease-dry-run)\\.yml$/"
+      ],
+      "matchStrings": [
+        "GO_VERSION_CURRENT:\\s*\"(?<currentValue>[^\"]+)\""
+      ],
+      "depNameTemplate": "golang",
+      "datasourceTemplate": "golang-version"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Keep the asdf and GitHub Actions Go toolchains synchronized",
+      "matchDepNames": [
+        "golang"
+      ],
+      "groupName": "Go toolchain"
+    }
+  ]
+}
