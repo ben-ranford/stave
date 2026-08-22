@@ -6,7 +6,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 install_named_tool() {
 	case "$1" in
 		golangci-lint)
-			install_go_tool golangci-lint github.com/golangci/golangci-lint/cmd/golangci-lint "${golangci_lint_version}"
+			install_go_tool golangci-lint github.com/golangci/golangci-lint/v2/cmd/golangci-lint "${golangci_lint_version}"
 			;;
 		actionlint)
 			install_go_tool actionlint github.com/rhysd/actionlint/cmd/actionlint "${actionlint_version}"

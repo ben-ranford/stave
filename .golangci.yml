@@ -1,18 +1,37 @@
+version: "2"
 run:
+  # Keep local linting bounded; CI also has a job-level timeout.
   timeout: 5m
   tests: true
-
 linters:
-  disable-all: true
+  default: none
   enable:
     - errcheck
-    - gofmt
     - govet
     - ineffassign
     - misspell
     - staticcheck
     - unused
-
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0
+formatters:
+  enable:
+    - gofmt
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

@@ -310,9 +310,14 @@ func TestSessionCancellationDiscardsLateEffectResults(t *testing.T) {
 	waitSnapshot(t, s, func(snapshot state.State[model]) bool {
 		return snapshot.Sequence == 1
 	})
+	closed := make(chan struct{})
+	go func() {
+		s.Close()
+		close(closed)
+	}()
+	<-closed
 	close(release)
-	s.Close()
-	time.Sleep(20 * time.Millisecond)
+	waitDiagnostic(t, s, "LATE_EFFECT_RESULT")
 
 	snapshot, err := s.Snapshot()
 	if err != nil {
@@ -321,7 +326,6 @@ func TestSessionCancellationDiscardsLateEffectResults(t *testing.T) {
 	if snapshot.Sequence != 1 || snapshot.Model.Count != 1 {
 		t.Fatalf("late effect mutated closed session: %#v", snapshot)
 	}
-	assertDiagnostic(t, s.Diagnostics(), "LATE_EFFECT_RESULT")
 }
 
 func TestSessionCheckpointAndReplayStayDeterministic(t *testing.T) {
@@ -444,4 +448,18 @@ func assertDiagnostic(t *testing.T, diagnostics []Diagnostic, code string) {
 		}
 	}
 	t.Fatalf("missing diagnostic %q in %#v", code, diagnostics)
+}
+
+func waitDiagnostic(t *testing.T, s *Session[model], code string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		for _, diagnostic := range s.Diagnostics() {
+			if diagnostic.Code == code {
+				return
+			}
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("missing diagnostic %q in %#v", code, s.Diagnostics())
 }

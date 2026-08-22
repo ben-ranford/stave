@@ -278,9 +278,9 @@ func renderPublicAPI(modulePath string, pkgs []goListPackage) (string, error) {
 
 	var out strings.Builder
 	out.WriteString("# Public API inventory\n")
-	out.WriteString(fmt.Sprintf("module %s\n\n", modulePath))
+	fmt.Fprintf(&out, "module %s\n\n", modulePath)
 	for _, path := range paths {
-		out.WriteString(fmt.Sprintf("[%s]\n", path))
+		fmt.Fprintf(&out, "[%s]\n", path)
 		for _, entry := range exported[path] {
 			out.WriteString(entry)
 			out.WriteByte('\n')
