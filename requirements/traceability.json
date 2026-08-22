@@ -18,8 +18,7 @@
         "go run ./scripts/rigor/cmd/rigor boundary-check"
       ],
       "documentationEvidence": [
-        "requirements/TRACEABILITY.md",
-        "README.md#documentation"
+        "requirements/TRACEABILITY.md"
       ],
       "status": "implemented",
       "milestone": "M1",
@@ -320,8 +319,7 @@
         "render/render_test.go::TestRenderConsumesStyleIntentAndStatusVariantsAcrossColorModes"
       ],
       "documentationEvidence": [
-        "requirements/TRACEABILITY.md",
-        "README.md#documentation"
+        "requirements/TRACEABILITY.md"
       ],
       "status": "implemented",
       "milestone": "M3"
@@ -451,7 +449,6 @@
       ],
       "documentationEvidence": [
         "requirements/TRACEABILITY.md",
-        "README.md#documentation",
         "stave.go"
       ],
       "status": "implemented",
@@ -561,8 +558,7 @@
         "go run ./scripts/rigor/cmd/rigor boundary-check"
       ],
       "documentationEvidence": [
-        "requirements/TRACEABILITY.md",
-        "README.md#documentation"
+        "requirements/TRACEABILITY.md"
       ],
       "status": "planned",
       "milestone": "M7",
@@ -635,7 +631,6 @@
       ],
       "documentationEvidence": [
         "requirements/TRACEABILITY.md",
-        "README.md#documentation",
         "scripts/rigor/generated/atlas.render.txt",
         "scripts/rigor/generated/atlas.matrix.json"
       ],
@@ -658,8 +653,7 @@
         "layout/layout_test.go::TestMeasureAndArrangeAreDeterministic"
       ],
       "documentationEvidence": [
-        "requirements/TRACEABILITY.md",
-        "README.md#documentation"
+        "requirements/TRACEABILITY.md"
       ],
       "status": "implemented",
       "milestone": "M2"
@@ -679,8 +673,7 @@
         "testfixture/catalog_test.go::TestPrimitiveManifestUsesRealConstructors"
       ],
       "documentationEvidence": [
-        "requirements/TRACEABILITY.md",
-        "README.md#documentation"
+        "requirements/TRACEABILITY.md"
       ],
       "status": "implemented",
       "milestone": "M2"
@@ -1095,8 +1088,7 @@
       ],
       "documentationEvidence": [
         "requirements/TRACEABILITY.md",
-        "semantic/semantic.go",
-        "README.md#documentation"
+        "semantic/semantic.go"
       ],
       "status": "implemented",
       "milestone": "M1"
@@ -1118,8 +1110,7 @@
       ],
       "documentationEvidence": [
         "requirements/TRACEABILITY.md",
-        "action/action.go",
-        "README.md#documentation"
+        "action/action.go"
       ],
       "status": "implemented",
       "milestone": "M1"
@@ -1353,7 +1344,6 @@
       ],
       "documentationEvidence": [
         "requirements/TRACEABILITY.md",
-        "README.md#documentation",
         "cmd/lopper/main.go",
         "scripts/rigor/generated/lopper.render.txt",
         "scripts/rigor/generated/atlas.render.txt"
@@ -1377,7 +1367,6 @@
       ],
       "documentationEvidence": [
         "requirements/TRACEABILITY.md",
-        "README.md#documentation",
         "go.mod"
       ],
       "status": "implemented",
@@ -1421,7 +1410,6 @@
       ],
       "documentationEvidence": [
         "requirements/TRACEABILITY.md",
-        "README.md#documentation",
         "doc.go"
       ],
       "status": "implemented",
@@ -1443,7 +1431,6 @@
       ],
       "documentationEvidence": [
         "requirements/TRACEABILITY.md",
-        "README.md#documentation",
         "doc.go"
       ],
       "status": "implemented",
@@ -1465,7 +1452,6 @@
       ],
       "documentationEvidence": [
         "requirements/TRACEABILITY.md",
-        "README.md#documentation",
         "stave.go"
       ],
       "status": "implemented",
@@ -1487,7 +1473,6 @@
       ],
       "documentationEvidence": [
         "requirements/TRACEABILITY.md",
-        "README.md#documentation",
         "semantic/semantic.go"
       ],
       "status": "implemented",
@@ -1551,7 +1536,6 @@
       ],
       "documentationEvidence": [
         "requirements/TRACEABILITY.md",
-        "README.md#documentation",
         "go.mod"
       ],
       "status": "implemented",
@@ -1572,8 +1556,7 @@
       ],
       "documentationEvidence": [
         "requirements/TRACEABILITY.md",
-        "semantic/semantic.go",
-        "README.md#documentation"
+        "semantic/semantic.go"
       ],
       "status": "implemented",
       "milestone": "M1"
@@ -1614,8 +1597,7 @@
       ],
       "documentationEvidence": [
         "requirements/TRACEABILITY.md",
-        "SECURITY.md",
-        "README.md#documentation"
+        "SECURITY.md"
       ],
       "status": "implemented",
       "milestone": "M4"
@@ -1657,8 +1639,7 @@
       ],
       "documentationEvidence": [
         "requirements/TRACEABILITY.md",
-        "SECURITY.md",
-        "README.md#documentation"
+        "SECURITY.md"
       ],
       "status": "implemented",
       "milestone": "M5"
@@ -1893,8 +1874,7 @@
       ],
       "documentationEvidence": [
         "requirements/TRACEABILITY.md",
-        "go.mod",
-        "README.md#documentation"
+        "go.mod"
       ],
       "status": "implemented",
       "milestone": "M1"
@@ -1921,7 +1901,6 @@
       ],
       "documentationEvidence": [
         "requirements/TRACEABILITY.md",
-        "README.md#documentation",
         "cmd/lopper/main.go"
       ],
       "status": "implemented",
@@ -1963,7 +1942,6 @@
       ],
       "documentationEvidence": [
         "requirements/TRACEABILITY.md",
-        "README.md#documentation",
         "stave.go"
       ],
       "status": "implemented",
@@ -1984,8 +1962,7 @@
         "surface/surface_test.go::TestSurfaceDeterminismAndMergeDirty"
       ],
       "documentationEvidence": [
-        "requirements/TRACEABILITY.md",
-        "README.md#documentation"
+        "requirements/TRACEABILITY.md"
       ],
       "status": "implemented",
       "milestone": "M2"
@@ -2005,8 +1982,7 @@
         "go test ./session ./layout ./render"
       ],
       "documentationEvidence": [
-        "requirements/TRACEABILITY.md",
-        "README.md#documentation"
+        "requirements/TRACEABILITY.md"
       ],
       "status": "implemented",
       "milestone": "M4"
@@ -2045,8 +2021,7 @@
         "conformance/primitive_test.go::TestInteractivePrimitiveActionsHaveKeyboardBindings"
       ],
       "documentationEvidence": [
-        "requirements/TRACEABILITY.md",
-        "README.md#documentation"
+        "requirements/TRACEABILITY.md"
       ],
       "status": "implemented",
       "milestone": "M6"
@@ -2109,8 +2084,7 @@
       ],
       "documentationEvidence": [
         "requirements/TRACEABILITY.md",
-        "SECURITY.md",
-        "README.md#documentation"
+        "SECURITY.md"
       ],
       "status": "implemented",
       "milestone": "M4"
@@ -2237,8 +2211,7 @@
         "external://github.com/ben-ranford/lopper@unpublished-feat-1492-stave-v2-production#internal/ui/stave_preview.go"
       ],
       "documentationEvidence": [
-        "requirements/TRACEABILITY.md",
-        "README.md#documentation"
+        "requirements/TRACEABILITY.md"
       ],
       "status": "planned",
       "milestone": "M7",

@@ -8,7 +8,7 @@ onto rendered bytes after the fact.
 
 ## Shared node contract
 
-Each meaningful node should expose:
+Each meaningful node must expose the applicable parts of this contract:
 
 - Role
 - Accessible name and description
