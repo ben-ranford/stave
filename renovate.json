@@ -1,0 +1,40 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "automerge": true,
+  "automergeType": "pr",
+  "automergeStrategy": "squash",
+  "platformAutomerge": true,
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Keep GitHub Actions Go pins synchronized with .tool-versions.",
+      "fileMatch": [
+        "/^\\.github\\/workflows\\/(?:ci|release|prerelease-dry-run)\\.yml$/"
+      ],
+      "matchStrings": [
+        "GO_VERSION_CURRENT:\\s+\"(?<currentValue>\\d+\\.\\d+\\.\\d+)\""
+      ],
+      "datasourceTemplate": "github-tags",
+      "depNameTemplate": "golang",
+      "packageNameTemplate": "golang/go",
+      "extractVersionTemplate": "^go(?<version>\\S+)",
+      "versioningTemplate": "semver"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Update the asdf and GitHub Actions Go toolchain pins together.",
+      "matchManagers": [
+        "asdf",
+        "custom.regex"
+      ],
+      "matchPackageNames": [
+        "golang/go"
+      ],
+      "groupName": "Go toolchain"
+    }
+  ]
+}
