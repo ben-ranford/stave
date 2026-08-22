@@ -667,7 +667,7 @@ func (r *Registry) Invoke(ctx context.Context, c Call) Result {
 	if !ok {
 		return reject(c, ActionNotFound, "action not found")
 	}
-	if c.Deadline.IsZero() == false && time.Now().After(c.Deadline) {
+	if !c.Deadline.IsZero() && time.Now().After(c.Deadline) {
 		return reject(c, DeadlineExceeded, "deadline exceeded")
 	}
 	v, err := e.Def.InputSchema.Validate(c.Arguments)

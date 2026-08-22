@@ -7,7 +7,7 @@ tool_bin_dir="${cache_root}/bin"
 tmp_root="${cache_root}/tmp"
 generated_dir="${repo_root}/scripts/rigor/generated"
 
-golangci_lint_version="${GOLANGCI_LINT_VERSION:-v1.64.8}"
+golangci_lint_version="${GOLANGCI_LINT_VERSION:-v2.13.1}"
 actionlint_version="${ACTIONLINT_VERSION:-v1.7.7}"
 govulncheck_version="$(tr -d '[:space:]' < "${repo_root}/.govulncheck-version")"
 
@@ -20,7 +20,9 @@ install_go_tool() {
 	local pkg="$2"
 	local version="$3"
 	local binary="${tool_bin_dir}/${name}"
-	local stamp="${tool_bin_dir}/.${name}-${version}.stamp"
+	local go_version
+	go_version="$(go env GOVERSION)"
+	local stamp="${tool_bin_dir}/.${name}-${version}-${go_version}.stamp"
 
 	ensure_rigor_dirs
 	if [[ -x "${binary}" && -f "${stamp}" ]]; then

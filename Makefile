@@ -10,6 +10,7 @@ RIGOR := $(GO) run ./scripts/rigor/cmd/rigor
 
 .PHONY: help tools fmt fmt-check lint vet test race coverage coverage-threshold \
 	fuzz-smoke benchmark-smoke verify-performance govulncheck dependency-inventory license-inventory \
+	suppression-check \
 	api-refresh api-boundary traceability-refresh schema-freshness generated-refresh \
 	adapters conformance-check atlas-check workflow-validate hooks-install hooks-pre-commit-dry-run \
 	hooks-pre-push-dry-run fast verify ci release-contract release-ga-contract release-dry-run clean
@@ -80,6 +81,9 @@ dependency-inventory:
 license-inventory:
 	./scripts/rigor/check-generated.sh license-inventory
 
+suppression-check:
+	./scripts/rigor/check-suppressions.sh
+
 api-refresh:
 	./scripts/rigor/refresh-generated.sh public-api
 
@@ -119,7 +123,7 @@ hooks-pre-commit-dry-run:
 hooks-pre-push-dry-run:
 	./.githooks/pre-push --dry-run
 
-fast: fmt-check lint vet api-boundary schema-freshness
+fast: fmt-check lint vet suppression-check api-boundary schema-freshness
 
 verify: fast test race coverage-threshold fuzz-smoke benchmark-smoke verify-performance dependency-inventory license-inventory adapters conformance-check atlas-check
 
