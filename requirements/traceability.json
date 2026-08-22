@@ -19,7 +19,7 @@
       ],
       "documentationEvidence": [
         "requirements/TRACEABILITY.md",
-        "README.md#proof-points"
+        "README.md#documentation"
       ],
       "status": "implemented",
       "milestone": "M1",
@@ -321,7 +321,7 @@
       ],
       "documentationEvidence": [
         "requirements/TRACEABILITY.md",
-        "README.md#proof-points"
+        "README.md#documentation"
       ],
       "status": "implemented",
       "milestone": "M3"
@@ -451,7 +451,7 @@
       ],
       "documentationEvidence": [
         "requirements/TRACEABILITY.md",
-        "README.md#proof-points",
+        "README.md#documentation",
         "stave.go"
       ],
       "status": "implemented",
@@ -562,7 +562,7 @@
       ],
       "documentationEvidence": [
         "requirements/TRACEABILITY.md",
-        "README.md#proof-points"
+        "README.md#documentation"
       ],
       "status": "planned",
       "milestone": "M7",
@@ -635,11 +635,9 @@
       ],
       "documentationEvidence": [
         "requirements/TRACEABILITY.md",
-        "README.md#proof-points",
-        "docs/atlas-regression-rig.md",
+        "README.md#documentation",
         "scripts/rigor/generated/atlas.render.txt",
-        "scripts/rigor/generated/atlas.matrix.json",
-        "docs/performance.md#contrast-and-brand-fixtures"
+        "scripts/rigor/generated/atlas.matrix.json"
       ],
       "status": "implemented",
       "milestone": "M7",
@@ -661,7 +659,7 @@
       ],
       "documentationEvidence": [
         "requirements/TRACEABILITY.md",
-        "README.md#proof-points"
+        "README.md#documentation"
       ],
       "status": "implemented",
       "milestone": "M2"
@@ -682,7 +680,7 @@
       ],
       "documentationEvidence": [
         "requirements/TRACEABILITY.md",
-        "README.md#proof-points"
+        "README.md#documentation"
       ],
       "status": "implemented",
       "milestone": "M2"
@@ -1098,7 +1096,7 @@
       "documentationEvidence": [
         "requirements/TRACEABILITY.md",
         "semantic/semantic.go",
-        "README.md#proof-points"
+        "README.md#documentation"
       ],
       "status": "implemented",
       "milestone": "M1"
@@ -1121,7 +1119,7 @@
       "documentationEvidence": [
         "requirements/TRACEABILITY.md",
         "action/action.go",
-        "README.md#proof-points"
+        "README.md#documentation"
       ],
       "status": "implemented",
       "milestone": "M1"
@@ -1355,7 +1353,7 @@
       ],
       "documentationEvidence": [
         "requirements/TRACEABILITY.md",
-        "README.md#proof-points",
+        "README.md#documentation",
         "cmd/lopper/main.go",
         "scripts/rigor/generated/lopper.render.txt",
         "scripts/rigor/generated/atlas.render.txt"
@@ -1379,7 +1377,7 @@
       ],
       "documentationEvidence": [
         "requirements/TRACEABILITY.md",
-        "README.md#proof-points",
+        "README.md#documentation",
         "go.mod"
       ],
       "status": "implemented",
@@ -1423,7 +1421,7 @@
       ],
       "documentationEvidence": [
         "requirements/TRACEABILITY.md",
-        "README.md#proof-points",
+        "README.md#documentation",
         "doc.go"
       ],
       "status": "implemented",
@@ -1445,7 +1443,7 @@
       ],
       "documentationEvidence": [
         "requirements/TRACEABILITY.md",
-        "README.md#proof-points",
+        "README.md#documentation",
         "doc.go"
       ],
       "status": "implemented",
@@ -1467,7 +1465,7 @@
       ],
       "documentationEvidence": [
         "requirements/TRACEABILITY.md",
-        "README.md#proof-points",
+        "README.md#documentation",
         "stave.go"
       ],
       "status": "implemented",
@@ -1489,7 +1487,7 @@
       ],
       "documentationEvidence": [
         "requirements/TRACEABILITY.md",
-        "README.md#proof-points",
+        "README.md#documentation",
         "semantic/semantic.go"
       ],
       "status": "implemented",
@@ -1553,7 +1551,7 @@
       ],
       "documentationEvidence": [
         "requirements/TRACEABILITY.md",
-        "README.md#proof-points",
+        "README.md#documentation",
         "go.mod"
       ],
       "status": "implemented",
@@ -1575,7 +1573,7 @@
       "documentationEvidence": [
         "requirements/TRACEABILITY.md",
         "semantic/semantic.go",
-        "README.md#proof-points"
+        "README.md#documentation"
       ],
       "status": "implemented",
       "milestone": "M1"
@@ -1617,7 +1615,7 @@
       "documentationEvidence": [
         "requirements/TRACEABILITY.md",
         "SECURITY.md",
-        "README.md#proof-points"
+        "README.md#documentation"
       ],
       "status": "implemented",
       "milestone": "M4"
@@ -1660,7 +1658,7 @@
       "documentationEvidence": [
         "requirements/TRACEABILITY.md",
         "SECURITY.md",
-        "README.md#proof-points"
+        "README.md#documentation"
       ],
       "status": "implemented",
       "milestone": "M5"
@@ -1673,12 +1671,11 @@
       "plannedPackageAPI": [
         "semantic.NodeID",
         "conformance/fixtures",
-        "adr/*"
+        "requirements/traceability.json"
       ],
       "verificationArtifacts": [
         "requirements/traceability_test.go::TestTraceabilityMatrix",
-        "semantic/semantic_test.go::TestNodeIDGoldenVectors",
-        "docs/adr/README.md"
+        "semantic/semantic_test.go::TestNodeIDGoldenVectors"
       ],
       "documentationEvidence": [
         "requirements/TRACEABILITY.md",
@@ -1843,7 +1840,6 @@
       "sourceRef": ".doc/system-design.md §40 M8",
       "plannedPackageAPI": [
         "Makefile",
-        "docs/runbooks/*",
         ".github/workflows/release.yml"
       ],
       "verificationArtifacts": [
@@ -1898,7 +1894,7 @@
       "documentationEvidence": [
         "requirements/TRACEABILITY.md",
         "go.mod",
-        "README.md#proof-points"
+        "README.md#documentation"
       ],
       "status": "implemented",
       "milestone": "M1"
@@ -1925,7 +1921,7 @@
       ],
       "documentationEvidence": [
         "requirements/TRACEABILITY.md",
-        "README.md#proof-points",
+        "README.md#documentation",
         "cmd/lopper/main.go"
       ],
       "status": "implemented",
@@ -1967,7 +1963,7 @@
       ],
       "documentationEvidence": [
         "requirements/TRACEABILITY.md",
-        "README.md#proof-points",
+        "README.md#documentation",
         "stave.go"
       ],
       "status": "implemented",
@@ -1989,7 +1985,7 @@
       ],
       "documentationEvidence": [
         "requirements/TRACEABILITY.md",
-        "README.md#proof-points"
+        "README.md#documentation"
       ],
       "status": "implemented",
       "milestone": "M2"
@@ -2010,7 +2006,7 @@
       ],
       "documentationEvidence": [
         "requirements/TRACEABILITY.md",
-        "README.md#proof-points"
+        "README.md#documentation"
       ],
       "status": "implemented",
       "milestone": "M4"
@@ -2050,7 +2046,7 @@
       ],
       "documentationEvidence": [
         "requirements/TRACEABILITY.md",
-        "README.md#proof-points"
+        "README.md#documentation"
       ],
       "status": "implemented",
       "milestone": "M6"
@@ -2114,7 +2110,7 @@
       "documentationEvidence": [
         "requirements/TRACEABILITY.md",
         "SECURITY.md",
-        "README.md#proof-points"
+        "README.md#documentation"
       ],
       "status": "implemented",
       "milestone": "M4"
@@ -2242,7 +2238,7 @@
       ],
       "documentationEvidence": [
         "requirements/TRACEABILITY.md",
-        "README.md#proof-points"
+        "README.md#documentation"
       ],
       "status": "planned",
       "milestone": "M7",
@@ -2285,7 +2281,6 @@
       ],
       "documentationEvidence": [
         "requirements/TRACEABILITY.md",
-        "docs/release.md",
         ".github/workflows/ci.yml"
       ],
       "status": "implemented",
@@ -2298,14 +2293,12 @@
       "sourceRef": ".doc/system-design.md §41 AC-21",
       "plannedPackageAPI": [
         "performance.Report",
-        "cmd/stave-performance",
-        "docs/adr/ADR-017.md"
+        "cmd/stave-performance"
       ],
       "verificationArtifacts": [
         "make verify-performance",
         "scripts/rigor/refresh-generated.sh performance-report",
-        "adapters/ssh/bridge_test.go::TestSSHTransportPerformanceBudget",
-        "docs/adr/ADR-017.md"
+        "adapters/ssh/bridge_test.go::TestSSHTransportPerformanceBudget"
       ],
       "documentationEvidence": [
         "requirements/TRACEABILITY.md"
@@ -2320,13 +2313,11 @@
       "sourceRef": ".doc/system-design.md §41 AC-22",
       "plannedPackageAPI": [
         "lopper/internal/featureflags",
-        "lopper/internal/ui.StavePreview",
-        "docs/lopper-migration.md"
+        "lopper/internal/ui.StavePreview"
       ],
       "verificationArtifacts": [
         "external://github.com/ben-ranford/lopper@unpublished-feat-1492-stave-v2-production#internal/cli/parse_tui_test.go::TestParseArgsTUIStavePreviewRequiresExplicitEnablement",
-        "external://github.com/ben-ranford/lopper@unpublished-feat-1492-stave-v2-production#internal/ui/stave_preview_test.go::TestStavePreviewSnapshotFileAndDisabledLegacy",
-        "docs/lopper-migration.md"
+        "external://github.com/ben-ranford/lopper@unpublished-feat-1492-stave-v2-production#internal/ui/stave_preview_test.go::TestStavePreviewSnapshotFileAndDisabledLegacy"
       ],
       "documentationEvidence": [
         "requirements/TRACEABILITY.md"

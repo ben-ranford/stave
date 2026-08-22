@@ -1,10 +1,13 @@
-# Client Adoption Guide
+# Adopt Stave in an application
 
-Stave is an application-neutral UI framework. Lopper is the first proving
-client, but it does not receive a privileged API and its domain model, feature
-flags, commands, themes, and rollout policy remain in the Lopper repository.
+Stave is application-neutral: your application owns its model, language,
+theme, actions, and effects. Stave provides the semantic UI and runtime
+contracts that let those choices work consistently across human and automated
+interfaces.
 
-Every client adopts the same public contracts:
+## Build an application
+
+Use the public contracts in this order:
 
 1. Define an application-owned model and pure `stave.Reducer`.
 2. Derive an immutable `semantic.Tree` through `stave.View`.
@@ -16,7 +19,7 @@ Every client adopts the same public contracts:
 7. Run `conformance.CheckClient` over representative fixtures and capability
    modes before claiming compatibility.
 
-## Supported client shapes
+## Supported application shapes
 
 | Client shape | Stave composition |
 |---|---|
@@ -25,14 +28,14 @@ Every client adopts the same public contracts:
 | Non-interactive snapshot or CI report | `render` plain or machine output without a TTY |
 | Agent-controlled application | `runtime/agent` JSON-RPC over the same semantic tree and action registry |
 | Remote SSH interface | Nested `adapters/ssh` module around an application session |
-| Existing Bubble Tea or Lip Gloss application | Nested optional adapters consuming public Stave packages |
+| Existing Bubble Tea or Lip Gloss application | Optional adapters consuming public Stave packages |
 | Custom renderer or host framework | Application adapter consuming semantic/layout/surface contracts |
 
 These are profiles of one framework, not forks. A client may expose several at
 once—for example, a local TUI, non-interactive snapshot command, and agent
 transport backed by the same session and action definitions.
 
-## Client conformance
+## Validate an integration
 
 `conformance.Client` requires the renderer, typed action registry, and keymap
 authority used by the application. `conformance.ClientFixture` supplies named
@@ -46,21 +49,6 @@ semantic scenarios and negotiated modes. `conformance.CheckClient` verifies:
 - that the integration supplies real authority rather than self-declared
   action labels.
 
-The checked-in primitive catalog runs through this same client contract with
-`go run ./cmd/stave-conformance`. Applications should add their own domain
-fixtures in their repositories and keep them green alongside Stave upgrades.
-
-## Proving clients
-
-- Lopper is the first migration client and exercises strangler rollout,
-  legacy parity, typed domain actions, consequential confirmation, and
-  rollback.
-- Atlas is an independent second client and executable proof rig with a
-  different model, brand, layouts, typed actions, replay, and 63-surface
-  scenario/capability matrix. See [`atlas-regression-rig.md`](atlas-regression-rig.md).
-- The Bubble Tea, Lip Gloss, and SSH modules prove that optional host stacks do
-  not enter the root dependency graph.
-
-New clients must not depend on Lopper packages, assets, schemas, feature flags,
-or command semantics. Compatibility is defined by Stave's versioned semantic,
-action, capability, theme, session, render, and protocol contracts.
+Add representative domain fixtures in your application repository and keep
+them green when upgrading Stave. Compatibility is defined by Stave's versioned
+semantic, action, capability, theme, session, render, and protocol contracts.

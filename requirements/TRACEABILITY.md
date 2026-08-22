@@ -110,7 +110,7 @@ blocked while any P0, P1, or acceptance-criterion entry is planned.
 
 | ID | Requirement | Verification evidence | Status | Milestone |
 | --- | --- | --- | --- | --- |
-| `M0` | Contracts and spike harness | `requirements/traceability_test.go::TestTraceabilityMatrix`<br>`semantic/semantic_test.go::TestNodeIDGoldenVectors`<br>`docs/adr/README.md` | implemented | M0 |
+| `M0` | Contracts and spike harness | `requirements/traceability_test.go::TestTraceabilityMatrix`<br>`semantic/semantic_test.go::TestNodeIDGoldenVectors` | implemented | M0 |
 | `M1` | Semantic and action core | `semantic/semantic_test.go::TestSnapshotNodeRoundTripAndRedaction`<br>`action/contract_freeze_test.go::TestNumericEnumExactEqualityInputAndOutput` | implemented | M1 |
 | `M2` | Reducer, session, and replay | `session/session_test.go::TestSessionCheckpointAndReplayStayDeterministic`<br>`effect/effect_test.go::TestExecutorDeliversDeclarationOrderDespiteParallelCompletion` | implemented | M2 |
 | `M3` | Capabilities, theme, layout, and surface | `capability/capability_test.go::TestCapabilityProfileMatrix`<br>`theme/theme_test.go::TestSemanticContrastAcrossColourLadder`<br>`layout/layout_test.go::TestMeasureAndArrangeAreDeterministic` | implemented | M3 |
@@ -144,8 +144,8 @@ blocked while any P0, P1, or acceptance-criterion entry is planned.
 | `AC-18` | Lopper adapter imports Stave and Stave never imports Lopper | `go run ./scripts/rigor/cmd/rigor boundary-check`<br>`external://github.com/ben-ranford/lopper@unpublished-feat-1492-stave-v2-production#go.mod`<br>`external://github.com/ben-ranford/lopper@unpublished-feat-1492-stave-v2-production#internal/ui/stave_preview.go` | planned | M7 |
 | `AC-19` | Bubble Tea and Lip Gloss adapters pass the same semantic or surface fixtures | `adapters/bubbletea/adapter_test.go::TestSharedAdapterSurfaceFixture`<br>`adapters/lipgloss/lipgloss_test.go::TestSharedAdapterSurfaceFixture`<br>`testfixture/surface.go` | implemented | M5 |
 | `AC-20` | Formatting, vet, tests, race, fuzz smoke, vulnerability, licence, and benchmark gates pass fresh | `make fmt-check vet test race fuzz-smoke benchmark-smoke license-inventory govulncheck`<br>`.github/workflows/ci.yml` | implemented | M8 |
-| `AC-21` | All proposed performance targets are measured or accepted via ADR | `make verify-performance`<br>`scripts/rigor/refresh-generated.sh performance-report`<br>`adapters/ssh/bridge_test.go::TestSSHTransportPerformanceBudget`<br>`docs/adr/ADR-017.md` | implemented | M8 |
-| `AC-22` | Rollback to the legacy Lopper UI remains possible during pilot | `external://github.com/ben-ranford/lopper@unpublished-feat-1492-stave-v2-production#internal/cli/parse_tui_test.go::TestParseArgsTUIStavePreviewRequiresExplicitEnablement`<br>`external://github.com/ben-ranford/lopper@unpublished-feat-1492-stave-v2-production#internal/ui/stave_preview_test.go::TestStavePreviewSnapshotFileAndDisabledLegacy`<br>`docs/lopper-migration.md` | planned | M7 |
+| `AC-21` | All proposed performance targets are measured or accepted via ADR | `make verify-performance`<br>`scripts/rigor/refresh-generated.sh performance-report`<br>`adapters/ssh/bridge_test.go::TestSSHTransportPerformanceBudget` | implemented | M8 |
+| `AC-22` | Rollback to the legacy Lopper UI remains possible during pilot | `external://github.com/ben-ranford/lopper@unpublished-feat-1492-stave-v2-production#internal/cli/parse_tui_test.go::TestParseArgsTUIStavePreviewRequiresExplicitEnablement`<br>`external://github.com/ben-ranford/lopper@unpublished-feat-1492-stave-v2-production#internal/ui/stave_preview_test.go::TestStavePreviewSnapshotFileAndDisabledLegacy` | planned | M7 |
 
 ## Current v1.0.0 status
 
