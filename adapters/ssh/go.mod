@@ -3,7 +3,7 @@ module github.com/ben-ranford/stave/adapters/ssh
 go 1.25.12
 
 require (
-	charm.land/ssh v0.4.2
+	charm.land/ssh v0.4.3
 	charm.land/wish/v2 v2.0.3
 	github.com/ben-ranford/stave v0.0.0
 	golang.org/x/crypto v0.54.0
