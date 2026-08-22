@@ -1,0 +1,34 @@
+name: release-please
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: release-please-main
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: release-please / prepare
+    runs-on: stave-arc
+    timeout-minutes: 15
+    steps:
+      - name: Prepare release pull request
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          # A GitHub App or fine-grained PAT is required so the resulting pull
+          # request triggers normal CI. github.token deliberately does not.
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          release-type: go
+          target-branch: main
+          # The tag-gated release workflow owns all publication after it has
+          # verified the exact tagged commit.
+          skip-github-release: true

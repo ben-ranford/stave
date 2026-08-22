@@ -66,8 +66,8 @@ type InputOptions struct {
 }
 
 func Input(i InputOptions) (semantic.Node, error) {
-	i.Options.Focusable = !i.ReadOnly
-	i.Options.Sensitive = i.Secret
+	i.Focusable = !i.ReadOnly
+	i.Sensitive = i.Secret
 	i.Metadata = cloneMeta(i.Metadata)
 	i.Metadata["placeholder"] = i.Placeholder
 	i.Metadata["secret"] = strconv.FormatBool(i.Secret)
@@ -80,8 +80,8 @@ func Input(i InputOptions) (semantic.Node, error) {
 	}
 	i.StyleRole = nonempty(i.StyleRole, fieldStyleRole(i.Invalid))
 	i.Metadata = toneMeta(i.Metadata, fieldTone(i.Invalid))
-	if i.Options.Name == "" {
-		i.Options.Name = "Input"
+	if i.Name == "" {
+		i.Name = "Input"
 	}
 	if !i.ReadOnly {
 		i.Actions = ensureAction(i.Actions, Action("edit", "Edit", true))
@@ -102,7 +102,7 @@ func Input(i InputOptions) (semantic.Node, error) {
 	if err != nil {
 		return semantic.Node{}, err
 	}
-	i.Options.Relations = append(i.Options.Relations, relations...)
+	i.Relations = append(i.Relations, relations...)
 	return node(i.Options, role, value, children)
 }
 func SecureInput(i InputOptions) (semantic.Node, error) { i.Secret = true; return Input(i) }
