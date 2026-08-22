@@ -49,7 +49,8 @@ trusted only after validation.
   content.
 - Sanitize diagnostics before they reach a terminal sink.
 - Disable clipboard OSC by default.
-- Keep machine stdout free of human-targeted diagnostics.
+- Reserve machine stdout for protocol or machine output only; never emit
+  human-targeted diagnostics, banners, prompts, or progress decoration there.
 
 ### Secret handling
 
