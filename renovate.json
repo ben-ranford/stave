@@ -12,7 +12,7 @@
       "customType": "regex",
       "description": "Keep GitHub Actions Go pins synchronized with .tool-versions.",
       "fileMatch": [
-        "/^\\.github\\/workflows\\/(?:ci|release|prerelease-dry-run)\\.yml$/"
+        "^\\.github/workflows/(?:ci|release|prerelease-dry-run)\\.yml$"
       ],
       "matchStrings": [
         "GO_VERSION_CURRENT:\\s+\"(?<currentValue>\\d+\\.\\d+\\.\\d+)\""
