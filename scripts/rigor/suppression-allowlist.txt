@@ -1,0 +1,6 @@
+# Exact git-grep results for reviewed inline static-analysis suppressions.
+# Entries are intentionally line-specific. Update one only with a rationale in
+# the pull request after confirming that a central configuration exception is
+# not appropriate.
+adapters/ssh/bridge_test.go:425:		HostKeyCallback: gossh.InsecureIgnoreHostKey(), //nolint:gosec
+adapters/ssh/bridge_test.go:515:		HostKeyCallback: gossh.InsecureIgnoreHostKey(), //nolint:gosec

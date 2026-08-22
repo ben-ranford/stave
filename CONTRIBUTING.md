@@ -11,8 +11,14 @@ Stave is a private Go source library with release-grade repository gates. Keep t
 
 The rigor harness installs pinned repo-local tools into `.cache/rigor/bin`; no global `golangci-lint`, `actionlint`, or `govulncheck` installation is required.
 
+Inline static-analysis suppression markers are blocked by `make suppression-check`. The two hermetic SSH test fixtures that require `nolint:gosec` are recorded line-by-line in `scripts/rigor/suppression-allowlist.txt`; any new or changed exception needs explicit review and a pull-request rationale.
+
 ## Release and compatibility policy
 
+- Use a Conventional Commit pull-request title (`feat:`, `fix:`, `perf:`,
+  `docs:`, `refactor:`, `test:`, `build:`, `ci:`, `chore:`, or `revert:`).
+  Release Please derives its proposed version and changelog from the commits
+  merged to `main`; the squash-merge title must therefore retain that format.
 - Update `CHANGELOG.md` for user-visible behavior changes.
 - Refresh tracked inventories with `make generated-refresh` whenever exported API, render traces, dependency shape, or schema evidence changes.
 - Keep command examples (`cmd/atlas`, `cmd/lopper`) and schema evidence fresh; CI treats stale traceability artifacts as a failure.
@@ -27,3 +33,4 @@ The rigor harness installs pinned repo-local tools into `.cache/rigor/bin`; no g
 - Fuzz smoke: `make fuzz-smoke`
 - Benchmark smoke: `make benchmark-smoke`
 - Security and workflow validation: `make govulncheck workflow-validate`
+- Inline suppression policy: `make suppression-check`

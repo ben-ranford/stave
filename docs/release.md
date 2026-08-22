@@ -61,10 +61,15 @@ modules, whose local development replacements are not valid release metadata.
 
 ## Immutable publication sequence
 
-1. Push the candidate branch and open a pull request to `main`.
-2. Require the exact pull-request head to pass remote CI and receive review;
-   never use an admin merge or bypass a required check.
-3. Merge through the normal pull-request path, then rerun `make ci`,
+1. On each merge to `main`, Release Please creates or updates its release pull
+   request and changelog. Its `RELEASE_PLEASE_TOKEN` must be a narrowly scoped
+   GitHub App token or fine-grained PAT so normal pull-request CI runs; the
+   default workflow token does not trigger subsequent workflows. The
+   self-hosted `stave-arc` runner must support the action's Node 24 runtime.
+2. Review and merge the release pull request only after its remote CI is green.
+   Release Please prepares the changelog but does not create a tag or GitHub
+   release.
+3. Rerun `make ci`,
    `make release-contract`, and `make release-dry-run` on the final `main`
    commit because its identity differs from the reviewed branch commit.
 4. Create the annotated `v1.0.0-rc.1` tag at that verified `main` commit and

@@ -1,3 +1,5 @@
+<!-- Use a Conventional Commit title, for example `fix(protocol): reject stale confirmations`. -->
+
 ## Summary
 
 - problem:
