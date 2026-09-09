@@ -108,6 +108,11 @@ function workflowRunID(detailsURL) {
   }
 }
 
+function isTrustedMetadataWorkflowPath(path, defaultBranch) {
+  return path === METADATA_WORKFLOW_PATH ||
+    path === `${METADATA_WORKFLOW_PATH}@${defaultBranch}`;
+}
+
 async function hasCurrentMetadataValidation(github, owner, repo, pull, defaultBranch) {
   const checks = await github.paginate(github.rest.checks.listForRef, {
     owner,
@@ -139,7 +144,7 @@ async function hasCurrentMetadataValidation(github, owner, repo, pull, defaultBr
     run.head_branch === defaultBranch;
   if (
     run.conclusion !== 'success' ||
-    run.path !== `${METADATA_WORKFLOW_PATH}@${defaultBranch}` ||
+    !isTrustedMetadataWorkflowPath(run.path, defaultBranch) ||
     !(trustedPullRequestTarget || trustedManualDispatch)
   ) return false;
   const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
@@ -766,5 +771,6 @@ module.exports.testables = {
   safeError,
   shortSHA,
   sortQueuedPulls,
+  isTrustedMetadataWorkflowPath,
   workflowRunID,
 };

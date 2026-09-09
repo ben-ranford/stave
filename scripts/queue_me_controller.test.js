@@ -322,6 +322,13 @@ test('isBranchCurrent accepts only ancestor-preserving compare states', () => {
   assert.equal(testables.isBranchCurrent('diverged'), false);
 });
 
+test('trusted metadata workflow path accepts only the default workflow forms', () => {
+  assert.equal(testables.isTrustedMetadataWorkflowPath('.github/workflows/pr-metadata.yml', 'main'), true);
+  assert.equal(testables.isTrustedMetadataWorkflowPath('.github/workflows/pr-metadata.yml@main', 'main'), true);
+  assert.equal(testables.isTrustedMetadataWorkflowPath('.github/workflows/pr-metadata.yml@feature', 'main'), false);
+  assert.equal(testables.isTrustedMetadataWorkflowPath('.github/workflows/other.yml', 'main'), false);
+});
+
 test('strict status-check policy requires at least one required context', () => {
   assert.equal(testables.hasStrictRequiredStatusChecks([{ type: 'required_status_checks', parameters: {
     strict_required_status_checks_policy: true,

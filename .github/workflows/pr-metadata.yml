@@ -121,4 +121,4 @@ jobs:
     runs-on: stave-arc
     permissions: {}
     steps:
-      - run: true
+      - run: 'true'
