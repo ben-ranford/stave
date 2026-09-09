@@ -44,9 +44,10 @@ func TestValidateAcceptsNestedHeadingMarkupAndCodeLiteralText(t *testing.T) {
 	}
 }
 
-func TestValidateAcceptsGenuineHeadingsAfterMalformedRawEndTag(t *testing.T) {
-	if err := validate("fix: parser", "fix/parser", fixture(t, "malformed-endtag.html"), identity{}); err != nil {
-		t.Fatalf("GitHub-rendered headings after malformed raw end tag rejected: %v", err)
+func TestValidateRejectsHeadingsHiddenByMalformedRawTextTerminator(t *testing.T) {
+	err := validate("fix: parser", "fix/parser", fixture(t, "malformed-endtag.html"), identity{})
+	if err == nil || !strings.Contains(err.Error(), `missing required template section "Summary"`) || !strings.Contains(err.Error(), `missing required template section "Validation"`) || !strings.Contains(err.Error(), `missing required template section "Release Notes"`) {
+		t.Fatalf("headings hidden by a malformed raw-text terminator were accepted: %v", err)
 	}
 }
 
