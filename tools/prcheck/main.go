@@ -149,6 +149,9 @@ func renderedSections(renderedHTML string) (map[string]bool, error) {
 			if hiddenTextElement(name) {
 				hiddenDepth++
 			}
+			if current != nil && headingDepth == 0 && hiddenDepth == 0 && name == "img" && hasNonEmptyAttribute(token.Attr, "src") {
+				current.meaningful = true
+			}
 		case xml.EndElement:
 			name := strings.ToLower(token.Name.Local)
 			if hiddenTextElement(name) && hiddenDepth > 0 {
@@ -180,6 +183,15 @@ func renderedSections(renderedHTML string) (map[string]bool, error) {
 		}
 	}
 	return completed, nil
+}
+
+func hasNonEmptyAttribute(attributes []xml.Attr, name string) bool {
+	for _, attribute := range attributes {
+		if strings.EqualFold(attribute.Name.Local, name) && strings.TrimSpace(attribute.Value) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func hiddenTextElement(name string) bool {

@@ -44,6 +44,19 @@ func TestValidateAcceptsNestedHeadingMarkupAndCodeLiteralText(t *testing.T) {
 	}
 }
 
+func TestValidateCountsRenderedImagesWithNonEmptySources(t *testing.T) {
+	if err := validate("docs: screenshots", "docs/screenshots", fixture(t, "image-only.html"), identity{}); err != nil {
+		t.Fatalf("image-only rendered sections rejected: %v", err)
+	}
+}
+
+func TestValidateRejectsEmptyAndCommentedRenderedImages(t *testing.T) {
+	err := validate("docs: screenshots", "docs/screenshots", fixture(t, "empty-images.html"), identity{})
+	if err == nil || !strings.Contains(err.Error(), `section "Summary"`) || !strings.Contains(err.Error(), `section "Validation"`) || !strings.Contains(err.Error(), `section "Release Notes"`) {
+		t.Fatalf("empty or commented images were accepted: %v", err)
+	}
+}
+
 func TestValidateRejectsHeadingsHiddenByMalformedRawTextTerminator(t *testing.T) {
 	err := validate("fix: parser", "fix/parser", fixture(t, "malformed-endtag.html"), identity{})
 	if err == nil || !strings.Contains(err.Error(), `missing required template section "Summary"`) || !strings.Contains(err.Error(), `missing required template section "Validation"`) || !strings.Contains(err.Error(), `missing required template section "Release Notes"`) {
