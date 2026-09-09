@@ -27,7 +27,10 @@ jobs:
           # A GitHub App or fine-grained PAT is required so the resulting pull
           # request triggers normal CI. github.token deliberately does not.
           token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
-          release-type: go
+          # Manifest mode releases only the root module. Adapter modules are
+          # intentionally internal until they have independent versions/tags.
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
           target-branch: main
           # The tag-gated release workflow owns all publication after it has
           # verified the exact tagged commit.
