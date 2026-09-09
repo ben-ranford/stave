@@ -110,6 +110,20 @@ jobs:
     runs-on: stave-arc
     timeout-minutes: 20
     steps:
+      - name: Verify repository merge policy with read-only token
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const { repository } = await github.graphql(`query MergePolicy($owner: String!, $repo: String!) {
+              repository(owner: $owner, name: $repo) {
+                mergeCommitAllowed rebaseMergeAllowed squashMergeAllowed squashMergeCommitTitle
+              }
+            }`, { owner: context.repo.owner, repo: context.repo.repo });
+            if (repository?.mergeCommitAllowed !== false || repository?.rebaseMergeAllowed !== false ||
+                repository?.squashMergeAllowed !== true || repository?.squashMergeCommitTitle !== 'PR_TITLE') {
+              throw new Error('Repository must allow only squash merges and use PR titles for squash commit titles.');
+            }
+            core.info('Read-only token verified the repository squash merge policy.');
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Set up Go

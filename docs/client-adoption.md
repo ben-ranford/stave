@@ -5,6 +5,13 @@ theme, actions, and effects. Stave provides the semantic UI and runtime
 contracts that let those choices work consistently across human and automated
 interfaces.
 
+The root module is currently `v1.0.0-rc.1`. It is a release candidate, not a
+GA promise; published Lopper parity and rollback evidence remains the promotion
+gate. Begin with the root module only. The nested SSH, Bubble Tea, and Lip
+Gloss modules are internal and are not yet supported consumer dependencies.
+
+For a compiled first semantic tree, use the [root quick start](../README.md#quick-start).
+
 ## Build an application
 
 Use the public contracts in this order:
@@ -27,8 +34,8 @@ Use the public contracts in this order:
 | Line-oriented CLI | `runtime/human.LineDriver` with plain or monochrome output |
 | Non-interactive snapshot or CI report | `render` plain or machine output without a TTY |
 | Agent-controlled application | `runtime/agent` JSON-RPC over the same semantic tree and action registry |
-| Remote SSH interface | Nested `adapters/ssh` module around an application session |
-| Existing Bubble Tea or Lip Gloss application | Optional adapters consuming public Stave packages |
+| Remote SSH interface | Future SSH adapter around an application session |
+| Existing Bubble Tea or Lip Gloss application | Future optional adapters consuming public Stave packages |
 | Custom renderer or host framework | Application adapter consuming semantic/layout/surface contracts |
 
 These are profiles of one framework, not forks. A client may expose several at

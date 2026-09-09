@@ -725,8 +725,14 @@ func (s *Server) confirm(ctx context.Context, r protocol.Request, resp protocol.
 	if c.SessionID == "" {
 		c.SessionID = s.sessionID
 	}
+	// Bind the issued grant to the authority's prepared policy, rather than
+	// trusting a confirmation issuer to repeat policy metadata correctly.
+	c.PolicyID, c.PolicyEpoch = call.PolicyID, call.PolicyEpoch
 	if s.opt.Actions != nil {
 		if e := s.opt.Actions.IssueConfirmation(c); e != nil {
+			if errors.Is(e, action.ErrConfirmationLimit) {
+				return fail(protocol.ResourceLimit, "confirmation capacity reached")
+			}
 			return fail(protocol.ConfirmationInvalid, "confirmation could not be registered")
 		}
 	}

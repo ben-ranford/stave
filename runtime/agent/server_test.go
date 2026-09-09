@@ -231,6 +231,78 @@ func TestServerPreparedAuthorizationBindsTrustedPolicy(t *testing.T) {
 	}
 }
 
+func TestServerConfirmationBindsPreparedPolicy(t *testing.T) {
+	registry := action.NewRegistry()
+	def := simpleActionDefinition(action.ID("confirm-policy"), action.Consequential)
+	def.Confirmation.Required = true
+	registerTestAction(t, registry, def, func(_ context.Context, _ action.Call, _ any) (any, error) { return map[string]any{}, nil })
+	epoch := uint64(7)
+	s := New(Options{
+		Actions: registry,
+		AuthorizePrepared: func(_ context.Context, c action.Call) (action.Call, *action.Error) {
+			c.PolicyID, c.PolicyEpoch = "trusted", epoch
+			return c, nil
+		},
+		Confirm: func(_ context.Context, c action.Call) (action.Confirmation, error) {
+			return action.NewConfirmation(c.SessionID, def, c.Target, c.Arguments, time.Now().Add(time.Minute))
+		},
+	})
+	fail := func(code int, message string) protocol.Response {
+		return protocol.Response{Error: &protocol.Error{Code: code, Message: message}}
+	}
+	confirm := func() protocol.ConfirmationPresentation {
+		r := protocol.Request{Params: json.RawMessage(`{"callId":"confirm","actionId":"confirm-policy","arguments":{}}`)}
+		response := s.confirm(context.Background(), r, protocol.Response{}, fail)
+		if response.Error != nil {
+			t.Fatalf("confirmation failed: %+v", response.Error)
+		}
+		presentation, ok := response.Result.(protocol.ConfirmationPresentation)
+		if !ok {
+			t.Fatalf("unexpected confirmation response: %#v", response.Result)
+		}
+		return presentation
+	}
+	invoke := func(p protocol.ConfirmationPresentation) protocol.Response {
+		params, err := json.Marshal(protocol.InvokeParams{CallID: "invoke", ActionID: "confirm-policy", Arguments: json.RawMessage(`{}`), Confirmation: &p})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s.invoke(context.Background(), protocol.Request{Params: params}, protocol.Response{}, fail)
+	}
+	if response := invoke(confirm()); response.Error != nil {
+		t.Fatalf("matching policy was rejected: %+v", response.Error)
+	}
+	presentation := confirm()
+	epoch++
+	if response := invoke(presentation); response.Error == nil || response.Error.Code != protocol.ConfirmationInvalid {
+		t.Fatalf("changed policy epoch accepted: %+v", response)
+	}
+}
+
+func TestServerConfirmationCapacityIsResourceLimit(t *testing.T) {
+	registry := action.NewRegistry()
+	def := simpleActionDefinition(action.ID("confirm-capacity"), action.ReadOnly)
+	s := New(Options{
+		Actions:   registry,
+		Authorize: func(context.Context, action.Call) *action.Error { return nil },
+		Confirm: func(_ context.Context, c action.Call) (action.Confirmation, error) {
+			return action.NewConfirmation(c.SessionID, def, c.Target, c.Arguments, time.Now().Add(time.Minute))
+		},
+	})
+	fail := func(code int, message string) protocol.Response {
+		return protocol.Response{Error: &protocol.Error{Code: code, Message: message}}
+	}
+	request := protocol.Request{Params: json.RawMessage(`{"callId":"confirm","actionId":"confirm-capacity","arguments":{}}`)}
+	for i := 0; i < 1024; i++ {
+		if response := s.confirm(context.Background(), request, protocol.Response{}, fail); response.Error != nil {
+			t.Fatalf("confirmation %d failed: %+v", i, response.Error)
+		}
+	}
+	if response := s.confirm(context.Background(), request, protocol.Response{}, fail); response.Error == nil || response.Error.Code != protocol.ResourceLimit {
+		t.Fatalf("capacity error = %+v, want protocol.ResourceLimit", response)
+	}
+}
+
 func TestServerOversizedResponseIsTyped(t *testing.T) {
 	registry := action.NewRegistry()
 	def := simpleActionDefinition(action.ID("x"), action.ReadOnly)

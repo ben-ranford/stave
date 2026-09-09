@@ -590,21 +590,50 @@ func cloneDefinition(d Definition) Definition {
 type Registry struct {
 	mu     sync.RWMutex
 	m      map[ID]entry
-	used   map[string]bool
+	used   map[string]time.Time
 	grants map[string]Confirmation
 }
 
+const maxConfirmationGrants = 1024
+
+// ErrConfirmationLimit indicates that the registry cannot retain more
+// confirmation state, including live grants and replay tombstones, until it expires.
+var ErrConfirmationLimit = errors.New("confirmation registry capacity reached")
+
 func NewRegistry() *Registry {
-	return &Registry{m: map[ID]entry{}, used: map[string]bool{}, grants: map[string]Confirmation{}}
+	return &Registry{m: map[ID]entry{}, used: map[string]time.Time{}, grants: map[string]Confirmation{}}
 }
 func (r *Registry) IssueConfirmation(c Confirmation) error {
-	if c.Token == "" || c.SessionID == "" {
+	if c.Token == "" || c.SessionID == "" || c.ExpiresAt.IsZero() || !c.ExpiresAt.After(time.Now()) {
 		return errors.New("invalid confirmation")
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.pruneConfirmationsLocked(time.Now())
+	if _, exists := r.grants[c.Token]; exists {
+		return errors.New("duplicate confirmation token")
+	}
+	if _, used := r.used[c.Token]; used {
+		return errors.New("confirmation token already used")
+	}
+	if len(r.grants)+len(r.used) >= maxConfirmationGrants {
+		return ErrConfirmationLimit
+	}
 	r.grants[c.Token] = c
 	return nil
+}
+
+func (r *Registry) pruneConfirmationsLocked(now time.Time) {
+	for token, grant := range r.grants {
+		if grant.ExpiresAt.IsZero() || !grant.ExpiresAt.After(now) {
+			delete(r.grants, token)
+		}
+	}
+	for token, expiry := range r.used {
+		if expiry.IsZero() || !expiry.After(now) {
+			delete(r.used, token)
+		}
+	}
 }
 func (r *Registry) Register(d Definition, h Handler) error {
 	d = cloneDefinition(d)
@@ -681,7 +710,13 @@ func (r *Registry) Invoke(ctx context.Context, c Call) Result {
 		if c.Confirmation == nil {
 			return reject(c, ConfirmationRequired, "confirmation required")
 		}
+		canon, ce := canonical.JSON(c.Arguments)
+		if ce != nil {
+			return reject(c, InvalidArgument, ce.Error())
+		}
+		h := sha256.Sum256(canon)
 		r.mu.Lock()
+		r.pruneConfirmationsLocked(time.Now())
 		grant, issued := r.grants[c.Confirmation.Token]
 		if !issued || grant.SessionID != c.SessionID {
 			r.mu.Unlock()
@@ -691,24 +726,20 @@ func (r *Registry) Invoke(ctx context.Context, c Call) Result {
 			r.mu.Unlock()
 			return reject(c, ConfirmationInvalid, "confirmation binding mismatch")
 		}
-		r.mu.Unlock()
-		if grant.Used || time.Now().After(grant.ExpiresAt) || grant.ActionID != c.ActionID || grant.ActionVersion != e.Def.Version || grant.Target != c.Target || grant.Safety != e.Def.Safety || (grant.PolicyID != "" && (grant.PolicyID != c.PolicyID || grant.PolicyEpoch != c.PolicyEpoch)) || (grant.RevisionMin > 0 && c.Target.ObservedRevision < grant.RevisionMin) || (grant.RevisionMax > 0 && c.Target.ObservedRevision > grant.RevisionMax) {
+		if grant.Used || !grant.ExpiresAt.After(time.Now()) || grant.ActionID != c.ActionID || grant.ActionVersion != e.Def.Version || grant.Target != c.Target || grant.Safety != e.Def.Safety || grant.PolicyID != c.PolicyID || grant.PolicyEpoch != c.PolicyEpoch || (grant.RevisionMin > 0 && c.Target.ObservedRevision < grant.RevisionMin) || (grant.RevisionMax > 0 && c.Target.ObservedRevision > grant.RevisionMax) {
+			r.mu.Unlock()
 			return reject(c, ConfirmationInvalid, "invalid confirmation")
 		}
-		canon, ce := canonical.JSON(c.Arguments)
-		if ce != nil {
-			return reject(c, InvalidArgument, ce.Error())
-		}
-		h := sha256.Sum256(canon)
 		if grant.ArgHash != hex.EncodeToString(h[:]) {
+			r.mu.Unlock()
 			return reject(c, ConfirmationInvalid, "argument hash mismatch")
 		}
-		r.mu.Lock()
-		if r.used[c.Confirmation.Token] {
+		if _, used := r.used[c.Confirmation.Token]; used {
 			r.mu.Unlock()
 			return reject(c, ConfirmationInvalid, "confirmation replay")
 		}
-		r.used[c.Confirmation.Token] = true
+		delete(r.grants, c.Confirmation.Token)
+		r.used[c.Confirmation.Token] = grant.ExpiresAt
 		r.mu.Unlock()
 	}
 	out, err := e.H(ctx, c, v)

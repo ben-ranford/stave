@@ -72,6 +72,7 @@ type Result struct { CallID string; ActionID ID; Target semantic.Target; Status 
 type ResultStatus string
 type Safety string
 type Schema struct { ID string `json:"id"`; JSON json.RawMessage `json:"json"`; Decode func(json.RawMessage) (any, error) `json:"-"`; Encode func(any) (json.RawMessage, error) `json:"-"` }
+var ErrConfirmationLimit
 var ErrNumericLimit
 
 [github.com/ben-ranford/stave/capability]

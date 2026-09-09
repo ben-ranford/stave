@@ -65,6 +65,7 @@ function makeHarness(options = {}) {
     app: { slug: 'github-actions' },
     head_sha: pull.head.sha,
     details_url: 'https://github.com/octo/stave/actions/runs/123',
+		output: { text: 'stave-pr-metadata-run/v1:123' },
   }));
   const workflowJobs = options.workflowJobs || metadataChecks.map((check) => ({
     name: `metadata/${check.external_id}`,
@@ -328,6 +329,16 @@ test('trusted metadata workflow path accepts only the default workflow forms', (
   assert.equal(testables.isTrustedMetadataWorkflowPath('.github/workflows/pr-metadata.yml@main', 'main'), true);
   assert.equal(testables.isTrustedMetadataWorkflowPath('.github/workflows/pr-metadata.yml@feature', 'main'), false);
   assert.equal(testables.isTrustedMetadataWorkflowPath('.github/workflows/other.yml', 'main'), false);
+});
+
+test('workflow run hint identifies the source run despite GitHub rewritten details URLs', () => {
+	assert.equal(
+		testables.workflowRunID('stave-pr-metadata-run/v1:34368091002'),
+		34368091002,
+	);
+	for (const hint of ['', 'stave-pr-metadata-run/v1:0', 'stave-pr-metadata-run/v1:01', 'stave-pr-metadata-run/v1:9007199254740992', 'stave-pr-metadata-run/v2:34368091002']) {
+		assert.equal(testables.workflowRunID(hint), null, hint);
+	}
 });
 
 test('strict status-check policy requires at least one required context', () => {
@@ -624,6 +635,50 @@ test('queue rejects a GitHub Actions check outside the trusted default-branch di
   assert.match(commentsFor(harness, 10), /waiting for a successful current `pr-metadata` validation/);
 });
 
+test('queue trusts a rewritten details URL only after validating its hinted run and attestation job', async () => {
+	const pull = makePull(10);
+	const fingerprint = testables.metadataCheckExternalID(pull);
+	const harness = makeHarness({
+		pulls: [pull],
+		initialStates: { 10: { mergeStateStatus: 'CLEAN' } },
+		metadataChecks: [{
+			name: 'pr-metadata',
+			conclusion: 'success',
+			external_id: fingerprint,
+			app: { slug: 'github-actions' },
+			head_sha: pull.head.sha,
+			details_url: 'https://github.com/octo/stave/runs/102523377717',
+			output: { text: 'stave-pr-metadata-run/v1:34368091002' },
+		}],
+	});
+
+	await runController(harness.args);
+
+	assert.deepEqual(harness.calls.workflowRuns, [34368091002, 34368091002]);
+	assert.deepEqual(harness.calls.merged, [10]);
+});
+
+test('queue rejects spoofed run hints without trusted workflow source and attestation job', async () => {
+	const pull = makePull(10);
+	const fingerprint = testables.metadataCheckExternalID(pull);
+	const check = {
+		name: 'pr-metadata', conclusion: 'success', external_id: fingerprint,
+		app: { slug: 'github-actions' }, head_sha: pull.head.sha,
+		details_url: 'https://github.com/octo/stave/runs/102523377717',
+		output: { text: 'stave-pr-metadata-run/v1:34368091002' },
+	};
+	for (const options of [
+		{ workflowRun: { conclusion: 'success', event: 'workflow_dispatch', path: '.github/workflows/other.yml', head_branch: 'main' } },
+		{ workflowRun: { conclusion: 'success', event: 'workflow_dispatch', path: '.github/workflows/pr-metadata.yml', head_branch: 'attacker' } },
+		{ workflowJobs: [{ name: `metadata/${fingerprint}-spoofed`, conclusion: 'success' }] },
+	]) {
+		const harness = makeHarness({ pulls: [pull], initialStates: { 10: { mergeStateStatus: 'CLEAN' } }, metadataChecks: [check], ...options });
+		await runController(harness.args);
+		assert.deepEqual(harness.calls.merged, []);
+		assert.match(commentsFor(harness, 10), /waiting for a successful current `pr-metadata` validation/);
+	}
+});
+
 test('queue rejects metadata validated under a previous release author configuration', async () => {
   const pull = makePull(10);
   const checks = [{
@@ -633,6 +688,7 @@ test('queue rejects metadata validated under a previous release author configura
     app: { slug: 'github-actions' },
     head_sha: pull.head.sha,
     details_url: 'https://github.com/octo/stave/actions/runs/123',
+		output: { text: 'stave-pr-metadata-run/v1:123' },
   }];
   const jobs = [{ name: `metadata/${checks[0].external_id}`, conclusion: 'success' }];
   const harness = makeHarness({

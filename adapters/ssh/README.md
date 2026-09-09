@@ -2,13 +2,14 @@
 
 `adapters/ssh` is an optional nested Go module that keeps Wish/SSH transport types out of the root Stave module.
 
-It remains internal through the root `v1.0.0-rc.1` release; the local root
-`replace` is workspace-only and must be removed for independent adapter
-publication.
+It is internal through the root `v1.0.0-rc.1` release and is not a supported
+consumer dependency yet. The local root `replace` is workspace-only and must
+be removed for independent adapter publication with its own version and tag.
 
 ## Version pin
 
 - Wish: `charm.land/wish/v2 v2.0.3`
+- SSH: `charm.land/ssh v0.4.3`
 - Wish toolchain declaration: `go 1.25.12`
 - Root Stave is consumed through a local `replace github.com/ben-ranford/stave => ../..` for local development and tests.
 
@@ -47,4 +48,7 @@ go test -race ./...
 go vet ./...
 ```
 
-The PTY integration tests are skipped under `go test -race` because `charm.land/ssh v0.4.2` currently exposes a PTY session-state race during window mutation. The race run still covers the non-PTY fallback path and adapter-local synchronization.
+PTY integration tests are skipped under `go test -race` because the pinned
+`charm.land/ssh v0.4.3` still exposes unsynchronized PTY session state during
+window mutation. The race run covers the non-PTY fallback path and
+adapter-local synchronization; it does not claim PTY race coverage.

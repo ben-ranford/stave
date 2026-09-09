@@ -99,13 +99,12 @@ async function getCurrentPull(github, owner, repo, number) {
   return pull;
 }
 
-function workflowRunID(detailsURL) {
-  try {
-    const match = new URL(detailsURL).pathname.match(/\/actions\/runs\/(\d+)$/);
-    return match ? Number(match[1]) : null;
-  } catch {
-    return null;
-  }
+function workflowRunID(outputText) {
+  if (typeof outputText !== 'string') return null;
+  const match = outputText.match(/^stave-pr-metadata-run\/v1:([1-9]\d*)$/);
+  if (!match) return null;
+  const runID = Number(match[1]);
+  return Number.isSafeInteger(runID) && runID > 0 ? runID : null;
 }
 
 function isTrustedMetadataWorkflowPath(path, defaultBranch) {
@@ -130,7 +129,7 @@ async function hasCurrentMetadataValidation(github, owner, repo, pull, defaultBr
       check.external_id === expectedExternalID &&
       check.app?.slug === METADATA_CHECK_APP_SLUG,
   );
-  const runID = workflowRunID(candidate?.details_url);
+  const runID = workflowRunID(candidate?.output?.text);
   if (!runID) return false;
   const { data: run } = await github.rest.actions.getWorkflowRun({ owner, repo, run_id: runID });
   // Workflow-run PR associations are mutable and are therefore not provenance.

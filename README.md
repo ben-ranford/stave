@@ -2,6 +2,62 @@
 
 Stave is a renderer-independent Go UI primitives framework for branded human and agent interfaces. Applications own their identity (theme tokens, glyphs, assets, semantic labels, actions, and keymaps); Stave owns deterministic state, layout, rendering, protocol, and runtime contracts.
 
+## Release status
+
+[`v1.0.0-rc.1`](https://github.com/ben-ranford/stave/releases/tag/v1.0.0-rc.1)
+is the current root-module release candidate. It is not a GA release: promotion
+requires published immutable Lopper proving-client evidence for parity and
+rollback. The nested SSH, Bubble Tea, and Lip Gloss adapters remain internal
+until they receive independent module versions and tags.
+
+Security fixes on `main` are listed under [Unreleased](CHANGELOG.md#unreleased)
+and are not included in that tag. Publish and pin a candidate containing those
+fixes before deploying consequential agent actions.
+
+## Quick start
+
+Create a module and try the current development source. Go records the resolved
+commit as a pseudo-version in `go.mod`:
+
+```sh
+go mod init example.com/hello-stave
+go get github.com/ben-ranford/stave@main
+```
+
+Save this as `main.go`, then run `go run .`:
+
+```go
+package main
+
+import (
+	"fmt"
+
+	"github.com/ben-ranford/stave/primitive"
+	"github.com/ben-ranford/stave/semantic"
+)
+
+func main() {
+	node, err := primitive.Text(primitive.Options{
+		Namespace: "hello",
+		View:      "main",
+		Entity:    "welcome",
+		Name:      "Welcome",
+	}, "Hello, Stave!")
+	if err != nil {
+		panic(err)
+	}
+	tree, err := semantic.NewTree(1, node)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("%s: %s\n", tree.Root().Role(), tree.Root().Value().Text)
+}
+```
+
+```text
+text: Hello, Stave!
+```
+
 ## Documentation
 
 Start with the [adoption guide](docs/client-adoption.md), then see the

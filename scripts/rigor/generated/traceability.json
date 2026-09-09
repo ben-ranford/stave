@@ -27,7 +27,7 @@
     },
     {
       "path": "schema/protocol/protocol.json",
-      "sha256": "d4bff3483e88369d0ef969a40d4b92876cdc91e588fb4fc2ec7a050be8d3fd5d"
+      "sha256": "a8a0ab0a68f1dae3d55c4e596e8351d28a292a56e948eec30d83150dd3491068"
     },
     {
       "path": "schema/semantic/snapshot.json",
