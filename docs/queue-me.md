@@ -50,10 +50,11 @@ Enable **Allow squash merging** in repository Settings > General. Disable merge
 commits and rebase merges, and use the pull request title as the squash commit
 title. The effective rules for `main` must include at least one required status
 check with strict up-to-date enforcement; the queue refuses to advance without
-that protection.
+that protection. The controller rechecks the squash merge settings immediately
+before merging, so a policy change pauses the queue.
 
 Install a GitHub App on this repository with Contents, Issues, Pull requests,
-and Workflows write permissions. Set repository variable `QUEUE_APP_CLIENT_ID`
+and Workflows write permissions, plus Checks read permission. Set repository variable `QUEUE_APP_CLIENT_ID`
 to the App identifier and secret `QUEUE_APP_PRIVATE_KEY` to its private key.
 The App must not bypass the repository ruleset.
 
