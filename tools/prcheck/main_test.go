@@ -133,6 +133,22 @@ func TestValidateRecognizesRawTextTagOpenersAtEndOfLine(t *testing.T) {
 	}
 }
 
+func TestValidateRecognizesKnownHTMLBlockTagsAtEndOfLine(t *testing.T) {
+	for _, tag := range []string{"<div", "</div"} {
+		body := tag + "\n## Summary\n\nCompleted.\n\n## Validation\n\nCompleted.\n\n## Release Notes\n\nCompleted.\n"
+		if err := validate("fix: parser", "fix/parser", body, identity{}); err == nil {
+			t.Fatalf("headings inside an end-of-line %s block were accepted", tag)
+		}
+	}
+}
+
+func TestValidateDoesNotTreatKnownTagPrefixesAsHTMLBlocks(t *testing.T) {
+	body := "<div:foo>\n## Summary\n\nCompleted.\n\n## Validation\n\nCompleted.\n\n## Release Notes\n\nCompleted.\n"
+	if err := validate("fix: parser", "fix/parser", body, identity{}); err != nil {
+		t.Fatalf("non-boundary HTML tag prefix hid required headings: %v", err)
+	}
+}
+
 func TestValidateResumesAfterBlankTerminatedHTMLBlock(t *testing.T) {
 	body := "<div>\n## hidden\n</div>\n\n## Summary\n\nCompleted.\n\n## Validation\n\nCompleted.\n\n## Release Notes\n\nCompleted.\n"
 	if err := validate("fix: parser", "fix/parser", body, identity{}); err != nil {

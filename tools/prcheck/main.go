@@ -240,20 +240,27 @@ func opensHTMLBlock(line string) (htmlBlock, bool) {
 		return htmlBlock{}, false
 	}
 	tag := strings.ToLower(line[start:index])
-	if !closingTag && htmlRawTextTags[tag] && isHTMLTagBoundary(line, index) {
+	if !closingTag && htmlRawTextTags[tag] && isRawTextTagBoundary(line, index) {
 		return htmlBlock{closeTag: tag}, true
+	}
+	if htmlBlockTags[tag] && isHTMLBlockTagBoundary(line, index) {
+		return htmlBlock{untilBlank: true}, true
 	}
 	if index == len(line) {
 		return htmlBlock{}, false
 	}
-	if htmlBlockTags[tag] || genericHTMLTagPattern.MatchString(line) {
+	if genericHTMLTagPattern.MatchString(line) {
 		return htmlBlock{untilBlank: true}, true
 	}
 	return htmlBlock{}, false
 }
 
-func isHTMLTagBoundary(line string, index int) bool {
-	return index == len(line) || line[index] == '>' || line[index] == '/' || line[index] == ' ' || line[index] == '\t'
+func isRawTextTagBoundary(line string, index int) bool {
+	return index == len(line) || line[index] == '>' || line[index] == ' ' || line[index] == '\t'
+}
+
+func isHTMLBlockTagBoundary(line string, index int) bool {
+	return index == len(line) || line[index] == '>' || line[index] == ' ' || line[index] == '\t' || strings.HasPrefix(line[index:], "/>")
 }
 
 func closesHTMLTag(line, tag string) bool {
