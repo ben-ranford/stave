@@ -81,9 +81,18 @@ function makeHarness(options = {}) {
     merged: [],
     notices: [],
     rebased: [],
+    repositoryReads: [],
     rules: [],
   };
-  const repository = { default_branch: 'main', full_name: 'octo/stave' };
+  const repository = {
+    default_branch: 'main',
+    full_name: 'octo/stave',
+    allow_squash_merge: true,
+    allow_merge_commit: false,
+    allow_rebase_merge: false,
+    squash_merge_commit_title: 'PR_TITLE',
+  };
+  const repositoryResponses = options.repositoryResponses || [repository];
 
   const github = {
     rest: {
@@ -132,7 +141,13 @@ function makeHarness(options = {}) {
         listForRef: async () => {},
       },
       repos: {
-        get: async () => ({ data: repository }),
+        get: async () => {
+          const response = repositoryResponses[
+            Math.min(calls.repositoryReads.length, repositoryResponses.length - 1)
+          ];
+          calls.repositoryReads.push(response);
+          return { data: response };
+        },
         getBranch: async () => {
           const sha = branchSHAs[Math.min(calls.branchReads.length, branchSHAs.length - 1)];
           calls.branchReads.push(sha);
@@ -294,6 +309,24 @@ test('strict status-check policy requires at least one required context', () => 
     required_status_checks: [],
   } }]), false);
   assert.equal(testables.hasStrictRequiredStatusChecks([]), false);
+});
+
+test('queue merge policy matches the trusted metadata validator', () => {
+  const policy = {
+    allow_squash_merge: true,
+    allow_merge_commit: false,
+    allow_rebase_merge: false,
+    squash_merge_commit_title: 'PR_TITLE',
+  };
+  assert.deepEqual(testables.mergePolicyViolations(policy), []);
+  for (const [field, value, message] of [
+    ['allow_squash_merge', false, /allow squash merges/],
+    ['allow_merge_commit', true, /disable merge commits/],
+    ['allow_rebase_merge', true, /disable rebase merges/],
+    ['squash_merge_commit_title', 'COMMIT_OR_PR_TITLE', /default to the PR title/],
+  ]) {
+    assert.match(testables.mergePolicyViolations({ ...policy, [field]: value }).join(' '), message);
+  }
 });
 
 test('queue fails closed without effective strict required checks', async (t) => {
@@ -465,6 +498,38 @@ test('queue leaves a waiting pull unarmed, then directly merges after fresh vali
   assert.deepEqual(harness.calls.merged, [10]);
   assert.equal(harness.states.get(10).autoMergeRequest, null);
   assert.match(commentsFor(harness, 10), /GitHub squash-merged it/);
+});
+
+test('queue refuses a direct merge when the repository merge policy changes', async () => {
+  const pull = makePull(10);
+  const harness = makeHarness({
+    pulls: [pull],
+    initialStates: { 10: { mergeStateStatus: 'CLEAN' } },
+    repositoryResponses: [
+      {
+        default_branch: 'main',
+        full_name: 'octo/stave',
+        allow_squash_merge: true,
+        allow_merge_commit: false,
+        allow_rebase_merge: false,
+        squash_merge_commit_title: 'PR_TITLE',
+      },
+      {
+        default_branch: 'main',
+        full_name: 'octo/stave',
+        allow_squash_merge: true,
+        allow_merge_commit: false,
+        allow_rebase_merge: false,
+        squash_merge_commit_title: 'COMMIT_OR_PR_TITLE',
+      },
+    ],
+  });
+
+  await assert.rejects(runController(harness.args), /Repository squash merge titles must default to the PR title/);
+
+  assert.deepEqual(harness.calls.merged, []);
+  assert.equal(harness.calls.repositoryReads.length, 2);
+  assert.match(commentsFor(harness, 10), /configured squash merge policy/);
 });
 
 test('queue rejects a matching metadata check not produced by GitHub Actions', async () => {

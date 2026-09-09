@@ -24,6 +24,25 @@ function isBranchCurrent(comparisonStatus) {
   return comparisonStatus === 'ahead' || comparisonStatus === 'identical';
 }
 
+function mergePolicyViolations(repository) {
+  const checks = [
+    [repository.allow_squash_merge, true, 'Repository must allow squash merges'],
+    [repository.allow_merge_commit, false, 'Repository must disable merge commits'],
+    [repository.allow_rebase_merge, false, 'Repository must disable rebase merges'],
+    [repository.squash_merge_commit_title, 'PR_TITLE', 'Repository squash merge titles must default to the PR title'],
+  ];
+  return checks
+    .filter(([actual, expected]) => actual !== expected)
+    .map(([, , message]) => message);
+}
+
+function requireQueueMergePolicy(repository) {
+  const violations = mergePolicyViolations(repository);
+  if (violations.length > 0) {
+    throw new Error(`Queue requires the configured squash merge policy: ${violations.join('; ')}.`);
+  }
+}
+
 function hasStrictRequiredStatusChecks(rules) {
   return Array.isArray(rules) && rules.some(
     (rule) =>
@@ -467,6 +486,8 @@ async function mergeQueuedPull({
         `Pull request head moved from ${shortSHA(update.headSHA)} to ${shortSHA(state.headRefOid)} while advancing the queue.`,
       );
     }
+    const { data: repository } = await github.rest.repos.get({ owner, repo });
+    requireQueueMergePolicy(repository);
     const result = await mergeIfReady(github, owner, repo, candidate.number, state, {
       expectedBaseRefName: defaultBranch,
       expectedBaseRefOid: defaultBranchSHA,
@@ -695,6 +716,7 @@ module.exports.testables = {
   isBranchCurrent,
   isMergeConflict,
   hasStrictRequiredStatusChecks,
+  mergePolicyViolations,
   labelName,
   metadataCheckExternalID,
   safeError,
