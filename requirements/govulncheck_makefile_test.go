@@ -67,7 +67,7 @@ esac
 				t.Fatal(err)
 			}
 			var got []string
-			for _, dir := range strings.Fields(string(data)) {
+			for _, dir := range strings.Split(strings.TrimSpace(string(data)), "\n") {
 				realDir, err := filepath.EvalSymlinks(dir)
 				if err != nil {
 					t.Fatal(err)
