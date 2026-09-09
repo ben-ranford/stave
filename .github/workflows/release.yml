@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  GO_VERSION_CURRENT: "1.26.5"
+  GO_VERSION_CURRENT: "1.27.1"
 
 jobs:
   verify:
