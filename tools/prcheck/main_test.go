@@ -192,10 +192,19 @@ func TestValidateAcceptsATXClosingHashes(t *testing.T) {
 }
 
 func TestValidateRejectsEmptyMarkdownContainers(t *testing.T) {
-	for _, container := range []string{">", ">>>", "*", "+", "1.", "---", "***", "___"} {
+	for _, container := range []string{">", ">>>", "*", "+", "1.", "1)", "123456789.", "> 1)", "- -", "---", "***", "___"} {
 		body := "## Summary\n\n" + container + "\n\n## Validation\n\nCompleted.\n\n## Release Notes\n\nCompleted.\n"
 		if err := validate("fix: parser", "fix/parser", body, identity{}); err == nil {
 			t.Fatalf("empty Markdown container %q was accepted as content", container)
+		}
+	}
+}
+
+func TestValidateRetainsNonListOrderedMarkerText(t *testing.T) {
+	for _, summary := range []string{"1)word", "1234567890."} {
+		body := "## Summary\n\n" + summary + "\n\n## Validation\n\nCompleted.\n\n## Release Notes\n\nCompleted.\n"
+		if err := validate("fix: parser", "fix/parser", body, identity{}); err != nil {
+			t.Fatalf("non-list ordered marker text %q was rejected: %v", summary, err)
 		}
 	}
 }

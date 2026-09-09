@@ -15,12 +15,11 @@ import (
 const maxBodyBytes = 1 << 20
 
 var (
-	titlePattern             = regexp.MustCompile(`^(feat|fix|perf|docs|refactor|revert|test|ci|build|chore)(\([a-z0-9][a-z0-9._/-]*\))?!?: [^\s].*$`)
-	orderedListMarkerPattern = regexp.MustCompile(`^[0-9]+\.$`)
-	releaseTitlePattern      = regexp.MustCompile(`^chore(?:\([a-z0-9._/-]+\))?: release [0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$`)
-	releaseHeadRefPattern    = regexp.MustCompile(`^release-please--branches--main(?:--components--[a-z0-9._-]+)?$`)
-	requiredHeadings         = []string{"Summary", "Validation", "Release Notes"}
-	placeholders             = []string{"problem:", "change:", "compatibility:", "changelog:", "follow-up:", "make fast", "make verify", "make ci"}
+	titlePattern          = regexp.MustCompile(`^(feat|fix|perf|docs|refactor|revert|test|ci|build|chore)(\([a-z0-9][a-z0-9._/-]*\))?!?: [^\s].*$`)
+	releaseTitlePattern   = regexp.MustCompile(`^chore(?:\([a-z0-9._/-]+\))?: release [0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$`)
+	releaseHeadRefPattern = regexp.MustCompile(`^release-please--branches--main(?:--components--[a-z0-9._-]+)?$`)
+	requiredHeadings      = []string{"Summary", "Validation", "Release Notes"}
+	placeholders          = []string{"problem:", "change:", "compatibility:", "changelog:", "follow-up:", "make fast", "make verify", "make ci"}
 )
 
 type identity struct{ headRepo, repo, releaseAuthor, author string }
@@ -455,21 +454,53 @@ func meaningful(content string) bool {
 }
 
 func isEmptyMarkdownContainer(line string) bool {
-	if line == "-" || line == "*" || line == "+" {
-		return true
+	for {
+		line = strings.TrimSpace(line)
+		if line == "" || line == "-" || line == "*" || line == "+" {
+			return true
+		}
+		if isHorizontalRule(line) {
+			return true
+		}
+		if line[0] == '>' {
+			line = line[1:]
+			continue
+		}
+		if len(line) > 1 && (line[0] == '-' || line[0] == '*' || line[0] == '+') && (line[1] == ' ' || line[1] == '\t') {
+			line = line[2:]
+			continue
+		}
+		if end := orderedListMarkerEnd(line); end > 0 {
+			if end == len(line) {
+				return true
+			}
+			if line[end] == ' ' || line[end] == '\t' {
+				line = line[end+1:]
+				continue
+			}
+		}
+		return false
 	}
-	if orderedListMarkerPattern.MatchString(line) {
-		return true
+}
+
+func orderedListMarkerEnd(line string) int {
+	digits := 0
+	for digits < len(line) && line[digits] >= '0' && line[digits] <= '9' {
+		digits++
 	}
+	if digits == 0 || digits > 9 || digits == len(line) || (line[digits] != '.' && line[digits] != ')') {
+		return 0
+	}
+	return digits + 1
+}
+
+func isHorizontalRule(line string) bool {
 	withoutWhitespace := strings.Map(func(r rune) rune {
 		if r == ' ' || r == '\t' {
 			return -1
 		}
 		return r
 	}, line)
-	if len(withoutWhitespace) > 0 && strings.Trim(withoutWhitespace, ">") == "" {
-		return true
-	}
 	if len(withoutWhitespace) < 3 {
 		return false
 	}
