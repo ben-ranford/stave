@@ -150,10 +150,35 @@ func TestValidateDoesNotTreatAnAutolinkAsARawHTMLBlock(t *testing.T) {
 	}
 }
 
+func TestValidateTreatsStandaloneRawTextClosingTagsAsBlankTerminatedHTML(t *testing.T) {
+	for _, closingTag := range []string{"</pre>", "</script>"} {
+		body := closingTag + "\n## Summary\n\nCompleted.\n\n## Validation\n\nCompleted.\n\n## Release Notes\n\nCompleted.\n"
+		if err := validate("fix: parser", "fix/parser", body, identity{}); err == nil {
+			t.Fatal("headings after a standalone raw-text closing tag were accepted")
+		}
+	}
+}
+
 func TestValidateAcceptsATXClosingHashes(t *testing.T) {
 	body := "## Summary ##\n\nCompleted.\n\n## Validation ##\n\nCompleted.\n\n## Release Notes ##\n\nCompleted.\n"
 	if err := validate("fix: parser", "fix/parser", body, identity{}); err != nil {
 		t.Fatalf("ATX closing hashes prevented required headings from matching: %v", err)
+	}
+}
+
+func TestValidateRejectsEmptyMarkdownContainers(t *testing.T) {
+	for _, container := range []string{">", ">>>", "*", "+", "1.", "---", "***", "___"} {
+		body := "## Summary\n\n" + container + "\n\n## Validation\n\nCompleted.\n\n## Release Notes\n\nCompleted.\n"
+		if err := validate("fix: parser", "fix/parser", body, identity{}); err == nil {
+			t.Fatalf("empty Markdown container %q was accepted as content", container)
+		}
+	}
+}
+
+func TestValidateRetainsMeaningfulTextAndCodeLiterals(t *testing.T) {
+	body := "## Summary\n\nN/A\n\n## Validation\n\n`>`\n\n## Release Notes\n\nCompleted.\n"
+	if err := validate("fix: parser", "fix/parser", body, identity{}); err != nil {
+		t.Fatalf("meaningful text or a code literal was rejected: %v", err)
 	}
 }
 

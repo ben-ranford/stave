@@ -15,11 +15,12 @@ import (
 const maxBodyBytes = 1 << 20
 
 var (
-	titlePattern          = regexp.MustCompile(`^(feat|fix|perf|docs|refactor|revert|test|ci|build|chore)(\([a-z0-9][a-z0-9._/-]*\))?!?: [^\s].*$`)
-	releaseTitlePattern   = regexp.MustCompile(`^chore(?:\([a-z0-9._/-]+\))?: release [0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$`)
-	releaseHeadRefPattern = regexp.MustCompile(`^release-please--branches--main(?:--components--[a-z0-9._-]+)?$`)
-	requiredHeadings      = []string{"Summary", "Validation", "Release Notes"}
-	placeholders          = []string{"problem:", "change:", "compatibility:", "changelog:", "follow-up:", "make fast", "make verify", "make ci"}
+	titlePattern             = regexp.MustCompile(`^(feat|fix|perf|docs|refactor|revert|test|ci|build|chore)(\([a-z0-9][a-z0-9._/-]*\))?!?: [^\s].*$`)
+	orderedListMarkerPattern = regexp.MustCompile(`^[0-9]+\.$`)
+	releaseTitlePattern      = regexp.MustCompile(`^chore(?:\([a-z0-9._/-]+\))?: release [0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$`)
+	releaseHeadRefPattern    = regexp.MustCompile(`^release-please--branches--main(?:--components--[a-z0-9._-]+)?$`)
+	requiredHeadings         = []string{"Summary", "Validation", "Release Notes"}
+	placeholders             = []string{"problem:", "change:", "compatibility:", "changelog:", "follow-up:", "make fast", "make verify", "make ci"}
 )
 
 type identity struct{ headRepo, repo, releaseAuthor, author string }
@@ -226,7 +227,9 @@ func opensHTMLBlock(line string) (htmlBlock, bool) {
 		return htmlBlock{terminator: ">"}, true
 	}
 	index := 1
+	closingTag := false
 	if index < len(line) && line[index] == '/' {
+		closingTag = true
 		index++
 	}
 	start := index
@@ -237,7 +240,7 @@ func opensHTMLBlock(line string) (htmlBlock, bool) {
 		return htmlBlock{}, false
 	}
 	tag := strings.ToLower(line[start:index])
-	if htmlRawTextTags[tag] {
+	if !closingTag && htmlRawTextTags[tag] {
 		return htmlBlock{closeTag: tag}, true
 	}
 	if htmlBlockTags[tag] || genericHTMLTagPattern.MatchString(line) {
@@ -430,11 +433,42 @@ func meaningful(content string) bool {
 	}
 	for _, line := range strings.Split(content, "\n") {
 		line = strings.TrimSpace(line)
-		if line != "" && line != "-" && !strings.HasPrefix(line, "- [ ]") {
+		if line != "" && !isEmptyMarkdownContainer(line) && !strings.HasPrefix(line, "- [ ]") {
 			return true
 		}
 	}
 	return false
+}
+
+func isEmptyMarkdownContainer(line string) bool {
+	if line == "-" || line == "*" || line == "+" {
+		return true
+	}
+	if orderedListMarkerPattern.MatchString(line) {
+		return true
+	}
+	withoutWhitespace := strings.Map(func(r rune) rune {
+		if r == ' ' || r == '\t' {
+			return -1
+		}
+		return r
+	}, line)
+	if len(withoutWhitespace) > 0 && strings.Trim(withoutWhitespace, ">") == "" {
+		return true
+	}
+	if len(withoutWhitespace) < 3 {
+		return false
+	}
+	marker := withoutWhitespace[0]
+	if marker != '-' && marker != '*' && marker != '_' {
+		return false
+	}
+	for index := 1; index < len(withoutWhitespace); index++ {
+		if withoutWhitespace[index] != marker {
+			return false
+		}
+	}
+	return true
 }
 
 func validatePolicy(p policy) error {
