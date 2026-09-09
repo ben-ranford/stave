@@ -27,7 +27,9 @@ cannot advance the queue.
 
 Before a direct merge, the controller requires a successful trusted
 `pr-metadata` check whose recorded fingerprint matches the pull request's
-current title, body, labels, and head SHA. Editing those fields pauses the
+current title, body, labels, and head SHA. The controller also verifies a
+successful fingerprint-named job in the trusted metadata workflow run; the
+shared `github-actions` App identity alone is insufficient. Editing those fields pauses the
 queue until current metadata validation completes; a superseded validation
 cannot advance the pull request. Manual `pr metadata` dispatches must select
 the repository default branch for the trusted workflow definition and supply
@@ -44,6 +46,16 @@ temporary storage before executing it. The workflow is inert until its
 repository configuration is supplied. A trusted five-minute schedule also
 rechecks queued pull requests after review or third-party check completion.
 
+## Merge snapshot semantics
+
+The queue re-reads metadata immediately before merging and supplies the validated
+squash headline and body explicitly. GitHub atomically checks the expected head
+commit and repository rules when merging. Its merge API cannot atomically compare
+PR title, body, or label versions: these fields are an admission snapshot. A label
+removal or edit racing an already-issued merge may arrive too late to cancel it.
+The merged message uses the validated snapshot, rather than an unvalidated later
+edit. Remove the queue label before making changes that must prevent admission.
+
 ## Repository setup
 
 Enable **Allow squash merging** in repository Settings > General. Disable merge
@@ -54,7 +66,7 @@ that protection. The controller rechecks the squash merge settings immediately
 before merging, so a policy change pauses the queue.
 
 Install a GitHub App on this repository with Contents, Issues, Pull requests,
-and Workflows write permissions, plus Checks read permission. Set repository variable `QUEUE_APP_CLIENT_ID`
+and Workflows write permissions, plus Actions and Checks read permissions. Set repository variable `QUEUE_APP_CLIENT_ID`
 to the App identifier and secret `QUEUE_APP_PRIVATE_KEY` to its private key.
 The App must not bypass the repository ruleset.
 
