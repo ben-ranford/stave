@@ -16,16 +16,19 @@ function stepScript(name) {
   return script.split('\n').map((line) => line.replace(/^            /, '')).join('\n');
 }
 
-function harness() {
+function harness({ eventName = 'pull_request_target', githubRef = 'refs/heads/main' } = {}) {
   let current = { number: 8, title: 'fix: x', body: 'Current body', labels: [{ name: 'bug' }],
     head: { sha: 'abc', ref: 'bug/example', repo: { full_name: 'owner/repo' } },
     base: { sha: 'base', ref: 'main' }, user: { login: 'owner' } };
-  const env = { RUNNER_TEMP: '/tmp', VALIDATION_OUTCOME: 'success' };
+  const env = { RUNNER_TEMP: '/tmp', VALIDATION_OUTCOME: 'success', GITHUB_REF: githubRef };
   const created = [], updated = [], failures = [], files = new Map();
-  const context = { eventName: 'pull_request_target', repo: { owner: 'owner', repo: 'repo' },
-    payload: { pull_request: { ...current, body: 'Stale event body' } } };
+  const context = { eventName, repo: { owner: 'owner', repo: 'repo' },
+    payload: eventName === 'workflow_dispatch'
+      ? { inputs: { 'pr-number': String(current.number) } }
+      : { pull_request: { ...current, body: 'Stale event body' } } };
   const github = { rest: {
     pulls: { get: async () => ({ data: structuredClone(current) }) },
+    repos: { get: async () => ({ data: { default_branch: 'main' } }) },
     checks: {
       create: async (check) => { created.push(check); return { data: { id: 123 } }; },
       update: async (check) => { updated.push(check); },
@@ -65,4 +68,17 @@ test('failed or cancelled validation cannot publish success', async () => {
     await h.run('Publish PR metadata result');
     assert.equal(h.updated[0].conclusion, 'failure');
   }
+});
+
+test('manual validation uses a trusted default-branch workflow and current PR data', async () => {
+  const h = harness({ eventName: 'workflow_dispatch' });
+  await h.run('Read pull request metadata');
+  assert.equal(h.created[0].head_sha, h.current.head.sha);
+  assert.equal(h.files.get('/tmp/pr-body.md'), 'Current body');
+});
+
+test('manual validation rejects an untrusted workflow ref before creating a check', async () => {
+  const h = harness({ eventName: 'workflow_dispatch', githubRef: 'refs/heads/untrusted' });
+  await assert.rejects(h.run('Read pull request metadata'), /trusted default branch workflow ref/);
+  assert.deepEqual(h.created, []);
 });

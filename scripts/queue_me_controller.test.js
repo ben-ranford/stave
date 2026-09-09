@@ -66,6 +66,13 @@ function makeHarness(options = {}) {
     head_sha: pull.head.sha,
   }));
   const comments = new Map();
+  const branchRules = options.branchRules ?? [{
+    type: 'required_status_checks',
+    parameters: {
+      strict_required_status_checks_policy: true,
+      required_status_checks: [{ context: 'ci / contracts' }],
+    },
+  }];
   const calls = {
     branchReads: [],
     comments: [],
@@ -74,6 +81,7 @@ function makeHarness(options = {}) {
     merged: [],
     notices: [],
     rebased: [],
+    rules: [],
   };
   const repository = { default_branch: 'main', full_name: 'octo/stave' };
 
@@ -150,6 +158,13 @@ function makeHarness(options = {}) {
       return input.base
         ? openPulls.filter((pull) => pull.base?.ref === input.base)
         : openPulls;
+    },
+    request: async (route, input) => {
+      calls.rules.push({ route, input });
+      if (options.rulesError) {
+        throw options.rulesError;
+      }
+      return { data: branchRules };
     },
     graphql: async (query, variables) => {
       if (query.includes('QueuePullState($owner')) {
@@ -249,6 +264,47 @@ test('isBranchCurrent accepts only ancestor-preserving compare states', () => {
   assert.equal(testables.isBranchCurrent('identical'), true);
   assert.equal(testables.isBranchCurrent('behind'), false);
   assert.equal(testables.isBranchCurrent('diverged'), false);
+});
+
+test('strict status-check policy requires at least one required context', () => {
+  assert.equal(testables.hasStrictRequiredStatusChecks([{ type: 'required_status_checks', parameters: {
+    strict_required_status_checks_policy: true,
+    required_status_checks: [{ context: 'ci / contracts' }],
+  } }]), true);
+  assert.equal(testables.hasStrictRequiredStatusChecks([{ type: 'required_status_checks', parameters: {
+    strict_required_status_checks_policy: false,
+    required_status_checks: [{ context: 'ci / contracts' }],
+  } }]), false);
+  assert.equal(testables.hasStrictRequiredStatusChecks([{ type: 'required_status_checks', parameters: {
+    strict_required_status_checks_policy: true,
+    required_status_checks: [],
+  } }]), false);
+  assert.equal(testables.hasStrictRequiredStatusChecks([]), false);
+});
+
+test('queue fails closed without effective strict required checks', async (t) => {
+  for (const rules of [
+    [],
+    [{ type: 'required_status_checks', parameters: {
+      strict_required_status_checks_policy: false,
+      required_status_checks: [{ context: 'ci / contracts' }],
+    } }],
+  ]) {
+    await t.test(JSON.stringify(rules), async () => {
+      const harness = makeHarness({
+        pulls: [makePull(10)],
+        branchRules: rules,
+        labelMissing: true,
+      });
+      await assert.rejects(runController(harness.args), /effective strict, non-empty required status checks/);
+      assert.deepEqual(harness.calls.merged, []);
+      assert.deepEqual(harness.calls.createdLabels, []);
+      assert.deepEqual(harness.calls.rules, [{
+        route: 'GET /repos/{owner}/{repo}/rules/branches/{branch}',
+        input: { owner: 'octo', repo: 'stave', branch: 'main' },
+      }]);
+    });
+  }
 });
 
 test('status helpers bound untrusted API text', () => {

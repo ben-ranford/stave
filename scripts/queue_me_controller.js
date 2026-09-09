@@ -24,6 +24,28 @@ function isBranchCurrent(comparisonStatus) {
   return comparisonStatus === 'ahead' || comparisonStatus === 'identical';
 }
 
+function hasStrictRequiredStatusChecks(rules) {
+  return Array.isArray(rules) && rules.some(
+    (rule) =>
+      rule?.type === 'required_status_checks' &&
+      rule.parameters?.strict_required_status_checks_policy === true &&
+      Array.isArray(rule.parameters.required_status_checks) &&
+      rule.parameters.required_status_checks.length > 0,
+  );
+}
+
+async function requireStrictBranchRequirements(github, owner, repo, branch) {
+  const { data: rules } = await github.request(
+    'GET /repos/{owner}/{repo}/rules/branches/{branch}',
+    { owner, repo, branch },
+  );
+  if (!hasStrictRequiredStatusChecks(rules)) {
+    throw new Error(
+      `Queue requires effective strict, non-empty required status checks on ${branch}.`,
+    );
+  }
+}
+
 function shortSHA(sha) {
   return typeof sha === 'string' ? sha.slice(0, 10) : 'unknown';
 }
@@ -577,10 +599,10 @@ async function runController({
 }) {
   const queueLabel = process.env.QUEUE_LABEL || DEFAULT_QUEUE_LABEL;
   const { owner, repo } = context.repo;
-  await ensureQueueLabel(github, owner, repo, queueLabel);
-
   const { data: repository } = await github.rest.repos.get({ owner, repo });
   const defaultBranch = repository.default_branch;
+  await requireStrictBranchRequirements(github, owner, repo, defaultBranch);
+  await ensureQueueLabel(github, owner, repo, queueLabel);
   const eventPull = context.payload.pull_request;
   await reconcileEventPull({
     github,
@@ -668,6 +690,7 @@ module.exports.testables = {
   hasLabel,
   isBranchCurrent,
   isMergeConflict,
+  hasStrictRequiredStatusChecks,
   labelName,
   metadataCheckExternalID,
   safeError,

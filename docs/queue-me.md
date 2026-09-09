@@ -28,7 +28,10 @@ Before a direct merge, the controller requires a successful trusted
 `pr-metadata` check whose recorded fingerprint matches the pull request's
 current title, body, labels, and head SHA. Editing those fields pauses the
 queue until current metadata validation completes; a superseded validation
-cannot advance the pull request.
+cannot advance the pull request. Manual `pr metadata` dispatches must select
+the repository default branch for the trusted workflow definition and supply
+only the pull request number; the validation reads current PR metadata through
+the GitHub API.
 
 The workflow runs from `pull_request_target` but never checks out PR code. It
 downloads the controller from the exact trusted workflow revision into runner
@@ -40,7 +43,9 @@ rechecks queued pull requests after review or third-party check completion.
 
 Enable **Allow squash merging** in repository Settings > General. Disable merge
 commits and rebase merges, and use the pull request title as the squash commit
-title.
+title. The effective rules for `main` must include at least one required status
+check with strict up-to-date enforcement; the queue refuses to advance without
+that protection.
 
 Install a GitHub App on this repository with Contents, Issues, Pull requests,
 and Workflows write permissions. Set repository variable `QUEUE_APP_CLIENT_ID`
