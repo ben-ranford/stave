@@ -535,11 +535,22 @@ async function mergeQueuedPull({
     }
     const { data: repository } = await github.rest.repos.get({ owner, repo });
     requireQueueMergePolicy(repository);
+    const finalCurrent = await getCurrentPull(github, owner, repo, candidate.number);
+    if (
+      !hasLabel(finalCurrent, queueLabel) ||
+      finalCurrent.base?.ref !== defaultBranch ||
+      finalCurrent.head?.sha !== update.headSHA
+    ) {
+      throw new Error('Pull request changed while completing the queue advance.');
+    }
+    if (metadataCheckExternalID(finalCurrent) !== metadataCheckExternalID(current)) {
+      throw new Error('Pull request metadata changed while completing the queue advance.');
+    }
     const result = await mergeIfReady(github, owner, repo, candidate.number, state, {
       expectedBaseRefName: defaultBranch,
       expectedBaseRefOid: defaultBranchSHA,
-      commitHeadline: current.title,
-      commitBody: current.body,
+      commitHeadline: finalCurrent.title || '',
+      commitBody: finalCurrent.body || '',
     });
     const rebaseSummary = update.rebased
       ? `Rebased \`${shortSHA(candidate.head.sha)}\` to \`${shortSHA(update.headSHA)}\` on current \`${defaultBranch}\`.`

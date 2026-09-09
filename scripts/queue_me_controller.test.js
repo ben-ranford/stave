@@ -86,6 +86,7 @@ function makeHarness(options = {}) {
     mergeInputs: [],
     merged: [],
     notices: [],
+    pullReads: [],
     rebased: [],
     repositoryReads: [],
     rules: [],
@@ -134,9 +135,13 @@ function makeHarness(options = {}) {
       },
       pulls: {
         get: async ({ pull_number }) => {
-          const pull = options.currentPulls?.[pull_number] || allPulls.find(
-            (candidate) => candidate.number === pull_number,
-          );
+          const sequence = options.currentPullSequences?.[pull_number];
+          const pull = sequence
+            ? sequence[Math.min(calls.pullReads.filter((number) => number === pull_number).length, sequence.length - 1)]
+            : options.currentPulls?.[pull_number] || allPulls.find(
+              (candidate) => candidate.number === pull_number,
+            );
+          calls.pullReads.push(pull_number);
           if (!pull) {
             throw new Error(`unknown pull request ${pull_number}`);
           }
@@ -570,6 +575,21 @@ test('queue refuses a direct merge when the repository merge policy changes', as
   assert.deepEqual(harness.calls.merged, []);
   assert.equal(harness.calls.repositoryReads.length, 2);
   assert.match(commentsFor(harness, 10), /configured squash merge policy/);
+});
+
+test('queue pauses when metadata changes during provenance and policy checks', async () => {
+  const pull = makePull(10);
+  const edited = { ...pull, body: '## Summary\n\nEdited after validation.' };
+  const harness = makeHarness({
+    pulls: [pull],
+    currentPullSequences: { 10: [pull, pull, edited] },
+    initialStates: { 10: { mergeStateStatus: 'CLEAN' } },
+  });
+
+  await assert.rejects(runController(harness.args), /Pull request metadata changed while completing the queue advance/);
+
+  assert.deepEqual(harness.calls.merged, []);
+  assert.match(commentsFor(harness, 10), /Pull request metadata changed while completing the queue advance/);
 });
 
 test('queue rejects a matching metadata check not produced by GitHub Actions', async () => {
