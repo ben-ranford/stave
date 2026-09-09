@@ -21,7 +21,7 @@ branch next updates.
 
 Queue evaluation also follows successful `ci` and `pr metadata` workflow
 completions. It accepts only pull-request runs from this repository, plus
-default-branch manual `pr metadata` dispatches, with a non-empty branch, and
+default-branch `pr metadata` dispatches, with a non-empty branch, and
 ignores the queue workflow itself. Failed checks and fork-originated runs
 cannot advance the queue.
 
@@ -29,7 +29,10 @@ Before a direct merge, the controller requires a successful trusted
 `pr-metadata` check whose recorded fingerprint matches the pull request's
 current title, body, labels, and head SHA. The controller also verifies a
 successful fingerprint-named job in the trusted metadata workflow run; the
-shared `github-actions` App identity alone is insufficient. Editing those fields pauses the
+shared `github-actions` App identity alone is insufficient. PR events only
+request a validation dispatch on the repository default branch; the controller
+accepts attestation from those default-branch dispatches, not mutable PR
+associations returned on historical workflow runs. Editing those fields pauses the
 queue until current metadata validation completes; a superseded validation
 cannot advance the pull request. Manual `pr metadata` dispatches must select
 the repository default branch for the trusted workflow definition and supply
