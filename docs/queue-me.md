@@ -41,9 +41,11 @@ the GitHub API. Its fingerprint also binds the current
 `RELEASE_PLEASE_AUTHOR_LOGIN`, so rotating that trusted identity requires fresh
 metadata validation. The validator receives GitHub-rendered GFM HTML from that
 API, as data only; it never executes HTML and deliberately does not substitute
-a local Markdown engine for GitHub's semantics.
+a local Markdown engine for GitHub's semantics. The validator source is pinned
+to the trusted workflow commit; a PR base SHA never selects executable code.
 
-The workflow runs from `pull_request_target` but never checks out PR code. It
+Every queue trigger requires the default-branch workflow ref. The workflow
+runs from `pull_request_target` but never checks out PR code. It
 downloads the controller from the exact trusted workflow revision into runner
 temporary storage before executing it. The workflow is inert until its
 repository configuration is supplied. A trusted five-minute schedule also
