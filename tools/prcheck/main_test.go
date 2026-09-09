@@ -124,6 +124,15 @@ func TestValidateRejectsHeadingsInsideRawHTMLBlocks(t *testing.T) {
 	}
 }
 
+func TestValidateRecognizesRawTextTagOpenersAtEndOfLine(t *testing.T) {
+	for _, tag := range []string{"pre", "script", "style", "textarea"} {
+		body := "<" + tag + "\n## Summary\n\nCompleted.\n\n## Validation\n\nCompleted.\n\n## Release Notes\n\nCompleted.\n</" + tag + ">\n"
+		if err := validate("fix: parser", "fix/parser", body, identity{}); err == nil {
+			t.Fatalf("headings inside an end-of-line <%s raw block were accepted", tag)
+		}
+	}
+}
+
 func TestValidateResumesAfterBlankTerminatedHTMLBlock(t *testing.T) {
 	body := "<div>\n## hidden\n</div>\n\n## Summary\n\nCompleted.\n\n## Validation\n\nCompleted.\n\n## Release Notes\n\nCompleted.\n"
 	if err := validate("fix: parser", "fix/parser", body, identity{}); err != nil {
