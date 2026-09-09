@@ -653,6 +653,7 @@
       "importPath": "github.com/ben-ranford/stave/tools/prcheck",
       "dir": "tools/prcheck",
       "imports": [
+        "encoding/xml",
         "errors",
         "flag",
         "fmt",
