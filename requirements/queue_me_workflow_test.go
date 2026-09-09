@@ -14,6 +14,8 @@ func TestQueueMeWorkflowContract(t *testing.T) {
 		"pull_request_target:",
 		"workflow_dispatch:",
 		"push:",
+		"schedule:",
+		"- cron: \"*/5 * * * *\"",
 		"workflow_run:",
 		"- ci",
 		"- pr metadata",
@@ -26,6 +28,7 @@ func TestQueueMeWorkflowContract(t *testing.T) {
 		"- auto_merge_disabled",
 		"cancel-in-progress: false",
 		"github.event.workflow_run.conclusion == 'success'",
+		"github.event_name == 'schedule'",
 		"github.event.workflow_run.event == 'pull_request'",
 		"github.event.workflow_run.head_repository.full_name == github.repository",
 		"github.event.workflow_run.head_branch != ''",
@@ -85,9 +88,10 @@ func TestQueueMeControllerContract(t *testing.T) {
 		"isMergeConflict",
 		"rebaseQueuedPull",
 		"hasFollower",
-		"enablePullRequestAutoMerge",
 		"disablePullRequestAutoMerge",
 		"mergeMethod: SQUASH",
+		"mergeIfReady",
+		"mergePullRequest",
 		"left.number - right.number",
 		"metadataCheckExternalID",
 		"listForRef",
@@ -97,6 +101,7 @@ func TestQueueMeControllerContract(t *testing.T) {
 		}
 	}
 	for _, forbidden := range []string{
+		"enablePullRequestAutoMerge",
 		"requestReviews",
 		"force-push",
 		"process.env.QUEUE_APP_PRIVATE_KEY",

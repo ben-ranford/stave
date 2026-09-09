@@ -6,12 +6,14 @@ queue feature.
 
 Apply the `queue-me` label to an open, non-draft pull request. The controller
 processes queued pull requests in ascending PR-number order, rebases only the
-current leader onto the exact `main` tip, and enables squash auto-merge. The
-repository ruleset remains authoritative for required checks, reviews, and
-other merge requirements.
+current leader onto the exact `main` tip, and directly squash-merges only when
+GitHub reports every repository requirement clean. The repository ruleset
+remains authoritative for required checks, reviews, and other merge
+requirements; queued pull requests are never left with auto-merge armed.
 
-Removing `queue-me` disables auto-merge for that pull request and advances the
-remaining queue. A draft leader, stale fork, or non-conflict rebase failure
+Removing `queue-me` disables any queue-managed automatic merge for that pull
+request and advances the remaining queue. A draft leader, stale fork, or
+non-conflict rebase failure
 pauses the queue with one managed status comment. When GitHub reports a rebase
 conflict, the controller leaves that PR queued, records the conflict, and
 continues evaluating the next queued PR; the blocked PR is retried after its
@@ -22,7 +24,7 @@ completions. It accepts only pull-request runs from this repository, with a
 non-empty branch, and ignores the queue workflow itself. Failed checks and
 fork-originated runs cannot advance the queue.
 
-Before arming auto-merge, the controller requires a successful trusted
+Before a direct merge, the controller requires a successful trusted
 `pr-metadata` check whose recorded fingerprint matches the pull request's
 current title, body, labels, and head SHA. Editing those fields pauses the
 queue until current metadata validation completes; a superseded validation
@@ -31,14 +33,14 @@ cannot advance the pull request.
 The workflow runs from `pull_request_target` but never checks out PR code. It
 downloads the controller from the exact trusted workflow revision into runner
 temporary storage before executing it. The workflow is inert until its
-repository configuration is supplied.
+repository configuration is supplied. A trusted five-minute schedule also
+rechecks queued pull requests after review or third-party check completion.
 
 ## Repository setup
 
-Enable **Allow auto-merge** and **Allow squash merging** in repository Settings
-> General. Disable merge commits and rebase merges, and use the pull request title
-as the squash commit title. The controller refuses to advance a queued PR when
-auto-merge is disabled; after changing the setting, dispatch `queue me` on `main`.
+Enable **Allow squash merging** in repository Settings > General. Disable merge
+commits and rebase merges, and use the pull request title as the squash commit
+title.
 
 Install a GitHub App on this repository with Contents, Issues, Pull requests,
 and Workflows write permissions. Set repository variable `QUEUE_APP_CLIENT_ID`

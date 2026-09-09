@@ -271,71 +271,17 @@ async function mergeNow(github, pullRequestId, expectedHeadOid) {
   );
 }
 
-async function armAutoMerge(github, pullRequestId, expectedHeadOid) {
-  return github.graphql(
-    `mutation ArmQueueAutoMerge($pullRequestId: ID!, $expectedHeadOid: GitObjectID!) {
-      enablePullRequestAutoMerge(input: {
-        pullRequestId: $pullRequestId
-        expectedHeadOid: $expectedHeadOid
-        mergeMethod: SQUASH
-      }) {
-        pullRequest {
-          number
-          autoMergeRequest { enabledAt mergeMethod }
-        }
-      }
-    }`,
-    { pullRequestId, expectedHeadOid },
-  );
-}
-
-async function armOrMerge(github, state, { expectedBaseRefName, expectedBaseRefOid }) {
+async function mergeIfReady(github, owner, repo, number, state, { expectedBaseRefName, expectedBaseRefOid }) {
   assertExpectedBaseState(state, expectedBaseRefName, expectedBaseRefOid);
   if (state.autoMergeRequest) {
-    return 'already-armed';
+    await disableAutoMerge(github, owner, repo, number);
+    return 'auto-merge-disabled';
   }
   if (state.mergeable === 'MERGEABLE' && state.mergeStateStatus === 'CLEAN') {
     await mergeNow(github, state.id, state.headRefOid);
     return 'merged';
   }
-  try {
-    await armAutoMerge(github, state.id, state.headRefOid);
-    return 'armed';
-  } catch (error) {
-    const refreshed = await pullStateByID(github, state.id);
-    if (refreshed.headRefOid !== state.headRefOid) {
-      throw new Error(
-        `Pull request head moved from ${shortSHA(state.headRefOid)} to ${shortSHA(refreshed.headRefOid)} while arming auto-merge.`,
-      );
-    }
-    assertExpectedBaseState(refreshed, expectedBaseRefName, expectedBaseRefOid);
-    if (refreshed.mergeable === 'MERGEABLE' && refreshed.mergeStateStatus === 'CLEAN') {
-      await mergeNow(github, refreshed.id, state.headRefOid);
-      return 'merged';
-    }
-    throw error;
-  }
-}
-
-async function pullStateByID(github, pullRequestId) {
-  const result = await github.graphql(
-    `query QueuePullStateByID($pullRequestId: ID!) {
-      node(id: $pullRequestId) {
-        ... on PullRequest {
-          id
-          number
-          baseRefName
-          baseRefOid
-          headRefOid
-          mergeable
-          mergeStateStatus
-          autoMergeRequest { enabledAt mergeMethod }
-        }
-      }
-    }`,
-    { pullRequestId },
-  );
-  return result.node;
+  return 'waiting';
 }
 
 async function reconcileEventPull({
@@ -411,15 +357,6 @@ async function reconcileManagedOpenPulls({
   }
 }
 
-function isQueueAppAutoMergeEvent({ context, eventPull, queueAppSlug }) {
-  return (
-    context.eventName === 'pull_request_target' &&
-    ['auto_merge_enabled', 'auto_merge_disabled'].includes(context.payload.action) &&
-    queueAppSlug &&
-    context.payload.sender?.login === `${queueAppSlug}[bot]`
-  );
-}
-
 async function rebaseQueuedPull({
   github,
   owner,
@@ -457,7 +394,7 @@ async function rebaseQueuedPull({
   }
 }
 
-async function armOrMergeQueuedPull({
+async function mergeQueuedPull({
   github,
   owner,
   repo,
@@ -465,6 +402,7 @@ async function armOrMergeQueuedPull({
   defaultBranch,
   defaultBranchSHA,
   update,
+  queueLabel,
 }) {
   try {
     const { data: latestBranch } = await github.rest.repos.getBranch({
@@ -477,13 +415,33 @@ async function armOrMergeQueuedPull({
         `Default branch ${defaultBranch} moved from ${shortSHA(defaultBranchSHA)} to ${shortSHA(latestBranch.commit.sha)} while advancing the queue.`,
       );
     }
+    const current = await getCurrentPull(github, owner, repo, candidate.number);
+    if (
+      !hasLabel(current, queueLabel) ||
+      current.base?.ref !== defaultBranch ||
+      current.head?.sha !== update.headSHA
+    ) {
+      throw new Error(
+        'Pull request changed while completing the queue advance.',
+      );
+    }
+    if (!(await hasCurrentMetadataValidation(github, owner, repo, current))) {
+      await syncStatusComment(
+        github,
+        owner,
+        repo,
+        candidate.number,
+        '## Queue status\n\nQueue paused: waiting for a successful current `pr-metadata` validation.',
+      );
+      return;
+    }
     const state = await pullState(github, owner, repo, candidate.number);
     if (state.headRefOid !== update.headSHA) {
       throw new Error(
         `Pull request head moved from ${shortSHA(update.headSHA)} to ${shortSHA(state.headRefOid)} while advancing the queue.`,
       );
     }
-    const result = await armOrMerge(github, state, {
+    const result = await mergeIfReady(github, owner, repo, candidate.number, state, {
       expectedBaseRefName: defaultBranch,
       expectedBaseRefOid: defaultBranchSHA,
     });
@@ -492,9 +450,9 @@ async function armOrMergeQueuedPull({
       : `Head \`${shortSHA(update.headSHA)}\` already contains current \`${defaultBranch}\`.`;
     const mergeSummary = result === 'merged'
       ? 'All repository requirements were satisfied, so GitHub squash-merged it.'
-      : result === 'armed'
-        ? 'Squash auto-merge is armed and will wait for the repository ruleset.'
-        : 'An existing auto-merge request remains enabled.';
+      : result === 'auto-merge-disabled'
+        ? 'An existing automatic merge request was disabled; the queue will retry after repository requirements are clean.'
+        : 'Automatic merge remains disabled while GitHub repository requirements are pending.';
     await syncStatusComment(
       github,
       owner,
@@ -508,7 +466,7 @@ async function armOrMergeQueuedPull({
       owner,
       repo,
       candidate.number,
-      `## Queue status\n\nQueue paused while enabling or completing squash auto-merge.\n\n\`${safeError(error)}\``,
+      `## Queue status\n\nQueue paused while completing a direct squash merge.\n\n\`${safeError(error)}\``,
     );
     throw error;
   }
@@ -598,7 +556,7 @@ async function advanceQueuedPull({
     );
     return false;
   }
-  await armOrMergeQueuedPull({
+  await mergeQueuedPull({
     github,
     owner,
     repo,
@@ -606,6 +564,7 @@ async function advanceQueuedPull({
     defaultBranch,
     defaultBranchSHA,
     update,
+    queueLabel,
   });
   return false;
 }
@@ -661,15 +620,7 @@ async function runController({
     return;
   }
 
-  if (repository.allow_auto_merge !== true) {
-    throw new Error('Enable repository auto-merge in Settings > General before using queue-me.');
-  }
-
   const leader = queued[0];
-  if (isQueueAppAutoMergeEvent({ context, eventPull, queueAppSlug })) {
-    core.notice(`Ignoring the queue App's auto-merge event for #${eventPull.number}.`);
-    return;
-  }
   const eventQueueEntry = eventPull && queued.find((pull) => pull.number === eventPull.number);
   for (const follower of queued.slice(1)) {
     await disableAutoMerge(github, owner, repo, follower.number);
@@ -717,7 +668,6 @@ module.exports.testables = {
   hasLabel,
   isBranchCurrent,
   isMergeConflict,
-  isQueueAppAutoMergeEvent,
   labelName,
   metadataCheckExternalID,
   safeError,
