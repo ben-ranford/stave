@@ -133,19 +133,15 @@ async function hasCurrentMetadataValidation(github, owner, repo, pull, defaultBr
   const runID = workflowRunID(candidate?.details_url);
   if (!runID) return false;
   const { data: run } = await github.rest.actions.getWorkflowRun({ owner, repo, run_id: runID });
-  const trustedPullRequestTarget = run.event === 'pull_request_target' &&
-    Array.isArray(run.pull_requests) && run.pull_requests.some(
-      (associatedPull) =>
-        associatedPull.number === pull.number &&
-        associatedPull.base?.ref === defaultBranch &&
-        associatedPull.base?.repo?.full_name === `${owner}/${repo}`,
-    );
+  // Workflow-run PR associations are mutable and are therefore not provenance.
+  // The pull_request_target wrapper dispatches this workflow from the default
+  // branch; only that server-recorded dispatch can produce a trusted attestation.
   const trustedManualDispatch = run.event === 'workflow_dispatch' &&
     run.head_branch === defaultBranch;
   if (
     run.conclusion !== 'success' ||
     !isTrustedMetadataWorkflowPath(run.path, defaultBranch) ||
-    !(trustedPullRequestTarget || trustedManualDispatch)
+    !trustedManualDispatch
   ) return false;
   const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
     owner,

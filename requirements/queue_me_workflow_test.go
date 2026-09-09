@@ -68,9 +68,14 @@ func TestQueueMeWorkflowContract(t *testing.T) {
 func TestPRMetadataWorkflowFreshnessContract(t *testing.T) {
 	workflow := readQueueMeFile(t, ".github/workflows/pr-metadata.yml")
 	for _, fragment := range []string{
-		"group: pr-metadata-${{ github.repository }}-${{ github.event.pull_request.number || github.event.inputs.pr-number }}",
+		"group: pr-metadata-${{ github.repository }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.event.inputs.pr-number }}",
 		"cancel-in-progress: true",
-		"github.event_name != 'workflow_dispatch'",
+		"github.event_name == 'pull_request_target'",
+		"github.event_name == 'workflow_dispatch'",
+		"actions: write",
+		"github.rest.actions.createWorkflowDispatch",
+		"workflow_id: 'pr-metadata.yml'",
+		"ref: repository.default_branch",
 		"github.ref == format('refs/heads/{0}', github.event.repository.default_branch)",
 		"manual validation must run from the trusted default branch workflow ref",
 		"RELEASE_PLEASE_AUTHOR_LOGIN: ${{ vars.RELEASE_PLEASE_AUTHOR_LOGIN }}",

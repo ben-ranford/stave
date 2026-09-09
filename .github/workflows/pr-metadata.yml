@@ -11,16 +11,38 @@ on:
         type: string
 
 concurrency:
-  group: pr-metadata-${{ github.repository }}-${{ github.event.pull_request.number || github.event.inputs.pr-number }}
+  group: pr-metadata-${{ github.repository }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.event.inputs.pr-number }}
   cancel-in-progress: true
 
 jobs:
+  dispatch:
+    name: dispatch trusted metadata validation
+    if: github.event_name == 'pull_request_target'
+    runs-on: stave-arc
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Dispatch trusted metadata validation
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const pullNumber = Number(context.payload.pull_request?.number);
+            if (!Number.isSafeInteger(pullNumber) || pullNumber < 1) throw new Error('a valid pull request number is required');
+            const { data: repository } = await github.rest.repos.get({ owner: context.repo.owner, repo: context.repo.repo });
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'pr-metadata.yml',
+              ref: repository.default_branch,
+              inputs: { 'pr-number': String(pullNumber) },
+            });
   validate:
     name: pr-metadata
     outputs:
       metadata_external_id: ${{ steps.metadata.outputs.external_id }}
     if: >-
-      github.event_name != 'workflow_dispatch' ||
+      github.event_name == 'workflow_dispatch' &&
       github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: stave-arc
     env:

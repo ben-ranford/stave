@@ -13,11 +13,11 @@ function stepScript(name) {
   assert.ok(step, `missing workflow step ${name}`);
   const script = step.split('          script: |\n')[1];
   assert.ok(script, `missing inline script for ${name}`);
-  return script.split('\n  attest:\n')[0].split('\n').map((line) => line.replace(/^            /, '')).join('\n');
+  return script.split(/\n  [a-z][a-z0-9_-]*:\n/)[0].split('\n').map((line) => line.replace(/^            /, '')).join('\n');
 }
 
 function harness({
-  eventName = 'pull_request_target',
+  eventName = 'workflow_dispatch',
   githubRef = 'refs/heads/main',
   releasePleaseAuthorLogin = '',
   renderedBody = '<p>Current body</p>',
@@ -32,7 +32,7 @@ function harness({
     GITHUB_REF: githubRef,
     RELEASE_PLEASE_AUTHOR_LOGIN: releasePleaseAuthorLogin,
   };
-  const created = [], updated = [], failures = [], files = new Map(), renders = [], outputs = {};
+  const created = [], dispatches = [], updated = [], failures = [], files = new Map(), renders = [], outputs = {};
   const context = { eventName, serverUrl: 'https://github.com', runId: 123, repo: { owner: 'owner', repo: 'repo' },
     payload: eventName === 'workflow_dispatch'
       ? { inputs: { 'pr-number': String(current.number) } }
@@ -51,6 +51,9 @@ function harness({
       create: async (check) => { created.push(check); return { data: { id: 123 } }; },
       update: async (check) => { updated.push(check); },
     },
+    actions: {
+      createWorkflowDispatch: async (dispatch) => { dispatches.push(dispatch); },
+    },
   } };
   const core = {
     exportVariable: (key, value) => { env[key] = value; },
@@ -60,8 +63,22 @@ function harness({
   const load = (name) => name === 'node:fs' ? { writeFileSync: (file, text) => files.set(file, text) } : require(name);
   const run = (name) => new AsyncFunction('require', 'github', 'context', 'core', 'process', stepScript(name))(
     load, github, context, core, { env });
-  return { run, env, created, updated, failures, files, renders, outputs, current, edit: (changes) => { current = { ...current, ...changes }; } };
+  return { run, env, created, dispatches, updated, failures, files, renders, outputs, current, edit: (changes) => { current = { ...current, ...changes }; } };
 }
+
+test('pull request target only dispatches trusted validation from the default branch', async () => {
+  const h = harness({ eventName: 'pull_request_target' });
+  await h.run('Dispatch trusted metadata validation');
+
+  assert.deepEqual(h.dispatches, [{
+    owner: 'owner',
+    repo: 'repo',
+    workflow_id: 'pr-metadata.yml',
+    ref: 'main',
+    inputs: { 'pr-number': '8' },
+  }]);
+  assert.deepEqual(h.created, []);
+});
 
 test('workflow validates current API metadata and produces the queue fingerprint', async () => {
   const h = harness();

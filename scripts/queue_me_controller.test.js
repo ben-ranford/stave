@@ -157,13 +157,9 @@ function makeHarness(options = {}) {
           calls.workflowRuns.push(run_id);
           return { data: options.workflowRun || {
             conclusion: 'success',
-            event: 'pull_request_target',
-            path: '.github/workflows/pr-metadata.yml@main',
+            event: 'workflow_dispatch',
+            path: '.github/workflows/pr-metadata.yml',
             head_branch: 'main',
-            pull_requests: allPulls.map((pull) => ({
-              number: pull.number,
-              base: { ref: pull.base.ref, repo: { full_name: 'octo/stave' } },
-            })),
           } };
         },
         listJobsForWorkflowRun: async () => {},
@@ -610,7 +606,7 @@ test('queue rejects a matching metadata check not produced by GitHub Actions', a
   assert.match(commentsFor(harness, 10), /waiting for a successful current `pr-metadata` validation/);
 });
 
-test('queue rejects a forged GitHub Actions check without a trusted metadata job', async () => {
+test('queue rejects a GitHub Actions check outside the trusted default-branch dispatch', async () => {
   const pull = makePull(10);
   const harness = makeHarness({
     pulls: [pull],
@@ -619,7 +615,6 @@ test('queue rejects a forged GitHub Actions check without a trusted metadata job
       event: 'pull_request_target',
       path: '.github/workflows/pr-metadata.yml@main',
       head_branch: 'main',
-      pull_requests: [],
     },
   });
 
