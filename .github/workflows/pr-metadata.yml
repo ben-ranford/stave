@@ -47,8 +47,14 @@ jobs:
             core.exportVariable('PR_METADATA_CHECK_RUN_ID', String(check.id));
             core.exportVariable('PR_METADATA_EXTERNAL_ID', metadataExternalID);
             if (pullRequest.labels.length === 0) core.setFailed('Pull requests must have at least one label.');
+            const { data: renderedBody } = await github.rest.markdown.render({
+              text: pullRequest.body || '',
+              mode: 'gfm',
+              context: `${context.repo.owner}/${context.repo.repo}`,
+            });
+            if (typeof renderedBody !== 'string') throw new Error('GitHub did not return rendered Markdown HTML.');
             const bodyPath = path.join(process.env.RUNNER_TEMP, 'pr-body.md');
-            fs.writeFileSync(bodyPath, pullRequest.body || '', 'utf8');
+            fs.writeFileSync(bodyPath, renderedBody, 'utf8');
             core.exportVariable('PR_BODY_FILE', bodyPath);
             core.exportVariable('PR_TITLE', pullRequest.title || '');
             core.exportVariable('PR_HEAD_REF', pullRequest.head.ref || '');

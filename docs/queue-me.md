@@ -34,7 +34,9 @@ the repository default branch for the trusted workflow definition and supply
 only the pull request number; the validation reads current PR metadata through
 the GitHub API. Its fingerprint also binds the current
 `RELEASE_PLEASE_AUTHOR_LOGIN`, so rotating that trusted identity requires fresh
-metadata validation.
+metadata validation. The validator receives GitHub-rendered GFM HTML from that
+API, as data only; it never executes HTML and deliberately does not substitute
+a local Markdown engine for GitHub's semantics.
 
 The workflow runs from `pull_request_target` but never checks out PR code. It
 downloads the controller from the exact trusted workflow revision into runner
