@@ -64,8 +64,27 @@ trusted only after validation.
 
 Confirmation grants bind to session, action ID and version, target ID and
 generation, canonical argument hash, observed revision range, safety class,
-and expiry. Grants are single-use by default and become invalid after any
+authorization policy ID and epoch, and expiry. Retained active grants and replay
+tombstones share a 1,024-entry limit; expired entries are pruned. Grants are single-use by default and become invalid after any
 target, argument, expiry, or policy change.
+
+## Public CI launch prerequisite
+
+Before enabling external pull requests, establish and verify isolation between
+untrusted contributor code and privileged automation. The current workflows use
+`stave-arc` for both PR tests and secret-bearing queue/release jobs. Runner
+provisioning and isolation policy are not tracked in this repository, so the
+shared label is not evidence that this boundary is safe.
+
+Prefer GitHub-hosted runners for untrusted PR code. If self-hosted runners are
+necessary, document and verify single-job teardown, workspace/cache isolation,
+network access, and absence of reusable host credentials. Protect privileged
+runner access so contributor-controlled workflows cannot select those runners;
+changing a label alone does not enforce that restriction. Verify the operational
+configuration before changing repository visibility or accepting external PRs.
+
+See GitHub's [secure-use guidance](https://docs.github.com/en/actions/reference/security/secure-use)
+and [self-hosted runner guidance](https://docs.github.com/en/actions/reference/runners/self-hosted-runners).
 
 ## Related guides
 
