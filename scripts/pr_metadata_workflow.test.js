@@ -98,9 +98,10 @@ test('workflow validates current API metadata and produces the queue fingerprint
   assert.equal(h.created[0].external_id, metadataCheckExternalID(h.current));
   assert.equal(h.created[0].details_url, 'https://github.com/owner/repo/actions/runs/123');
   assert.equal(h.outputs.external_id, metadataCheckExternalID(h.current));
-  await h.run('Publish PR metadata result');
-  assert.equal(h.updated[0].conclusion, 'success');
-  assert.deepEqual(h.failures, []);
+	await h.run('Publish PR metadata result');
+	assert.equal(h.updated[0].conclusion, 'success');
+	assert.equal(h.updated[0].output.text, 'stave-pr-metadata-run/v1:123');
+	assert.deepEqual(h.failures, []);
 });
 
 test('a successful validator cannot publish success after metadata changes', async () => {

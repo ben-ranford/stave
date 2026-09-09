@@ -136,7 +136,7 @@ jobs:
               : success
                 ? 'PR metadata is valid.'
                 : 'PR metadata validation failed. See the Validate PR title and template step.';
-            await github.rest.checks.update({ owner: context.repo.owner, repo: context.repo.repo, check_run_id: Number(process.env.PR_METADATA_CHECK_RUN_ID), status: 'completed', conclusion: success ? 'success' : 'failure', output: { title: 'PR metadata validation', summary } });
+            await github.rest.checks.update({ owner: context.repo.owner, repo: context.repo.repo, check_run_id: Number(process.env.PR_METADATA_CHECK_RUN_ID), status: 'completed', conclusion: success ? 'success' : 'failure', output: { title: 'PR metadata validation', summary, text: `stave-pr-metadata-run/v1:${context.runId}` } });
             if (!success) core.setFailed(stale ? 'PR metadata validation was superseded by a newer edit.' : 'PR metadata validation failed.');
   attest:
     name: metadata/${{ needs.validate.outputs.metadata_external_id }}

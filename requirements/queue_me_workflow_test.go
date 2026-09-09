@@ -88,6 +88,7 @@ func TestPRMetadataWorkflowFreshnessContract(t *testing.T) {
 		"mode: 'gfm'",
 		"GitHub did not return rendered Markdown HTML.",
 		"details_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`",
+		"text: `stave-pr-metadata-run/v1:${context.runId}`",
 		"core.setOutput('external_id', metadataExternalID)",
 		"attest:",
 		"name: metadata/${{ needs.validate.outputs.metadata_external_id }}",
