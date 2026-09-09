@@ -1,6 +1,7 @@
 package semantic
 
 import (
+	"encoding/base32"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -28,6 +29,60 @@ func TestNodeIDLowercaseAndNormalizationPolicy(t *testing.T) {
 	if NodeIDNormalizationPolicy != "stave-node-id-v1:utf8-identity" {
 		t.Fatal(NodeIDNormalizationPolicy)
 	}
+}
+
+func TestNodeIDValidMatchesLegacyASCIIValidation(t *testing.T) {
+	valid, err := NodeIDFor(NodeKey{"app", "view", "row", "entity", "slot"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidates := []NodeID{"", "n1_", valid, NodeID(strings.ToUpper(string(valid))), NodeID("n1_" + strings.Repeat("a", nodeIDEncodedLength))}
+	for i := 0; i < len(valid); i++ {
+		for c := byte(0); c < 0x80; c++ {
+			mutated := []byte(valid)
+			mutated[i] = c
+			candidates = append(candidates, NodeID(mutated))
+		}
+	}
+	for _, id := range candidates {
+		if got, want := id.Valid(), legacyNodeIDValid(id); got != want {
+			t.Fatalf("NodeID(%q).Valid() = %v, want legacy result %v", id, got, want)
+		}
+	}
+}
+
+func TestNodeIDValidRejectsNonCanonicalInputWithoutAllocations(t *testing.T) {
+	valid, err := NodeIDFor(NodeKey{"app", "view", "row", "entity", "slot"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []NodeID{
+		NodeID("n1_" + strings.Repeat("a", 25) + "\n"),
+		NodeID("n1_" + strings.Repeat("a", 24) + "é"),
+	} {
+		if id.Valid() {
+			t.Fatalf("non-canonical node ID %q accepted", id)
+		}
+	}
+	if allocations := testing.AllocsPerRun(100, func() {
+		if !valid.Valid() {
+			t.Fatal("valid node ID rejected")
+		}
+	}); allocations != 0 {
+		t.Fatalf("NodeID.Valid allocations = %v, want 0", allocations)
+	}
+}
+
+func legacyNodeIDValid(id NodeID) bool {
+	if !strings.HasPrefix(string(id), "n1_") {
+		return false
+	}
+	s := strings.TrimPrefix(string(id), "n1_")
+	if s != strings.ToLower(s) {
+		return false
+	}
+	b, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(strings.ToUpper(s))
+	return err == nil && len(b) == 16
 }
 func TestNodeIDGoldenVectors(t *testing.T) {
 	cases := []struct {

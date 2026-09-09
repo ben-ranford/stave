@@ -25,6 +25,11 @@ type Stability string
 const NodeIDNormalizationPolicy = "stave-node-id-v1:utf8-identity"
 
 const (
+	nodeIDPrefix        = "n1_"
+	nodeIDEncodedLength = 26 // base32 without padding for the first 16 SHA-256 bytes.
+)
+
+const (
 	LiveNone          LiveMode  = "none"
 	LivePolite        LiveMode  = "polite"
 	LiveAssertive     LiveMode  = "assertive"
@@ -64,18 +69,22 @@ func NodeIDFor(k NodeKey) (NodeID, error) {
 		b.WriteString(v)
 	}
 	sum := sha256.Sum256([]byte(b.String()))
-	return NodeID("n1_" + strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(sum[:16]))), nil
+	return NodeID(nodeIDPrefix + strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(sum[:16]))), nil
 }
 func (id NodeID) Valid() bool {
-	if !strings.HasPrefix(string(id), "n1_") {
+	if len(id) != len(nodeIDPrefix)+nodeIDEncodedLength || !strings.HasPrefix(string(id), nodeIDPrefix) {
 		return false
 	}
-	s := strings.TrimPrefix(string(id), "n1_")
-	if s != strings.ToLower(s) {
-		return false
+	// Node IDs are canonical lowercase, unpadded base32. Checking the alphabet
+	// directly rejects whitespace and non-ASCII input that a decoder may accept
+	// or normalize at a trust boundary.
+	for i := len(nodeIDPrefix); i < len(id); i++ {
+		c := id[i]
+		if (c < 'a' || c > 'z') && (c < '2' || c > '7') {
+			return false
+		}
 	}
-	b, e := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(strings.ToUpper(s))
-	return e == nil && len(b) == 16
+	return true
 }
 
 func (n Node) MarshalJSON() ([]byte, error) {
