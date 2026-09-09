@@ -56,10 +56,12 @@ rechecks queued pull requests after review or third-party check completion.
 The queue re-reads metadata immediately before merging and supplies the validated
 squash headline and body explicitly. GitHub atomically checks the expected head
 commit and repository rules when merging. Its merge API cannot atomically compare
-PR title, body, or label versions: these fields are an admission snapshot. A label
+PR base branch, title, body, or label versions: these fields are an admission
+snapshot. A label
 removal or edit racing an already-issued merge may arrive too late to cancel it.
 The merged message uses the validated snapshot, rather than an unvalidated later
-edit. Remove the queue label before making changes that must prevent admission.
+edit. Remove the queue label and let active queue processing finish before retargeting
+or making changes that must prevent admission.
 
 ## Repository setup
 
