@@ -65,6 +65,7 @@ async function pullState(github, owner, repo, number) {
           autoMergeRequest {
             enabledAt
             mergeMethod
+            enabledBy { login }
           }
         }
       }
@@ -146,6 +147,25 @@ async function disableAutoMerge(github, owner, repo, number) {
   );
 }
 
+async function disableManagedAutoMerge(github, owner, repo, number, queueAppSlug) {
+  const state = await pullState(github, owner, repo, number);
+  if (
+    !queueAppSlug ||
+    state?.autoMergeRequest?.enabledBy?.login !== `${queueAppSlug}[bot]`
+  ) {
+    return false;
+  }
+  await github.graphql(
+    `mutation DisableQueueAutoMerge($pullRequestId: ID!) {
+      disablePullRequestAutoMerge(input: { pullRequestId: $pullRequestId }) {
+        pullRequest { number }
+      }
+    }`,
+    { pullRequestId: state.id },
+  );
+  return true;
+}
+
 async function rebaseOntoDefault(
   github,
   pull,
@@ -223,7 +243,7 @@ async function armAutoMerge(github, pullRequestId, expectedHeadOid) {
 async function armOrMerge(github, state, { expectedBaseRefName, expectedBaseRefOid }) {
   assertExpectedBaseState(state, expectedBaseRefName, expectedBaseRefOid);
   if (state.autoMergeRequest) {
-    return 'armed';
+    return 'already-armed';
   }
   if (state.mergeable === 'MERGEABLE' && state.mergeStateStatus === 'CLEAN') {
     await mergeNow(github, state.id, state.headRefOid);
@@ -277,6 +297,7 @@ async function reconcileEventPull({
   queueLabel,
   defaultBranch,
   eventPull,
+  queueAppSlug,
 }) {
   if (!eventPull || context.eventName !== 'pull_request_target') {
     return;
@@ -285,7 +306,9 @@ async function reconcileEventPull({
     context.payload.action === 'unlabeled' &&
     context.payload.label?.name === queueLabel
   ) {
-    await disableAutoMerge(github, owner, repo, eventPull.number);
+    if (!(await disableManagedAutoMerge(github, owner, repo, eventPull.number, queueAppSlug))) {
+      return;
+    }
     await syncStatusComment(
       github,
       owner,
@@ -298,7 +321,9 @@ async function reconcileEventPull({
   if (!hasLabel(eventPull, queueLabel) || eventPull.base?.ref === defaultBranch) {
     return;
   }
-  await disableAutoMerge(github, owner, repo, eventPull.number);
+  if (!(await disableManagedAutoMerge(github, owner, repo, eventPull.number, queueAppSlug))) {
+    return;
+  }
   await syncStatusComment(
     github,
     owner,
@@ -306,6 +331,35 @@ async function reconcileEventPull({
     eventPull.number,
     `## Queue status\n\nQueue paused: the base changed to \`${eventPull.base?.ref || 'unknown'}\`. Automatic merge is disabled because \`${queueLabel}\` pull requests must target \`${defaultBranch}\`.`,
   );
+}
+
+async function reconcileManagedOpenPulls({
+  github,
+  owner,
+  repo,
+  queueLabel,
+  defaultBranch,
+  pulls,
+  queueAppSlug,
+}) {
+  for (const pull of pulls) {
+    if (hasLabel(pull, queueLabel) && pull.base?.ref === defaultBranch) {
+      continue;
+    }
+    if (!(await disableManagedAutoMerge(github, owner, repo, pull.number, queueAppSlug))) {
+      continue;
+    }
+    const status = hasLabel(pull, queueLabel)
+      ? `Queue paused: the base changed to \`${pull.base?.ref || 'unknown'}\`. Automatic merge is disabled because \`${queueLabel}\` pull requests must target \`${defaultBranch}\`.`
+      : `Removed from \`${queueLabel}\`; automatic merge is disabled.`;
+    await syncStatusComment(
+      github,
+      owner,
+      repo,
+      pull.number,
+      `## Queue status\n\n${status}`,
+    );
+  }
 }
 
 function isQueueAppAutoMergeEvent({ context, eventPull, queueAppSlug }) {
@@ -389,7 +443,9 @@ async function armOrMergeQueuedPull({
       : `Head \`${shortSHA(update.headSHA)}\` already contains current \`${defaultBranch}\`.`;
     const mergeSummary = result === 'merged'
       ? 'All repository requirements were satisfied, so GitHub squash-merged it.'
-      : 'Squash auto-merge is armed and will wait for the repository ruleset.';
+      : result === 'armed'
+        ? 'Squash auto-merge is armed and will wait for the repository ruleset.'
+        : 'An existing auto-merge request remains enabled.';
     await syncStatusComment(
       github,
       owner,
@@ -489,18 +545,31 @@ async function runController({
     queueLabel,
     defaultBranch,
     eventPull,
+    queueAppSlug,
   });
 
-  const pulls = await github.paginate(github.rest.pulls.list, {
+  const openPulls = await github.paginate(github.rest.pulls.list, {
     owner,
     repo,
     state: 'open',
-    base: defaultBranch,
     sort: 'created',
     direction: 'asc',
     per_page: 100,
   });
-  const queued = sortQueuedPulls(pulls.filter((pull) => hasLabel(pull, queueLabel)));
+  await reconcileManagedOpenPulls({
+    github,
+    owner,
+    repo,
+    queueLabel,
+    defaultBranch,
+    pulls: openPulls,
+    queueAppSlug,
+  });
+  const queued = sortQueuedPulls(
+    openPulls.filter(
+      (pull) => hasLabel(pull, queueLabel) && pull.base?.ref === defaultBranch,
+    ),
+  );
   if (queued.length === 0) {
     core.notice(`No open ${defaultBranch} pull requests carry the ${queueLabel} label.`);
     return;
