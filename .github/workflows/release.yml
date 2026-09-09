@@ -34,6 +34,10 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION_CURRENT }}
           cache: true
+      - name: Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v4
+        with:
+          node-version: "22"
       - name: Install build tools
         run: |
           if ! command -v make >/dev/null 2>&1 || ! command -v rg >/dev/null 2>&1 || ! command -v gcc >/dev/null 2>&1; then
