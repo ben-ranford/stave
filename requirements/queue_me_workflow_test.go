@@ -34,6 +34,7 @@ func TestQueueMeWorkflowContract(t *testing.T) {
 		"actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1",
 		"app-id: ${{ vars.QUEUE_APP_CLIENT_ID }}",
 		"permission-contents: write",
+		"permission-checks: read",
 		"permission-issues: write",
 		"permission-pull-requests: write",
 		"permission-workflows: write",
@@ -58,6 +59,23 @@ func TestQueueMeWorkflowContract(t *testing.T) {
 	}
 }
 
+func TestPRMetadataWorkflowFreshnessContract(t *testing.T) {
+	workflow := readQueueMeFile(t, ".github/workflows/pr-metadata.yml")
+	for _, fragment := range []string{
+		"group: pr-metadata-${{ github.repository }}-${{ github.event.pull_request.number || github.event.inputs.pr-number }}",
+		"cancel-in-progress: true",
+		"github.rest.pulls.get",
+		"external_id: metadataExternalID",
+		"PR_METADATA_EXTERNAL_ID",
+		"const stale = metadataExternalID !== process.env.PR_METADATA_EXTERNAL_ID",
+		"conclusion: success ? 'success' : 'failure'",
+	} {
+		if !strings.Contains(workflow, fragment) {
+			t.Fatalf("pr-metadata workflow missing freshness contract %q", fragment)
+		}
+	}
+}
+
 func TestQueueMeControllerContract(t *testing.T) {
 	controller := readQueueMeFile(t, "scripts/queue_me_controller.js")
 	for _, fragment := range []string{
@@ -71,6 +89,8 @@ func TestQueueMeControllerContract(t *testing.T) {
 		"disablePullRequestAutoMerge",
 		"mergeMethod: SQUASH",
 		"left.number - right.number",
+		"metadataCheckExternalID",
+		"listForRef",
 	} {
 		if !strings.Contains(controller, fragment) {
 			t.Fatalf("queue-me controller missing %q", fragment)

@@ -22,6 +22,12 @@ completions. It accepts only pull-request runs from this repository, with a
 non-empty branch, and ignores the queue workflow itself. Failed checks and
 fork-originated runs cannot advance the queue.
 
+Before arming auto-merge, the controller requires a successful trusted
+`pr-metadata` check whose recorded fingerprint matches the pull request's
+current title, body, labels, and head SHA. Editing those fields pauses the
+queue until current metadata validation completes; a superseded validation
+cannot advance the pull request.
+
 The workflow runs from `pull_request_target` but never checks out PR code. It
 downloads the controller from the exact trusted workflow revision into runner
 temporary storage before executing it. The workflow is inert until its

@@ -1,7 +1,12 @@
 'use strict';
 
+const crypto = require('node:crypto');
+
 const COMMENT_MARKER = '<!-- queue-me-controller -->';
 const DEFAULT_QUEUE_LABEL = 'queue-me';
+const METADATA_CHECK_NAME = 'pr-metadata';
+const METADATA_CHECK_EXTERNAL_ID_PREFIX = 'stave-pr-metadata/v1:';
+const METADATA_CHECK_APP_SLUG = 'github-actions';
 
 function labelName(label) {
   return typeof label === 'string' ? label : label?.name;
@@ -21,6 +26,45 @@ function isBranchCurrent(comparisonStatus) {
 
 function shortSHA(sha) {
   return typeof sha === 'string' ? sha.slice(0, 10) : 'unknown';
+}
+
+function metadataCheckExternalID(pull) {
+  const metadata = {
+    title: pull.title || '',
+    body: pull.body || '',
+    labels: (pull.labels || []).map(labelName).filter(Boolean).sort(),
+    headSHA: pull.head?.sha || '',
+  };
+  const fingerprint = crypto.createHash('sha256').update(JSON.stringify(metadata)).digest('hex');
+  return `${METADATA_CHECK_EXTERNAL_ID_PREFIX}${fingerprint}`;
+}
+
+async function getCurrentPull(github, owner, repo, number) {
+  const { data: pull } = await github.rest.pulls.get({
+    owner,
+    repo,
+    pull_number: number,
+  });
+  return pull;
+}
+
+async function hasCurrentMetadataValidation(github, owner, repo, pull) {
+  const checks = await github.paginate(github.rest.checks.listForRef, {
+    owner,
+    repo,
+    ref: pull.head.sha,
+    check_name: METADATA_CHECK_NAME,
+    filter: 'all',
+    per_page: 100,
+  });
+  const expectedExternalID = metadataCheckExternalID(pull);
+  return checks.some(
+    (check) =>
+      check.name === METADATA_CHECK_NAME &&
+      check.conclusion === 'success' &&
+      check.external_id === expectedExternalID &&
+      check.app?.slug === METADATA_CHECK_APP_SLUG,
+  );
 }
 
 function safeError(error) {
@@ -479,7 +523,31 @@ async function advanceQueuedPull({
   if (isFirst) {
     await disableAutoMerge(github, owner, repo, candidate.number);
   }
-  if (candidate.draft) {
+  const current = await getCurrentPull(github, owner, repo, candidate.number);
+  if (!hasLabel(current, process.env.QUEUE_LABEL || DEFAULT_QUEUE_LABEL) || current.base?.ref !== defaultBranch) {
+    return false;
+  }
+  if (current.head?.sha !== candidate.head.sha) {
+    await syncStatusComment(
+      github,
+      owner,
+      repo,
+      candidate.number,
+      '## Queue status\n\nQueue paused: this pull request changed while the queue was advancing. It will be retried after current metadata validation succeeds.',
+    );
+    return false;
+  }
+  if (!(await hasCurrentMetadataValidation(github, owner, repo, current))) {
+    await syncStatusComment(
+      github,
+      owner,
+      repo,
+      candidate.number,
+      '## Queue status\n\nQueue paused: waiting for a successful current `pr-metadata` validation.',
+    );
+    return false;
+  }
+  if (current.draft) {
     await syncStatusComment(
       github,
       owner,
@@ -501,6 +569,16 @@ async function advanceQueuedPull({
   });
   if (!update) {
     return true;
+  }
+  if (update.rebased) {
+    await syncStatusComment(
+      github,
+      owner,
+      repo,
+      candidate.number,
+      '## Queue status\n\nRebased branch; the queue will resume after a successful current `pr-metadata` validation.',
+    );
+    return false;
   }
   if (update.needsManualRebase) {
     await syncStatusComment(
@@ -631,6 +709,7 @@ module.exports.testables = {
   isMergeConflict,
   isQueueAppAutoMergeEvent,
   labelName,
+  metadataCheckExternalID,
   safeError,
   shortSHA,
   sortQueuedPulls,

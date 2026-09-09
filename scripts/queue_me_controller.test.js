@@ -10,6 +10,8 @@ function makePull(number, overrides = {}) {
   return {
     number,
     node_id: `PR_${number}`,
+    title: `feat: pull ${number}`,
+    body: '## Summary\n\nValid metadata.',
     labels: [{ name: 'queue-me' }],
     draft: false,
     maintainer_can_modify: true,
@@ -54,6 +56,13 @@ function makeHarness(options = {}) {
       },
     ]),
   );
+  const metadataChecks = options.metadataChecks || allPulls.map((pull) => ({
+    name: 'pr-metadata',
+    conclusion: 'success',
+    external_id: testables.metadataCheckExternalID(pull),
+    app: { slug: 'github-actions' },
+    head_sha: pull.head.sha,
+  }));
   const comments = new Map();
   const calls = {
     armed: [],
@@ -100,7 +109,17 @@ function makeHarness(options = {}) {
         },
       },
       pulls: {
+        get: async ({ pull_number }) => {
+          const pull = allPulls.find((candidate) => candidate.number === pull_number);
+          if (!pull) {
+            throw new Error(`unknown pull request ${pull_number}`);
+          }
+          return { data: pull };
+        },
         list: async () => {},
+      },
+      checks: {
+        listForRef: async () => {},
       },
       repos: {
         get: async () => ({ data: repository }),
@@ -122,6 +141,9 @@ function makeHarness(options = {}) {
     paginate: async (_method, input) => {
       if (input.issue_number) {
         return comments.get(input.issue_number) || [];
+      }
+      if (_method === github.rest.checks.listForRef) {
+        return metadataChecks.filter((check) => check.head_sha === input.ref);
       }
       return input.base
         ? openPulls.filter((pull) => pull.base?.ref === input.base)
@@ -324,7 +346,7 @@ test('queue refresh updates a stale follower position after the leader advances'
   assert.doesNotMatch(commentsFor(harness, 8), /Queued behind #3/);
 });
 
-test('controller rebases a stale leader and merges it when repository rules are satisfied', async () => {
+test('controller rebases a stale leader and waits for metadata validation on the new head', async () => {
   const leader = makePull(10);
   const harness = makeHarness({
     pulls: [leader],
@@ -337,10 +359,63 @@ test('controller rebases a stale leader and merges it when repository rules are 
   await runController(harness.args);
 
   assert.deepEqual(harness.calls.rebased, [10]);
-  assert.deepEqual(harness.calls.merged, [10]);
+  assert.deepEqual(harness.calls.merged, []);
   assert.deepEqual(harness.calls.armed, []);
   assert.match(harness.calls.comments[0].body, /Rebased/);
-  assert.match(harness.calls.comments[0].body, /GitHub squash-merged it/);
+  assert.match(commentsFor(harness, 10), /will resume after a successful current `pr-metadata` validation/);
+});
+
+test('queue pauses a title edit and remains paused on an unrelated wakeup when metadata is stale', async () => {
+  const pull = makePull(10, { title: 'feat: current title' });
+  const stalePull = { ...pull, title: 'feat: previous title' };
+  const harness = makeHarness({
+    pulls: [pull],
+    queueAppSlug: 'queue-app',
+    initialStates: { 10: { autoMergeRequest: queueAppAutoMergeRequest() } },
+    metadataChecks: [{
+      name: 'pr-metadata',
+      conclusion: 'success',
+      external_id: testables.metadataCheckExternalID(stalePull),
+      app: { slug: 'github-actions' },
+      head_sha: pull.head.sha,
+    }],
+  });
+
+  harness.args.context.payload = {
+    ...harness.args.context.payload,
+    action: 'edited',
+    changes: { title: { from: 'feat: previous title' } },
+  };
+  await runController(harness.args);
+
+  assert.deepEqual(harness.calls.disabled, [10]);
+  assert.deepEqual(harness.calls.armed, []);
+  assert.match(commentsFor(harness, 10), /waiting for a successful current `pr-metadata` validation/);
+
+  harness.args.context = { ...harness.args.context, eventName: 'push', payload: {} };
+  await runController(harness.args);
+
+  assert.deepEqual(harness.calls.disabled, [10]);
+  assert.deepEqual(harness.calls.armed, []);
+});
+
+test('queue rejects a matching metadata check not produced by GitHub Actions', async () => {
+  const pull = makePull(10);
+  const harness = makeHarness({
+    pulls: [pull],
+    metadataChecks: [{
+      name: 'pr-metadata',
+      conclusion: 'success',
+      external_id: testables.metadataCheckExternalID(pull),
+      app: { slug: 'untrusted-app' },
+      head_sha: pull.head.sha,
+    }],
+  });
+
+  await runController(harness.args);
+
+  assert.deepEqual(harness.calls.armed, []);
+  assert.match(commentsFor(harness, 10), /waiting for a successful current `pr-metadata` validation/);
 });
 
 test('removing queue-me disables auto-merge and leaves an empty queue green', async () => {
