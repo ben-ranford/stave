@@ -44,6 +44,19 @@ func TestValidateAcceptsNestedHeadingMarkupAndCodeLiteralText(t *testing.T) {
 	}
 }
 
+func TestValidateAcceptsGenuineHeadingsAfterMalformedRawEndTag(t *testing.T) {
+	if err := validate("fix: parser", "fix/parser", fixture(t, "malformed-endtag.html"), identity{}); err != nil {
+		t.Fatalf("GitHub-rendered headings after malformed raw end tag rejected: %v", err)
+	}
+}
+
+func TestValidateRejectsLinkReferenceOnlySections(t *testing.T) {
+	err := validate("fix: metadata", "fix/metadata", fixture(t, "link-references-only.html"), identity{})
+	if err == nil || !strings.Contains(err.Error(), `section "Summary"`) || !strings.Contains(err.Error(), `section "Validation"`) || !strings.Contains(err.Error(), `section "Release Notes"`) {
+		t.Fatalf("link-reference-only sections were accepted: %v", err)
+	}
+}
+
 func TestValidateRejectsScriptTextAsInvisible(t *testing.T) {
 	body := "<h2>Summary</h2><script>completed</script><h2>Validation</h2><p>completed</p><h2>Release Notes</h2><p>completed</p>"
 	if err := validate("fix: parser", "fix/parser", body, identity{}); err == nil || !strings.Contains(err.Error(), `section "Summary"`) {
