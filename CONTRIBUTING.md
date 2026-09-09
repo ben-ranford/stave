@@ -16,7 +16,7 @@ Repository verification requires:
 
 1. Install the managed hooks with `make hooks-install`.
 2. Use `make fast` for the pre-commit surface.
-3. For metadata or queue workflow changes, run `node --test scripts/*_workflow.test.js scripts/queue_me_controller.test.js`.
+3. For metadata or queue workflow changes, run `node --test scripts/*.test.js`.
 4. Use `make verify` before pushing.
 5. Use `make ci` before cutting or validating a release branch or tag.
 
