@@ -3,7 +3,7 @@ module github.com/ben-ranford/stave/adapters/bubbletea
 go 1.25.0
 
 require (
-	charm.land/bubbletea/v2 v2.0.8
+	charm.land/bubbletea/v2 v2.0.9
 	github.com/ben-ranford/stave v0.0.0
 )
 

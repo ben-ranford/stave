@@ -10,7 +10,7 @@ publishing this adapter.
 ## Scope
 
 - Module path: `github.com/ben-ranford/stave/adapters/bubbletea`
-- Bubble Tea pin: `charm.land/bubbletea/v2 v2.0.8`
+- Bubble Tea pin: `charm.land/bubbletea/v2 v2.0.9`
 - Toolchain floor in this module: Go 1.25
 - Root Stave module remains Bubble Tea free
 
