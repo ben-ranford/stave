@@ -34,6 +34,11 @@ function metadataCheckExternalID(pull) {
     body: pull.body || '',
     labels: (pull.labels || []).map(labelName).filter(Boolean).sort(),
     headSHA: pull.head?.sha || '',
+    number: pull.number || 0,
+    headRef: pull.head?.ref || '',
+    headRepoFullName: pull.head?.repo?.full_name || '',
+    authorLogin: pull.user?.login || '',
+    baseRefName: pull.base?.ref || '',
   };
   const fingerprint = crypto.createHash('sha256').update(JSON.stringify(metadata)).digest('hex');
   return `${METADATA_CHECK_EXTERNAL_ID_PREFIX}${fingerprint}`;
@@ -519,13 +524,16 @@ async function advanceQueuedPull({
   canUpdateBranch,
   isFirst,
   hasFollower,
+  queueAppSlug,
+  queueLabel,
 }) {
+  const current = await getCurrentPull(github, owner, repo, candidate.number);
+  if (!hasLabel(current, queueLabel) || current.base?.ref !== defaultBranch) {
+    await disableManagedAutoMerge(github, owner, repo, candidate.number, queueAppSlug);
+    return false;
+  }
   if (isFirst) {
     await disableAutoMerge(github, owner, repo, candidate.number);
-  }
-  const current = await getCurrentPull(github, owner, repo, candidate.number);
-  if (!hasLabel(current, process.env.QUEUE_LABEL || DEFAULT_QUEUE_LABEL) || current.base?.ref !== defaultBranch) {
-    return false;
   }
   if (current.head?.sha !== candidate.head.sha) {
     await syncStatusComment(
@@ -693,6 +701,8 @@ async function runController({
       canUpdateBranch: candidate.head.repo?.full_name === repository.full_name,
       isFirst: index === 0,
       hasFollower: index + 1 < queued.length,
+      queueAppSlug,
+      queueLabel,
     });
     if (!shouldAdvance) {
       return;

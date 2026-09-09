@@ -34,7 +34,7 @@ jobs:
             if (!Number.isSafeInteger(pullNumber) || pullNumber < 1) throw new Error('a valid pull request number is required');
             const { data: pullRequest } = await github.rest.pulls.get({ owner: context.repo.owner, repo: context.repo.repo, pull_number: pullNumber });
             if (context.eventName === 'workflow_dispatch' && (pullRequest.head.sha !== process.env.GITHUB_SHA || pullRequest.head.ref !== process.env.GITHUB_REF_NAME)) throw new Error('dispatched PR must match the workflow ref and SHA');
-            const metadataExternalID = `stave-pr-metadata/v1:${crypto.createHash('sha256').update(JSON.stringify({ title: pullRequest.title || '', body: pullRequest.body || '', labels: (pullRequest.labels || []).map((label) => label.name).filter(Boolean).sort(), headSHA: pullRequest.head.sha || '' })).digest('hex')}`;
+            const metadataExternalID = `stave-pr-metadata/v1:${crypto.createHash('sha256').update(JSON.stringify({ title: pullRequest.title || '', body: pullRequest.body || '', labels: (pullRequest.labels || []).map((label) => label.name).filter(Boolean).sort(), headSHA: pullRequest.head.sha || '', number: pullRequest.number || 0, headRef: pullRequest.head.ref || '', headRepoFullName: pullRequest.head.repo?.full_name || '', authorLogin: pullRequest.user?.login || '', baseRefName: pullRequest.base.ref || '' })).digest('hex')}`;
             const { data: check } = await github.rest.checks.create({ owner: context.repo.owner, repo: context.repo.repo, name: 'pr-metadata', head_sha: pullRequest.head.sha, external_id: metadataExternalID, status: 'in_progress', output: { title: 'PR metadata validation', summary: 'Trusted metadata validation is running.' } });
             core.exportVariable('PR_METADATA_CHECK_RUN_ID', String(check.id));
             core.exportVariable('PR_METADATA_EXTERNAL_ID', metadataExternalID);
@@ -88,7 +88,7 @@ jobs:
             const crypto = require('node:crypto');
             const pullNumber = Number(context.payload.pull_request?.number || context.payload.inputs?.['pr-number']);
             const { data: pullRequest } = await github.rest.pulls.get({ owner: context.repo.owner, repo: context.repo.repo, pull_number: pullNumber });
-            const metadataExternalID = `stave-pr-metadata/v1:${crypto.createHash('sha256').update(JSON.stringify({ title: pullRequest.title || '', body: pullRequest.body || '', labels: (pullRequest.labels || []).map((label) => label.name).filter(Boolean).sort(), headSHA: pullRequest.head.sha || '' })).digest('hex')}`;
+            const metadataExternalID = `stave-pr-metadata/v1:${crypto.createHash('sha256').update(JSON.stringify({ title: pullRequest.title || '', body: pullRequest.body || '', labels: (pullRequest.labels || []).map((label) => label.name).filter(Boolean).sort(), headSHA: pullRequest.head.sha || '', number: pullRequest.number || 0, headRef: pullRequest.head.ref || '', headRepoFullName: pullRequest.head.repo?.full_name || '', authorLogin: pullRequest.user?.login || '', baseRefName: pullRequest.base.ref || '' })).digest('hex')}`;
             const stale = metadataExternalID !== process.env.PR_METADATA_EXTERNAL_ID;
             const success = process.env.VALIDATION_OUTCOME === 'success' && !stale;
             const summary = stale

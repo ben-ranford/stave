@@ -12,6 +12,7 @@ function makePull(number, overrides = {}) {
     node_id: `PR_${number}`,
     title: `feat: pull ${number}`,
     body: '## Summary\n\nValid metadata.',
+    user: { login: `author-${number}` },
     labels: [{ name: 'queue-me' }],
     draft: false,
     maintainer_can_modify: true,
@@ -24,6 +25,7 @@ function makePull(number, overrides = {}) {
     },
     head: {
       sha: `head-${number}`,
+      ref: `branch-${number}`,
       repo: { full_name: 'octo/stave' },
     },
     ...overrides,
@@ -110,7 +112,9 @@ function makeHarness(options = {}) {
       },
       pulls: {
         get: async ({ pull_number }) => {
-          const pull = allPulls.find((candidate) => candidate.number === pull_number);
+          const pull = options.currentPulls?.[pull_number] || allPulls.find(
+            (candidate) => candidate.number === pull_number,
+          );
           if (!pull) {
             throw new Error(`unknown pull request ${pull_number}`);
           }
@@ -416,6 +420,55 @@ test('queue rejects a matching metadata check not produced by GitHub Actions', a
 
   assert.deepEqual(harness.calls.armed, []);
   assert.match(commentsFor(harness, 10), /waiting for a successful current `pr-metadata` validation/);
+});
+
+test('queue rejects a copied metadata success from another pull request and branch', async () => {
+  const target = makePull(20, {
+    title: 'chore: release',
+    body: '## Summary\n\nRelease metadata.',
+    user: { login: 'contributor' },
+    head: { sha: 'shared-head', ref: 'feature/contributor', repo: { full_name: 'octo/stave' } },
+  });
+  const source = makePull(10, {
+    title: target.title,
+    body: target.body,
+    labels: target.labels,
+    user: { login: 'release-bot' },
+    head: { sha: 'shared-head', ref: 'release-please--branches--main', repo: { full_name: 'octo/stave' } },
+  });
+  const harness = makeHarness({
+    pulls: [target],
+    metadataChecks: [{
+      name: 'pr-metadata',
+      conclusion: 'success',
+      external_id: testables.metadataCheckExternalID(source),
+      app: { slug: 'github-actions' },
+      head_sha: target.head.sha,
+    }],
+  });
+
+  await runController(harness.args);
+
+  assert.deepEqual(harness.calls.armed, []);
+  assert.match(commentsFor(harness, 20), /waiting for a successful current `pr-metadata` validation/);
+});
+
+test('stale queue eligibility leaves manual auto-merge untouched', async () => {
+  const listed = makePull(10);
+  const current = makePull(10, { labels: [] });
+  const harness = makeHarness({
+    pulls: [listed],
+    currentPulls: { 10: current },
+    queueAppSlug: 'queue-app',
+    initialStates: {
+      10: { autoMergeRequest: { enabledAt: 'manual', mergeMethod: 'SQUASH' } },
+    },
+  });
+
+  await runController(harness.args);
+
+  assert.deepEqual(harness.calls.disabled, []);
+  assert.deepEqual(harness.calls.armed, []);
 });
 
 test('removing queue-me disables auto-merge and leaves an empty queue green', async () => {
