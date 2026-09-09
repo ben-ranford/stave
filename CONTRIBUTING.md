@@ -19,6 +19,8 @@ Inline static-analysis suppression markers are blocked by `make suppression-chec
   `docs:`, `refactor:`, `test:`, `build:`, `ci:`, `chore:`, or `revert:`).
   Release Please derives its proposed version and changelog from the commits
   merged to `main`; the squash-merge title must therefore retain that format.
+  It releases only the root module and ignores adapter-only commits while the
+  nested adapters remain internal.
 - Update `CHANGELOG.md` for user-visible behavior changes.
 - Refresh tracked inventories with `make generated-refresh` whenever exported API, render traces, dependency shape, or schema evidence changes.
 - Keep command examples (`cmd/atlas`, `cmd/lopper`) and schema evidence fresh; CI treats stale traceability artifacts as a failure.
