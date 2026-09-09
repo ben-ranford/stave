@@ -47,6 +47,7 @@ jobs:
     runs-on: stave-arc
     env:
       RELEASE_PLEASE_AUTHOR_LOGIN: ${{ vars.RELEASE_PLEASE_AUTHOR_LOGIN }}
+      TRUSTED_VALIDATOR_REF: ${{ github.workflow_sha }}
     permissions:
       checks: write
       contents: read
@@ -72,6 +73,8 @@ jobs:
             core.exportVariable('PR_METADATA_CHECK_RUN_ID', String(check.id));
             core.exportVariable('PR_METADATA_EXTERNAL_ID', metadataExternalID);
             core.setOutput('external_id', metadataExternalID);
+            const { data: repository } = await github.rest.repos.get({ owner: context.repo.owner, repo: context.repo.repo });
+            if (pullRequest.base.ref !== repository.default_branch) throw new Error('metadata validation only supports pull requests targeting the default branch');
             if (pullRequest.labels.length === 0) core.setFailed('Pull requests must have at least one label.');
             const { data: renderedBody } = await github.rest.markdown.render({
               text: pullRequest.body || '',
@@ -86,7 +89,6 @@ jobs:
             core.exportVariable('PR_HEAD_REF', pullRequest.head.ref || '');
             core.exportVariable('PR_HEAD_REPO_FULL_NAME', pullRequest.head.repo?.full_name || '');
             core.exportVariable('PR_AUTHOR_LOGIN', pullRequest.user.login || '');
-            core.exportVariable('PR_BASE_SHA', pullRequest.base.sha);
             core.exportVariable('REPOSITORY_FULL_NAME', context.repo.owner + '/' + context.repo.repo);
       - name: Set up Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
@@ -98,7 +100,7 @@ jobs:
         with:
           script: |
             const fs = require('node:fs'); const path = require('node:path');
-            const { data: file } = await github.rest.repos.getContent({ owner: context.repo.owner, repo: context.repo.repo, path: 'tools/prcheck/main.go', ref: process.env.PR_BASE_SHA });
+            const { data: file } = await github.rest.repos.getContent({ owner: context.repo.owner, repo: context.repo.repo, path: 'tools/prcheck/main.go', ref: process.env.TRUSTED_VALIDATOR_REF });
             if (Array.isArray(file) || file.type !== 'file' || !file.content || file.encoding !== 'base64') throw new Error('trusted metadata validator source was not found');
             const validatorPath = path.join(process.env.RUNNER_TEMP, 'prcheck.go');
             fs.writeFileSync(validatorPath, Buffer.from(file.content, 'base64'));

@@ -22,24 +22,34 @@ function harness({
   releasePleaseAuthorLogin = '',
   renderedBody = '<p>Current body</p>',
   renderError,
+  baseRef = 'main',
+  baseSha = 'base',
+  trustedValidatorRef = 'trusted-workflow-sha',
 } = {}) {
   let current = { number: 8, title: 'fix: x', body: 'Current body', labels: [{ name: 'bug' }],
     head: { sha: 'abc', ref: 'bug/example', repo: { full_name: 'owner/repo' } },
-    base: { sha: 'base', ref: 'main' }, user: { login: 'owner' } };
+    base: { sha: baseSha, ref: baseRef }, user: { login: 'owner' } };
   const env = {
     RUNNER_TEMP: '/tmp',
     VALIDATION_OUTCOME: 'success',
     GITHUB_REF: githubRef,
     RELEASE_PLEASE_AUTHOR_LOGIN: releasePleaseAuthorLogin,
+    TRUSTED_VALIDATOR_REF: trustedValidatorRef,
   };
-  const created = [], dispatches = [], updated = [], failures = [], files = new Map(), renders = [], outputs = {};
+  const created = [], dispatches = [], getContentCalls = [], updated = [], failures = [], files = new Map(), renders = [], outputs = {};
   const context = { eventName, serverUrl: 'https://github.com', runId: 123, repo: { owner: 'owner', repo: 'repo' },
     payload: eventName === 'workflow_dispatch'
       ? { inputs: { 'pr-number': String(current.number) } }
       : { pull_request: { ...current, body: 'Stale event body' } } };
   const github = { rest: {
     pulls: { get: async () => ({ data: structuredClone(current) }) },
-    repos: { get: async () => ({ data: { default_branch: 'main' } }) },
+    repos: {
+      get: async () => ({ data: { default_branch: 'main' } }),
+      getContent: async (input) => {
+        getContentCalls.push(input);
+        return { data: { type: 'file', content: Buffer.from('package main').toString('base64'), encoding: 'base64' } };
+      },
+    },
     markdown: {
       render: async (input) => {
         renders.push(input);
@@ -63,7 +73,7 @@ function harness({
   const load = (name) => name === 'node:fs' ? { writeFileSync: (file, text) => files.set(file, text) } : require(name);
   const run = (name) => new AsyncFunction('require', 'github', 'context', 'core', 'process', stepScript(name))(
     load, github, context, core, { env });
-  return { run, env, created, dispatches, updated, failures, files, renders, outputs, current, edit: (changes) => { current = { ...current, ...changes }; } };
+  return { run, env, created, dispatches, getContentCalls, updated, failures, files, renders, outputs, current, edit: (changes) => { current = { ...current, ...changes }; } };
 }
 
 test('pull request target only dispatches trusted validation from the default branch', async () => {
@@ -139,6 +149,32 @@ test('manual validation uses a trusted default-branch workflow and current PR da
   await h.run('Read pull request metadata');
   assert.equal(h.created[0].head_sha, h.current.head.sha);
   assert.equal(h.files.get('/tmp/pr-body.md'), '<p>Current body</p>');
+});
+
+test('validator source is pinned to the trusted workflow revision, not the PR base SHA', async () => {
+  const h = harness({ baseSha: 'attacker-controlled-base', trustedValidatorRef: 'trusted-workflow-sha' });
+  await h.run('Read pull request metadata');
+  await h.run('Download trusted validator');
+
+  assert.deepEqual(h.getContentCalls, [{
+    owner: 'owner',
+    repo: 'repo',
+    path: 'tools/prcheck/main.go',
+    ref: 'trusted-workflow-sha',
+  }]);
+  assert.equal(h.env.PR_BASE_SHA, undefined);
+});
+
+test('non-default-base metadata validation leaves its new check pending before failing', async () => {
+  const h = harness({ baseRef: 'release' });
+  await assert.rejects(h.run('Read pull request metadata'), /targeting the default branch/);
+
+  assert.equal(h.created.length, 1);
+  assert.equal(h.created[0].status, 'in_progress');
+  assert.deepEqual(h.renders, []);
+  h.env.VALIDATION_OUTCOME = 'skipped';
+  await h.run('Publish PR metadata result');
+  assert.equal(h.updated[0].conclusion, 'failure');
 });
 
 test('manual validation rejects an untrusted workflow ref before creating a check', async () => {

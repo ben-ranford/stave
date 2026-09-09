@@ -79,6 +79,9 @@ func TestPRMetadataWorkflowFreshnessContract(t *testing.T) {
 		"github.ref == format('refs/heads/{0}', github.event.repository.default_branch)",
 		"manual validation must run from the trusted default branch workflow ref",
 		"RELEASE_PLEASE_AUTHOR_LOGIN: ${{ vars.RELEASE_PLEASE_AUTHOR_LOGIN }}",
+		"TRUSTED_VALIDATOR_REF: ${{ github.workflow_sha }}",
+		"ref: process.env.TRUSTED_VALIDATOR_REF",
+		"metadata validation only supports pull requests targeting the default branch",
 		"releasePleaseAuthorLogin: process.env.RELEASE_PLEASE_AUTHOR_LOGIN || ''",
 		"github.rest.pulls.get",
 		"github.rest.markdown.render",
@@ -96,6 +99,9 @@ func TestPRMetadataWorkflowFreshnessContract(t *testing.T) {
 		if !strings.Contains(workflow, fragment) {
 			t.Fatalf("pr-metadata workflow missing freshness contract %q", fragment)
 		}
+	}
+	if strings.Contains(workflow, "PR_BASE_SHA") {
+		t.Fatal("pr-metadata workflow must not source its validator from the pull request base SHA")
 	}
 }
 
