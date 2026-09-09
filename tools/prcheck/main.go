@@ -134,11 +134,20 @@ func parseSections(body string) map[string]string {
 			}
 			continue
 		}
+		if currentHTML.terminator != "" {
+			if strings.Contains(line, currentHTML.terminator) {
+				currentHTML = htmlBlock{}
+			}
+			continue
+		}
 		canParseBlocks := !inComment && inlineTicks == 0
 		if canParseBlocks {
 			if opening, ok := opensHTMLBlock(line); ok {
 				currentHTML = opening
 				if currentHTML.closeTag != "" && closesHTMLTag(line, currentHTML.closeTag) {
+					currentHTML = htmlBlock{}
+				}
+				if currentHTML.terminator != "" && strings.Contains(line, currentHTML.terminator) {
 					currentHTML = htmlBlock{}
 				}
 				continue
@@ -180,8 +189,11 @@ type fence struct {
 
 type htmlBlock struct {
 	closeTag   string
+	terminator string
 	untilBlank bool
 }
+
+var genericHTMLTagPattern = regexp.MustCompile(`^</?[A-Za-z][A-Za-z0-9-]*(?:[ \t]+[^<>]*)?/?>[ \t]*$`)
 
 var htmlBlockTags = map[string]bool{
 	"address": true, "article": true, "aside": true, "base": true, "basefont": true,
@@ -204,6 +216,15 @@ func opensHTMLBlock(line string) (htmlBlock, bool) {
 	if indented || len(line) < 3 || line[0] != '<' || strings.HasPrefix(line, "<!--") {
 		return htmlBlock{}, false
 	}
+	if strings.HasPrefix(line, "<?") {
+		return htmlBlock{terminator: "?>"}, true
+	}
+	if strings.HasPrefix(line, "<![CDATA[") {
+		return htmlBlock{terminator: "]]>"}, true
+	}
+	if strings.HasPrefix(line, "<!") && line[2] >= 'A' && line[2] <= 'Z' {
+		return htmlBlock{terminator: ">"}, true
+	}
 	index := 1
 	if index < len(line) && line[index] == '/' {
 		index++
@@ -219,7 +240,7 @@ func opensHTMLBlock(line string) (htmlBlock, bool) {
 	if htmlRawTextTags[tag] {
 		return htmlBlock{closeTag: tag}, true
 	}
-	if htmlBlockTags[tag] || strings.HasSuffix(strings.TrimSpace(line), ">") {
+	if htmlBlockTags[tag] || genericHTMLTagPattern.MatchString(line) {
 		return htmlBlock{untilBlank: true}, true
 	}
 	return htmlBlock{}, false

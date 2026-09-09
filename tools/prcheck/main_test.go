@@ -131,6 +131,25 @@ func TestValidateResumesAfterBlankTerminatedHTMLBlock(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsHeadingsInsideOtherRawHTMLBlocks(t *testing.T) {
+	for _, body := range []string{
+		"<?processing\n## Summary\n\nCompleted.\n\n## Validation\n\nCompleted.\n\n## Release Notes\n\nCompleted.\n?>\n",
+		"<!DOCTYPE html\n## Summary\n\nCompleted.\n\n## Validation\n\nCompleted.\n\n## Release Notes\n\nCompleted.\n>\n",
+		"<![CDATA[\n## Summary\n\nCompleted.\n\n## Validation\n\nCompleted.\n\n## Release Notes\n\nCompleted.\n]]>\n",
+	} {
+		if err := validate("fix: parser", "fix/parser", body, identity{}); err == nil {
+			t.Fatal("headings inside a raw HTML block category were accepted")
+		}
+	}
+}
+
+func TestValidateDoesNotTreatAnAutolinkAsARawHTMLBlock(t *testing.T) {
+	body := "<https://example.com>\n## Summary\n\nCompleted.\n\n## Validation\n\nCompleted.\n\n## Release Notes\n\nCompleted.\n"
+	if err := validate("fix: parser", "fix/parser", body, identity{}); err != nil {
+		t.Fatalf("autolink hid required headings: %v", err)
+	}
+}
+
 func TestValidateAcceptsATXClosingHashes(t *testing.T) {
 	body := "## Summary ##\n\nCompleted.\n\n## Validation ##\n\nCompleted.\n\n## Release Notes ##\n\nCompleted.\n"
 	if err := validate("fix: parser", "fix/parser", body, identity{}); err != nil {
