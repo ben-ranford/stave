@@ -112,6 +112,32 @@ func TestValidateRejectsHeadingsInIndentedCode(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsHeadingsInsideRawHTMLBlocks(t *testing.T) {
+	for _, body := range []string{
+		"<pre>\n## Summary\n\nCompleted.\n\n## Validation\n\nCompleted.\n\n## Release Notes\n\nCompleted.\n</pre>\n",
+		"<div>\n## Summary\n\nCompleted.\n\n## Validation\n\nCompleted.\n\n## Release Notes\n\nCompleted.\n</div>\n",
+		"<custom-widget>\n## Summary\n\nCompleted.\n\n## Validation\n\nCompleted.\n\n## Release Notes\n\nCompleted.\n</custom-widget>\n",
+	} {
+		if err := validate("fix: parser", "fix/parser", body, identity{}); err == nil {
+			t.Fatal("headings inside a raw HTML block were accepted")
+		}
+	}
+}
+
+func TestValidateResumesAfterBlankTerminatedHTMLBlock(t *testing.T) {
+	body := "<div>\n## hidden\n</div>\n\n## Summary\n\nCompleted.\n\n## Validation\n\nCompleted.\n\n## Release Notes\n\nCompleted.\n"
+	if err := validate("fix: parser", "fix/parser", body, identity{}); err != nil {
+		t.Fatalf("headings after a blank-terminated HTML block were hidden: %v", err)
+	}
+}
+
+func TestValidateAcceptsATXClosingHashes(t *testing.T) {
+	body := "## Summary ##\n\nCompleted.\n\n## Validation ##\n\nCompleted.\n\n## Release Notes ##\n\nCompleted.\n"
+	if err := validate("fix: parser", "fix/parser", body, identity{}); err != nil {
+		t.Fatalf("ATX closing hashes prevented required headings from matching: %v", err)
+	}
+}
+
 func TestValidateRejectsHeadingsAfterSpacesAndATab(t *testing.T) {
 	body := "## Summary\n\nCompleted.\n\n \t## Validation\n\n \tCompleted.\n\n   \t## Release Notes\n\n   \tCompleted.\n"
 	if err := validate("fix: parser", "fix/parser", body, identity{}); err == nil {

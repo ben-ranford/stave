@@ -111,6 +111,7 @@ func parseSections(body string) map[string]string {
 	var current string
 	var content strings.Builder
 	var currentFence fence
+	var currentHTML htmlBlock
 	inComment := false
 	inlineTicks := 0
 	lines := strings.Split(body, "\n")
@@ -121,8 +122,27 @@ func parseSections(body string) map[string]string {
 			}
 			continue
 		}
+		if currentHTML.untilBlank {
+			if strings.TrimSpace(line) == "" {
+				currentHTML = htmlBlock{}
+			}
+			continue
+		}
+		if currentHTML.closeTag != "" {
+			if closesHTMLTag(line, currentHTML.closeTag) {
+				currentHTML = htmlBlock{}
+			}
+			continue
+		}
 		canParseBlocks := !inComment && inlineTicks == 0
 		if canParseBlocks {
+			if opening, ok := opensHTMLBlock(line); ok {
+				currentHTML = opening
+				if currentHTML.closeTag != "" && closesHTMLTag(line, currentHTML.closeTag) {
+					currentHTML = htmlBlock{}
+				}
+				continue
+			}
 			if opening, ok := opensFence(line); ok {
 				currentFence = opening
 				continue
@@ -156,6 +176,71 @@ func parseSections(body string) map[string]string {
 type fence struct {
 	char   byte
 	length int
+}
+
+type htmlBlock struct {
+	closeTag   string
+	untilBlank bool
+}
+
+var htmlBlockTags = map[string]bool{
+	"address": true, "article": true, "aside": true, "base": true, "basefont": true,
+	"blockquote": true, "body": true, "caption": true, "center": true, "col": true,
+	"colgroup": true, "dd": true, "details": true, "dialog": true, "dir": true,
+	"div": true, "dl": true, "dt": true, "fieldset": true, "figcaption": true,
+	"figure": true, "footer": true, "form": true, "h1": true, "h2": true,
+	"h3": true, "h4": true, "h5": true, "h6": true, "head": true, "header": true,
+	"hr": true, "html": true, "iframe": true, "legend": true, "li": true, "link": true,
+	"main": true, "menu": true, "menuitem": true, "nav": true, "ol": true, "p": true,
+	"picture": true, "plaintext": true, "section": true, "summary": true, "table": true,
+	"tbody": true, "td": true, "tfoot": true, "th": true, "thead": true, "title": true,
+	"tr": true, "track": true, "ul": true,
+}
+
+var htmlRawTextTags = map[string]bool{"pre": true, "script": true, "style": true, "textarea": true}
+
+func opensHTMLBlock(line string) (htmlBlock, bool) {
+	line, indented := trimUpToThreeSpaces(line)
+	if indented || len(line) < 3 || line[0] != '<' || strings.HasPrefix(line, "<!--") {
+		return htmlBlock{}, false
+	}
+	index := 1
+	if index < len(line) && line[index] == '/' {
+		index++
+	}
+	start := index
+	for index < len(line) && (line[index] >= 'A' && line[index] <= 'Z' || line[index] >= 'a' && line[index] <= 'z' || line[index] >= '0' && line[index] <= '9' || line[index] == '-') {
+		index++
+	}
+	if index == start || index == len(line) {
+		return htmlBlock{}, false
+	}
+	tag := strings.ToLower(line[start:index])
+	if htmlRawTextTags[tag] {
+		return htmlBlock{closeTag: tag}, true
+	}
+	if htmlBlockTags[tag] || strings.HasSuffix(strings.TrimSpace(line), ">") {
+		return htmlBlock{untilBlank: true}, true
+	}
+	return htmlBlock{}, false
+}
+
+func closesHTMLTag(line, tag string) bool {
+	lower := strings.ToLower(line)
+	needle := "</" + tag
+	for offset := 0; offset < len(lower); {
+		found := strings.Index(lower[offset:], needle)
+		if found == -1 {
+			return false
+		}
+		start := offset + found
+		end := start + len(needle)
+		if end < len(lower) && (lower[end] == '>' || lower[end] == ' ' || lower[end] == '\t') {
+			return true
+		}
+		offset = end
+	}
+	return false
 }
 
 func opensFence(line string) (fence, bool) {
@@ -193,7 +278,15 @@ func sectionHeading(line string) (string, bool) {
 	if indented || len(line) < 4 || !strings.HasPrefix(line, "##") || (line[2] != ' ' && line[2] != '\t') {
 		return "", false
 	}
-	return strings.TrimSpace(line[3:]), true
+	heading := strings.TrimSpace(line[3:])
+	end := len(heading)
+	for end > 0 && heading[end-1] == '#' {
+		end--
+	}
+	if end < len(heading) && end > 0 && (heading[end-1] == ' ' || heading[end-1] == '\t') {
+		heading = strings.TrimSpace(heading[:end])
+	}
+	return heading, true
 }
 
 func isIndentedCode(line string) bool {
