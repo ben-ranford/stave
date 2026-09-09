@@ -68,6 +68,8 @@ Start with the [adoption guide](docs/client-adoption.md), then see the
 
 ## Verify
 
+Repository verification has [development prerequisites](CONTRIBUTING.md#development-prerequisites), including the Node runtime configured by CI. Library consumers only need Go for the quick start above.
+
 ```sh
 go test ./... -count=1
 make verify
