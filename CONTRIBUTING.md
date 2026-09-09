@@ -2,12 +2,23 @@
 
 Stave is a private Go source library with release-grade repository gates. Keep the core standard-library-only, preserve deterministic snapshots and schema contracts, and treat public API drift as an intentional reviewed change.
 
+## Development prerequisites
+
+Repository verification requires:
+
+- Go at the version declared in [`.tool-versions`](.tool-versions).
+- The Node.js runtime configured by [CI](.github/workflows/ci.yml) for the workflow and queue test scripts.
+- Bash, GNU Make, and ripgrep (`rg`), which the Make targets and rigor scripts invoke.
+- A C compiler such as `gcc` or `clang` for the race tests in `make verify` and `make ci`.
+- A Git checkout; the hook installer configures Git locally. The first rigor run also needs network access so `go install` can download the pinned tools into `.cache/rigor/bin`.
+
 ## Local workflow
 
 1. Install the managed hooks with `make hooks-install`.
 2. Use `make fast` for the pre-commit surface.
-3. Use `make verify` before pushing.
-4. Use `make ci` before cutting or validating a release branch or tag.
+3. For metadata or queue workflow changes, run `node --test scripts/*.test.js`.
+4. Use `make verify` before pushing.
+5. Use `make ci` before cutting or validating a release branch or tag.
 
 The rigor harness installs pinned repo-local tools into `.cache/rigor/bin`; no global `golangci-lint`, `actionlint`, or `govulncheck` installation is required.
 
