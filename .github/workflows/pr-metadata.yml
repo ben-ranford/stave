@@ -1,0 +1,148 @@
+name: pr metadata
+
+on:
+  pull_request_target:
+    types: [opened, edited, synchronize, reopened, ready_for_review, labeled, unlabeled]
+  workflow_dispatch:
+    inputs:
+      pr-number:
+        description: Pull request number to validate.
+        required: true
+        type: string
+
+concurrency:
+  group: pr-metadata-${{ github.repository }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.event.inputs.pr-number }}
+  cancel-in-progress: true
+
+jobs:
+  dispatch:
+    name: dispatch trusted metadata validation
+    if: github.event_name == 'pull_request_target'
+    runs-on: stave-arc
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Dispatch trusted metadata validation
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const pullNumber = Number(context.payload.pull_request?.number);
+            if (!Number.isSafeInteger(pullNumber) || pullNumber < 1) throw new Error('a valid pull request number is required');
+            const { data: repository } = await github.rest.repos.get({ owner: context.repo.owner, repo: context.repo.repo });
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'pr-metadata.yml',
+              ref: repository.default_branch,
+              inputs: { 'pr-number': String(pullNumber) },
+            });
+  validate:
+    name: pr-metadata
+    outputs:
+      metadata_external_id: ${{ steps.metadata.outputs.external_id }}
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: stave-arc
+    env:
+      RELEASE_PLEASE_AUTHOR_LOGIN: ${{ vars.RELEASE_PLEASE_AUTHOR_LOGIN }}
+      TRUSTED_VALIDATOR_REF: ${{ github.workflow_sha }}
+    permissions:
+      checks: write
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Read pull request metadata
+        id: metadata
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const crypto = require('node:crypto');
+            const fs = require('node:fs');
+            const path = require('node:path');
+            const pullNumber = Number(context.payload.pull_request?.number || context.payload.inputs?.['pr-number']);
+            if (!Number.isSafeInteger(pullNumber) || pullNumber < 1) throw new Error('a valid pull request number is required');
+            const { data: pullRequest } = await github.rest.pulls.get({ owner: context.repo.owner, repo: context.repo.repo, pull_number: pullNumber });
+            if (context.eventName === 'workflow_dispatch') {
+              const { data: repository } = await github.rest.repos.get({ owner: context.repo.owner, repo: context.repo.repo });
+              if (process.env.GITHUB_REF !== `refs/heads/${repository.default_branch}`) throw new Error('manual validation must run from the trusted default branch workflow ref');
+            }
+            const metadataExternalID = `stave-pr-metadata/v1:${crypto.createHash('sha256').update(JSON.stringify({ title: pullRequest.title || '', body: pullRequest.body || '', labels: (pullRequest.labels || []).map((label) => label.name).filter(Boolean).sort(), headSHA: pullRequest.head.sha || '', number: pullRequest.number || 0, headRef: pullRequest.head.ref || '', headRepoFullName: pullRequest.head.repo?.full_name || '', authorLogin: pullRequest.user?.login || '', baseRefName: pullRequest.base.ref || '', releasePleaseAuthorLogin: process.env.RELEASE_PLEASE_AUTHOR_LOGIN || '' })).digest('hex')}`;
+            const { data: check } = await github.rest.checks.create({ owner: context.repo.owner, repo: context.repo.repo, name: 'pr-metadata', head_sha: pullRequest.head.sha, external_id: metadataExternalID, details_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`, status: 'in_progress', output: { title: 'PR metadata validation', summary: 'Trusted metadata validation is running.' } });
+            core.exportVariable('PR_METADATA_CHECK_RUN_ID', String(check.id));
+            core.exportVariable('PR_METADATA_EXTERNAL_ID', metadataExternalID);
+            core.setOutput('external_id', metadataExternalID);
+            const { data: repository } = await github.rest.repos.get({ owner: context.repo.owner, repo: context.repo.repo });
+            if (pullRequest.base.ref !== repository.default_branch) throw new Error('metadata validation only supports pull requests targeting the default branch');
+            if (pullRequest.labels.length === 0) core.setFailed('Pull requests must have at least one label.');
+            const { data: renderedBody } = await github.rest.markdown.render({
+              text: pullRequest.body || '',
+              mode: 'gfm',
+              context: `${context.repo.owner}/${context.repo.repo}`,
+            });
+            if (typeof renderedBody !== 'string') throw new Error('GitHub did not return rendered Markdown HTML.');
+            const bodyPath = path.join(process.env.RUNNER_TEMP, 'pr-body.md');
+            fs.writeFileSync(bodyPath, renderedBody, 'utf8');
+            core.exportVariable('PR_BODY_FILE', bodyPath);
+            core.exportVariable('PR_TITLE', pullRequest.title || '');
+            core.exportVariable('PR_HEAD_REF', pullRequest.head.ref || '');
+            core.exportVariable('PR_HEAD_REPO_FULL_NAME', pullRequest.head.repo?.full_name || '');
+            core.exportVariable('PR_AUTHOR_LOGIN', pullRequest.user.login || '');
+            core.exportVariable('REPOSITORY_FULL_NAME', context.repo.owner + '/' + context.repo.repo);
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.26.5'
+          cache: false
+      - name: Download trusted validator
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const fs = require('node:fs'); const path = require('node:path');
+            const { data: file } = await github.rest.repos.getContent({ owner: context.repo.owner, repo: context.repo.repo, path: 'tools/prcheck/main.go', ref: process.env.TRUSTED_VALIDATOR_REF });
+            if (Array.isArray(file) || file.type !== 'file' || !file.content || file.encoding !== 'base64') throw new Error('trusted metadata validator source was not found');
+            const validatorPath = path.join(process.env.RUNNER_TEMP, 'prcheck.go');
+            fs.writeFileSync(validatorPath, Buffer.from(file.content, 'base64'));
+            core.exportVariable('PRCHECK_PATH', validatorPath);
+      - name: Read repository merge policy
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const { data: repo } = await github.rest.repos.get({ owner: context.repo.owner, repo: context.repo.repo });
+            core.exportVariable('REPO_ALLOW_MERGE_COMMIT', String(repo.allow_merge_commit));
+            core.exportVariable('REPO_ALLOW_REBASE_MERGE', String(repo.allow_rebase_merge));
+            core.exportVariable('REPO_ALLOW_SQUASH_MERGE', String(repo.allow_squash_merge));
+            core.exportVariable('REPO_SQUASH_MERGE_COMMIT_TITLE', String(repo.squash_merge_commit_title));
+      - name: Validate PR title and template
+        id: validate
+        continue-on-error: true
+        run: go run "$PRCHECK_PATH" --check-repo-policy --title "$PR_TITLE" --head-ref "$PR_HEAD_REF" --head-repo-full-name "$PR_HEAD_REPO_FULL_NAME" --repo-full-name "$REPOSITORY_FULL_NAME" --release-please-author-login "$RELEASE_PLEASE_AUTHOR_LOGIN" --pr-author-login "$PR_AUTHOR_LOGIN" --body-file "$PR_BODY_FILE"
+      - name: Publish PR metadata result
+        if: always()
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        env:
+          VALIDATION_OUTCOME: ${{ steps.validate.outcome }}
+        with:
+          script: |
+            const crypto = require('node:crypto');
+            const pullNumber = Number(context.payload.pull_request?.number || context.payload.inputs?.['pr-number']);
+            const { data: pullRequest } = await github.rest.pulls.get({ owner: context.repo.owner, repo: context.repo.repo, pull_number: pullNumber });
+            const metadataExternalID = `stave-pr-metadata/v1:${crypto.createHash('sha256').update(JSON.stringify({ title: pullRequest.title || '', body: pullRequest.body || '', labels: (pullRequest.labels || []).map((label) => label.name).filter(Boolean).sort(), headSHA: pullRequest.head.sha || '', number: pullRequest.number || 0, headRef: pullRequest.head.ref || '', headRepoFullName: pullRequest.head.repo?.full_name || '', authorLogin: pullRequest.user?.login || '', baseRefName: pullRequest.base.ref || '', releasePleaseAuthorLogin: process.env.RELEASE_PLEASE_AUTHOR_LOGIN || '' })).digest('hex')}`;
+            const stale = metadataExternalID !== process.env.PR_METADATA_EXTERNAL_ID;
+            const success = process.env.VALIDATION_OUTCOME === 'success' && !stale;
+            const summary = stale
+              ? 'PR metadata changed while this validation was running; this result is superseded.'
+              : success
+                ? 'PR metadata is valid.'
+                : 'PR metadata validation failed. See the Validate PR title and template step.';
+            await github.rest.checks.update({ owner: context.repo.owner, repo: context.repo.repo, check_run_id: Number(process.env.PR_METADATA_CHECK_RUN_ID), status: 'completed', conclusion: success ? 'success' : 'failure', output: { title: 'PR metadata validation', summary } });
+            if (!success) core.setFailed(stale ? 'PR metadata validation was superseded by a newer edit.' : 'PR metadata validation failed.');
+  attest:
+    name: metadata/${{ needs.validate.outputs.metadata_external_id }}
+    needs: validate
+    if: needs.validate.result == 'success'
+    runs-on: stave-arc
+    permissions: {}
+    steps:
+      - run: 'true'

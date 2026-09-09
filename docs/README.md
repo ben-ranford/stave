@@ -10,3 +10,7 @@ same semantic interface for people and automation.
 - [Meet accessibility and agent-control expectations](accessibility-agent-parity.md)
 - [Understand compatibility guarantees](compatibility.md)
 - [Apply the security contract](security.md)
+
+## Maintainers
+
+- [Configure the pull request queue](queue-me.md)

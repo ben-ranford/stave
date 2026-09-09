@@ -13,7 +13,8 @@ RIGOR := $(GO) run ./scripts/rigor/cmd/rigor
 	suppression-check \
 	api-refresh api-boundary traceability-refresh schema-freshness generated-refresh \
 	adapters conformance-check atlas-check workflow-validate hooks-install hooks-pre-commit-dry-run \
-	hooks-pre-push-dry-run fast verify ci release-contract release-ga-contract release-dry-run clean
+	hooks-pre-push-dry-run fast verify ci release-contract release-ga-contract release-dry-run clean \
+	queue-me-check
 
 help:
 	@printf '%s\n' \
@@ -110,7 +111,10 @@ atlas-check:
 	$(GO) test ./internal/atlasrig ./cmd/atlas -count=1
 	$(GO) run ./cmd/atlas -verify
 
-workflow-validate:
+queue-me-check:
+	$(GO) test ./requirements -run '^TestQueueMe' -count=1
+
+workflow-validate: queue-me-check
 	./scripts/rigor/check-workflows.sh
 
 hooks-install:

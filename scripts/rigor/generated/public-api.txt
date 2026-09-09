@@ -880,3 +880,5 @@ type Theme struct { ID, Version string; Modes map[Mode]TokenSet; Densities map[D
 type TokenID string
 type TokenSet map[TokenID]Value
 type Value struct { Kind Kind `json:"kind,omitempty"`; Literal any `json:"value,omitempty"`; Reference *TokenID `json:"$ref,omitempty"` }
+
+[github.com/ben-ranford/stave/tools/prcheck]
