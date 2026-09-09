@@ -30,6 +30,8 @@ func TestQueueMeWorkflowContract(t *testing.T) {
 		"github.event.workflow_run.conclusion == 'success'",
 		"github.event_name == 'schedule'",
 		"github.event.workflow_run.event == 'pull_request'",
+		"github.event.workflow_run.event == 'workflow_dispatch'",
+		"github.event.workflow_run.head_branch == github.event.repository.default_branch",
 		"github.event.workflow_run.head_repository.full_name == github.repository",
 		"github.event.workflow_run.head_branch != ''",
 		"github.event.workflow_run.name != github.workflow",
@@ -45,6 +47,7 @@ func TestQueueMeWorkflowContract(t *testing.T) {
 		"path: 'scripts/queue_me_controller.js'",
 		"flag: 'wx'",
 		"QUEUE_LABEL: queue-me",
+		"RELEASE_PLEASE_AUTHOR_LOGIN: ${{ vars.RELEASE_PLEASE_AUTHOR_LOGIN }}",
 		"require(process.env.QUEUE_CONTROLLER_PATH)",
 	} {
 		if !strings.Contains(workflow, fragment) {
@@ -70,6 +73,8 @@ func TestPRMetadataWorkflowFreshnessContract(t *testing.T) {
 		"github.event_name != 'workflow_dispatch'",
 		"github.ref == format('refs/heads/{0}', github.event.repository.default_branch)",
 		"manual validation must run from the trusted default branch workflow ref",
+		"RELEASE_PLEASE_AUTHOR_LOGIN: ${{ vars.RELEASE_PLEASE_AUTHOR_LOGIN }}",
+		"releasePleaseAuthorLogin: process.env.RELEASE_PLEASE_AUTHOR_LOGIN || ''",
 		"github.rest.pulls.get",
 		"external_id: metadataExternalID",
 		"PR_METADATA_EXTERNAL_ID",
@@ -100,6 +105,7 @@ func TestQueueMeControllerContract(t *testing.T) {
 		"required_status_checks.length > 0",
 		"left.number - right.number",
 		"metadataCheckExternalID",
+		"releasePleaseAuthorLogin",
 		"listForRef",
 	} {
 		if !strings.Contains(controller, fragment) {

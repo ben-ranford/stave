@@ -20,9 +20,10 @@ continues evaluating the next queued PR; the blocked PR is retried after its
 branch next updates.
 
 Queue evaluation also follows successful `ci` and `pr metadata` workflow
-completions. It accepts only pull-request runs from this repository, with a
-non-empty branch, and ignores the queue workflow itself. Failed checks and
-fork-originated runs cannot advance the queue.
+completions. It accepts only pull-request runs from this repository, plus
+default-branch manual `pr metadata` dispatches, with a non-empty branch, and
+ignores the queue workflow itself. Failed checks and fork-originated runs
+cannot advance the queue.
 
 Before a direct merge, the controller requires a successful trusted
 `pr-metadata` check whose recorded fingerprint matches the pull request's
@@ -31,7 +32,9 @@ queue until current metadata validation completes; a superseded validation
 cannot advance the pull request. Manual `pr metadata` dispatches must select
 the repository default branch for the trusted workflow definition and supply
 only the pull request number; the validation reads current PR metadata through
-the GitHub API.
+the GitHub API. Its fingerprint also binds the current
+`RELEASE_PLEASE_AUTHOR_LOGIN`, so rotating that trusted identity requires fresh
+metadata validation.
 
 The workflow runs from `pull_request_target` but never checks out PR code. It
 downloads the controller from the exact trusted workflow revision into runner

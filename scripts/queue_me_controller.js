@@ -50,7 +50,10 @@ function shortSHA(sha) {
   return typeof sha === 'string' ? sha.slice(0, 10) : 'unknown';
 }
 
-function metadataCheckExternalID(pull) {
+function metadataCheckExternalID(
+  pull,
+  releasePleaseAuthorLogin = process.env.RELEASE_PLEASE_AUTHOR_LOGIN || '',
+) {
   const metadata = {
     title: pull.title || '',
     body: pull.body || '',
@@ -61,6 +64,7 @@ function metadataCheckExternalID(pull) {
     headRepoFullName: pull.head?.repo?.full_name || '',
     authorLogin: pull.user?.login || '',
     baseRefName: pull.base?.ref || '',
+    releasePleaseAuthorLogin,
   };
   const fingerprint = crypto.createHash('sha256').update(JSON.stringify(metadata)).digest('hex');
   return `${METADATA_CHECK_EXTERNAL_ID_PREFIX}${fingerprint}`;

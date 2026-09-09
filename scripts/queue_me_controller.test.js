@@ -247,6 +247,20 @@ function queueAppAutoMergeRequest() {
   };
 }
 
+async function withReleasePleaseAuthorLogin(value, run) {
+  const previous = process.env.RELEASE_PLEASE_AUTHOR_LOGIN;
+  process.env.RELEASE_PLEASE_AUTHOR_LOGIN = value;
+  try {
+    return await run();
+  } finally {
+    if (previous === undefined) {
+      delete process.env.RELEASE_PLEASE_AUTHOR_LOGIN;
+    } else {
+      process.env.RELEASE_PLEASE_AUTHOR_LOGIN = previous;
+    }
+  }
+}
+
 test('sortQueuedPulls uses deterministic ascending PR numbers', () => {
   const sorted = testables.sortQueuedPulls([{ number: 42 }, { number: 7 }, { number: 19 }]);
   assert.deepEqual(sorted.map((pull) => pull.number), [7, 19, 42]);
@@ -469,6 +483,33 @@ test('queue rejects a matching metadata check not produced by GitHub Actions', a
   await runController(harness.args);
 
   assert.match(commentsFor(harness, 10), /waiting for a successful current `pr-metadata` validation/);
+});
+
+test('queue rejects metadata validated under a previous release author configuration', async () => {
+  const pull = makePull(10);
+  const checks = [{
+    name: 'pr-metadata',
+    conclusion: 'success',
+    external_id: testables.metadataCheckExternalID(pull, 'release-bot-old'),
+    app: { slug: 'github-actions' },
+    head_sha: pull.head.sha,
+  }];
+  const harness = makeHarness({
+    pulls: [pull],
+    metadataChecks: checks,
+    initialStates: { 10: { mergeStateStatus: 'CLEAN' } },
+  });
+
+  await withReleasePleaseAuthorLogin('release-bot-new', async () => {
+    await runController(harness.args);
+    assert.deepEqual(harness.calls.merged, []);
+    assert.match(commentsFor(harness, 10), /waiting for a successful current `pr-metadata` validation/);
+
+    checks[0].external_id = testables.metadataCheckExternalID(pull, 'release-bot-new');
+    await runController(harness.args);
+  });
+
+  assert.deepEqual(harness.calls.merged, [10]);
 });
 
 test('queue rejects a copied metadata success from another pull request and branch', async () => {

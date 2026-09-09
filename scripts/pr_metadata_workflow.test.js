@@ -16,11 +16,20 @@ function stepScript(name) {
   return script.split('\n').map((line) => line.replace(/^            /, '')).join('\n');
 }
 
-function harness({ eventName = 'pull_request_target', githubRef = 'refs/heads/main' } = {}) {
+function harness({
+  eventName = 'pull_request_target',
+  githubRef = 'refs/heads/main',
+  releasePleaseAuthorLogin = '',
+} = {}) {
   let current = { number: 8, title: 'fix: x', body: 'Current body', labels: [{ name: 'bug' }],
     head: { sha: 'abc', ref: 'bug/example', repo: { full_name: 'owner/repo' } },
     base: { sha: 'base', ref: 'main' }, user: { login: 'owner' } };
-  const env = { RUNNER_TEMP: '/tmp', VALIDATION_OUTCOME: 'success', GITHUB_REF: githubRef };
+  const env = {
+    RUNNER_TEMP: '/tmp',
+    VALIDATION_OUTCOME: 'success',
+    GITHUB_REF: githubRef,
+    RELEASE_PLEASE_AUTHOR_LOGIN: releasePleaseAuthorLogin,
+  };
   const created = [], updated = [], failures = [], files = new Map();
   const context = { eventName, repo: { owner: 'owner', repo: 'repo' },
     payload: eventName === 'workflow_dispatch'
@@ -55,6 +64,15 @@ test('a successful validator cannot publish success after metadata changes', asy
   const h = harness();
   await h.run('Read pull request metadata');
   h.edit({ body: '' });
+  await h.run('Publish PR metadata result');
+  assert.equal(h.updated[0].conclusion, 'failure');
+  assert.match(h.failures[0], /superseded/);
+});
+
+test('a successful validator cannot publish success after release author configuration changes', async () => {
+  const h = harness({ releasePleaseAuthorLogin: 'release-bot-old' });
+  await h.run('Read pull request metadata');
+  h.env.RELEASE_PLEASE_AUTHOR_LOGIN = 'release-bot-new';
   await h.run('Publish PR metadata result');
   assert.equal(h.updated[0].conclusion, 'failure');
   assert.match(h.failures[0], /superseded/);
