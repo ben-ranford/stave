@@ -15,7 +15,7 @@ import (
 const maxBodyBytes = 1 << 20
 
 var (
-	titlePattern          = regexp.MustCompile(`^(feat|fix|perf|docs|refactor|revert|test|ci|build|chore)(\([a-z0-9][a-z0-9._/-]*\))?!?: [^\s].+$`)
+	titlePattern          = regexp.MustCompile(`^(feat|fix|perf|docs|refactor|revert|test|ci|build|chore)(\([a-z0-9][a-z0-9._/-]*\))?!?: [^\s].*$`)
 	releaseTitlePattern   = regexp.MustCompile(`^chore(?:\([a-z0-9._/-]+\))?: release [0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$`)
 	releaseHeadRefPattern = regexp.MustCompile(`^release-please--branches--main(?:--components--[a-z0-9._-]+)?$`)
 	requiredHeadings      = []string{"Summary", "Validation", "Release Notes"}
@@ -110,22 +110,39 @@ func parseSections(body string) map[string]string {
 	sections := make(map[string]string)
 	var current string
 	var content strings.Builder
-	inFence := false
-	for _, line := range strings.Split(stripHTMLComments(body), "\n") {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
-			inFence = !inFence
-			continue
-		}
-		if !inFence && strings.HasPrefix(trimmed, "## ") {
-			if current != "" {
-				sections[current] = strings.TrimSpace(content.String())
-				content.Reset()
+	var currentFence fence
+	inComment := false
+	inlineTicks := 0
+	lines := strings.Split(body, "\n")
+	for index, line := range lines {
+		if currentFence.char != 0 {
+			if closesFence(line, currentFence) {
+				currentFence = fence{}
 			}
-			current = strings.TrimSpace(strings.TrimPrefix(trimmed, "## "))
 			continue
 		}
-		if current != "" && !inFence {
+		canParseBlocks := !inComment && inlineTicks == 0
+		if canParseBlocks {
+			if opening, ok := opensFence(line); ok {
+				currentFence = opening
+				continue
+			}
+		}
+		if isIndentedCode(line) && canParseBlocks {
+			continue
+		}
+		line, inComment, inlineTicks = stripHTMLCommentsLine(line, lines[index+1:], inComment, inlineTicks)
+		if canParseBlocks {
+			if heading, ok := sectionHeading(line); ok {
+				if current != "" {
+					sections[current] = strings.TrimSpace(content.String())
+					content.Reset()
+				}
+				current = heading
+				continue
+			}
+		}
+		if current != "" {
 			content.WriteString(line)
 			content.WriteByte('\n')
 		}
@@ -136,22 +153,164 @@ func parseSections(body string) map[string]string {
 	return sections
 }
 
-func stripHTMLComments(body string) string {
-	for {
-		start := strings.Index(body, "<!--")
-		if start == -1 {
-			return body
-		}
-		end := strings.Index(body[start+4:], "-->")
-		if end == -1 {
-			return body[:start]
-		}
-		body = body[:start] + body[start+4+end+3:]
+type fence struct {
+	char   byte
+	length int
+}
+
+func opensFence(line string) (fence, bool) {
+	line, indented := trimUpToThreeSpaces(line)
+	if indented || len(line) < 3 || (line[0] != '`' && line[0] != '~') {
+		return fence{}, false
 	}
+	length := 0
+	for length < len(line) && line[length] == line[0] {
+		length++
+	}
+	if length < 3 {
+		return fence{}, false
+	}
+	if line[0] == '`' && strings.ContainsRune(line[length:], '`') {
+		return fence{}, false
+	}
+	return fence{char: line[0], length: length}, true
+}
+
+func closesFence(line string, opening fence) bool {
+	line, indented := trimUpToThreeSpaces(line)
+	if indented || len(line) < opening.length || line[0] != opening.char {
+		return false
+	}
+	length := 0
+	for length < len(line) && line[length] == opening.char {
+		length++
+	}
+	return length >= opening.length && strings.TrimSpace(line[length:]) == ""
+}
+
+func sectionHeading(line string) (string, bool) {
+	line, indented := trimUpToThreeSpaces(line)
+	if indented || len(line) < 4 || !strings.HasPrefix(line, "##") || (line[2] != ' ' && line[2] != '\t') {
+		return "", false
+	}
+	return strings.TrimSpace(line[3:]), true
+}
+
+func isIndentedCode(line string) bool {
+	_, indented := trimUpToThreeSpaces(line)
+	return indented
+}
+
+func trimUpToThreeSpaces(line string) (string, bool) {
+	spaces := 0
+	for spaces < len(line) && spaces < 4 && line[spaces] == ' ' {
+		spaces++
+	}
+	if spaces == 4 {
+		return line[spaces:], true
+	}
+	if spaces < len(line) && line[spaces] == '\t' {
+		return line[spaces+1:], true
+	}
+	return line[spaces:], false
+}
+
+func stripHTMLCommentsLine(line string, remaining []string, inComment bool, inlineTicks int) (string, bool, int) {
+	var visible strings.Builder
+	for index := 0; index < len(line); {
+		if inComment {
+			end := strings.Index(line[index:], "-->")
+			if end == -1 {
+				return visible.String(), true, inlineTicks
+			}
+			index += end + 3
+			inComment = false
+			continue
+		}
+		if line[index] == '`' && !isEscapedBacktick(line, index) {
+			length := 1
+			for index+length < len(line) && line[index+length] == '`' {
+				length++
+			}
+			visible.WriteString(line[index : index+length])
+			if inlineTicks == 0 && inlineBlockHasClosingRun(line[index+length:], remaining, length) {
+				inlineTicks = length
+			} else if inlineTicks == length {
+				inlineTicks = 0
+			}
+			index += length
+			continue
+		}
+		if inlineTicks == 0 && strings.HasPrefix(line[index:], "<!--") {
+			inComment = true
+			index += 4
+			continue
+		}
+		visible.WriteByte(line[index])
+		index++
+	}
+	return visible.String(), inComment, inlineTicks
+}
+
+func isEscapedBacktick(line string, index int) bool {
+	backslashes := 0
+	for index > backslashes && line[index-backslashes-1] == '\\' {
+		backslashes++
+	}
+	return backslashes%2 == 1
+}
+
+func inlineBlockHasClosingRun(line string, remaining []string, length int) bool {
+	if containsUnescapedBacktickRun(line, length) {
+		return true
+	}
+	for _, line := range remaining {
+		if strings.TrimSpace(line) == "" {
+			return false
+		}
+		if _, heading := sectionHeading(line); heading {
+			return false
+		}
+		if containsUnescapedBacktickRun(line, length) {
+			return true
+		}
+	}
+	return false
+}
+
+func containsUnescapedBacktickRun(line string, length int) bool {
+	for index := 0; index < len(line); {
+		if line[index] != '`' || isEscapedBacktick(line, index) {
+			index++
+			continue
+		}
+		run := 1
+		for index+run < len(line) && line[index+run] == '`' {
+			run++
+		}
+		if run == length {
+			return true
+		}
+		index += run
+	}
+	return false
+}
+
+func stripHTMLComments(body string) string {
+	var visible strings.Builder
+	inComment := false
+	inlineTicks := 0
+	lines := strings.Split(body, "\n")
+	for index, line := range lines {
+		line, inComment, inlineTicks = stripHTMLCommentsLine(line, lines[index+1:], inComment, inlineTicks)
+		visible.WriteString(line)
+		visible.WriteByte('\n')
+	}
+	return visible.String()
 }
 
 func meaningful(content string) bool {
-	content = regexp.MustCompile(`(?s)<!--.*?-->`).ReplaceAllString(content, "")
+	content = stripHTMLComments(content)
 	for _, placeholder := range placeholders {
 		content = strings.ReplaceAll(strings.ToLower(content), placeholder, "")
 	}

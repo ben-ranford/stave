@@ -43,6 +43,88 @@ func TestValidateRejectsEmptyFencesAndCommentHeadings(t *testing.T) {
 	}
 }
 
+func TestValidateKeepsHeadingsHiddenUntilTheMatchingFenceCloses(t *testing.T) {
+	for _, body := range []string{
+		"## Summary\n\nCompleted.\n\n````markdown\n~~~\n## Validation\n\nCompleted.\n\n## Release Notes\n\nCompleted.\n\n````\n",
+		"## Summary\n\nCompleted.\n\n````markdown\n```\n## Validation\n\nCompleted.\n\n## Release Notes\n\nCompleted.\n\n````\n",
+	} {
+		if err := validate("fix: parser", "fix/parser", body, identity{}); err == nil {
+			t.Fatal("headings after a mismatched or short fence close were accepted")
+		}
+	}
+}
+
+func TestValidateDoesNotTruncateOnLiteralUnmatchedCommentOpenersInCode(t *testing.T) {
+	for _, body := range []string{
+		"## Summary\n\nUse `<!--` literally.\n\n## Validation\n\nCompleted.\n\n## Release Notes\n\nCompleted.\n",
+		"## Summary\n\nCompleted.\n\n```markdown\nliteral <!--\n## hidden heading\n```\n\n## Validation\n\nCompleted.\n\n## Release Notes\n\nCompleted.\n",
+	} {
+		if err := validate("fix: parser", "fix/parser", body, identity{}); err != nil {
+			t.Fatalf("literal unmatched comment opener hid later sections: %v", err)
+		}
+	}
+}
+
+func TestValidateRejectsAnUnclosedHTMLCommentThatHidesRequiredSections(t *testing.T) {
+	body := "## Summary\n\nCompleted.\n\n<!--\n## Validation\n\nCompleted.\n\n## Release Notes\n\nCompleted.\n"
+	if err := validate("fix: parser", "fix/parser", body, identity{}); err == nil {
+		t.Fatal("headings hidden by an unclosed HTML comment were accepted")
+	}
+}
+
+func TestValidateKeepsCommentSyntaxInsideInlineCodeLiteral(t *testing.T) {
+	body := "## Summary\n\nUse ``<!--` and -->`` literally.\n\n## Validation\n\nCompleted.\n\n## Release Notes\n\nCompleted.\n"
+	if err := validate("fix: parser", "fix/parser", body, identity{}); err != nil {
+		t.Fatalf("inline code comment syntax hid later sections: %v", err)
+	}
+}
+
+func TestValidateCountsInlineCodeCommentSyntaxAsContent(t *testing.T) {
+	body := "## Summary\n\n`<!-- completed -->`\n\n## Validation\n\nCompleted.\n\n## Release Notes\n\nCompleted.\n"
+	if err := validate("fix: parser", "fix/parser", body, identity{}); err != nil {
+		t.Fatalf("inline code comment syntax was stripped from section content: %v", err)
+	}
+}
+
+func TestValidateTreatsUnmatchedAndEscapedBackticksAsLiteral(t *testing.T) {
+	for _, summary := range []string{
+		"Explain the ` character.",
+		"Explain the \\` character.",
+	} {
+		body := "## Summary\n\n" + summary + "\n\n## Validation\n\nCompleted.\n\n## Release Notes\n\nCompleted.\n"
+		if err := validate("fix: parser", "fix/parser", body, identity{}); err != nil {
+			t.Fatalf("literal backtick hid later sections: %v", err)
+		}
+	}
+}
+
+func TestValidateDoesNotParseFencesInsideHTMLComments(t *testing.T) {
+	body := "<!--\n```markdown\n-->\n## Summary\n\nCompleted.\n\n## Validation\n\nCompleted.\n\n## Release Notes\n\nCompleted.\n"
+	if err := validate("fix: parser", "fix/parser", body, identity{}); err != nil {
+		t.Fatalf("fence inside HTML comment hid later sections: %v", err)
+	}
+}
+
+func TestValidateRejectsHeadingsInIndentedCode(t *testing.T) {
+	body := "## Summary\n\nCompleted.\n\n    ## Validation\n\n    Completed.\n\n\t## Release Notes\n\n\tCompleted.\n"
+	if err := validate("fix: parser", "fix/parser", body, identity{}); err == nil {
+		t.Fatal("headings in indented code were accepted")
+	}
+}
+
+func TestValidateRejectsHeadingsAfterSpacesAndATab(t *testing.T) {
+	body := "## Summary\n\nCompleted.\n\n \t## Validation\n\n \tCompleted.\n\n   \t## Release Notes\n\n   \tCompleted.\n"
+	if err := validate("fix: parser", "fix/parser", body, identity{}); err == nil {
+		t.Fatal("headings after spaces and a tab were accepted")
+	}
+}
+
+func TestValidateAcceptsOneCharacterConventionalCommitDescription(t *testing.T) {
+	if err := validate("fix: x", "fix/parser", validBody(), identity{}); err != nil {
+		t.Fatalf("one-character description rejected: %v", err)
+	}
+}
+
 func TestValidateOnlyExemptsTrustedReleasePlease(t *testing.T) {
 	id := identity{"ben-ranford/stave", "ben-ranford/stave", "release-bot", "release-bot"}
 	if err := validate("chore: release 1.2.3", "release-please--branches--main", "", id); err != nil {
