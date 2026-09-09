@@ -25,6 +25,8 @@ function harness({
   baseRef = 'main',
   baseSha = 'base',
   trustedValidatorRef = 'trusted-workflow-sha',
+  mergePolicy = { mergeCommitAllowed: false, rebaseMergeAllowed: false, squashMergeAllowed: true, squashMergeCommitTitle: 'PR_TITLE' },
+  mergePolicyError,
 } = {}) {
   let current = { number: 8, title: 'fix: x', body: 'Current body', labels: [{ name: 'bug' }],
     head: { sha: 'abc', ref: 'bug/example', repo: { full_name: 'owner/repo' } },
@@ -36,7 +38,7 @@ function harness({
     RELEASE_PLEASE_AUTHOR_LOGIN: releasePleaseAuthorLogin,
     TRUSTED_VALIDATOR_REF: trustedValidatorRef,
   };
-  const created = [], dispatches = [], getContentCalls = [], updated = [], failures = [], files = new Map(), renders = [], outputs = {};
+  const created = [], dispatches = [], getContentCalls = [], mergePolicyQueries = [], updated = [], failures = [], files = new Map(), renders = [], outputs = {};
   const context = { eventName, serverUrl: 'https://github.com', runId: 123, repo: { owner: 'owner', repo: 'repo' },
     payload: eventName === 'workflow_dispatch'
       ? { inputs: { 'pr-number': String(current.number) } }
@@ -64,6 +66,10 @@ function harness({
     actions: {
       createWorkflowDispatch: async (dispatch) => { dispatches.push(dispatch); },
     },
+  }, graphql: async (query, variables) => {
+    mergePolicyQueries.push({ query, variables });
+    if (mergePolicyError) throw mergePolicyError;
+    return { repository: mergePolicy };
   } };
   const core = {
     exportVariable: (key, value) => { env[key] = value; },
@@ -73,7 +79,7 @@ function harness({
   const load = (name) => name === 'node:fs' ? { writeFileSync: (file, text) => files.set(file, text) } : require(name);
   const run = (name) => new AsyncFunction('require', 'github', 'context', 'core', 'process', stepScript(name))(
     load, github, context, core, { env });
-  return { run, env, created, dispatches, getContentCalls, updated, failures, files, renders, outputs, current, edit: (changes) => { current = { ...current, ...changes }; } };
+  return { run, env, created, dispatches, getContentCalls, mergePolicyQueries, updated, failures, files, renders, outputs, current, edit: (changes) => { current = { ...current, ...changes }; } };
 }
 
 test('pull request target only dispatches trusted validation from the default branch', async () => {
@@ -102,6 +108,31 @@ test('workflow validates current API metadata and produces the queue fingerprint
 	assert.equal(h.updated[0].conclusion, 'success');
 	assert.equal(h.updated[0].output.text, 'stave-pr-metadata-run/v1:123');
 	assert.deepEqual(h.failures, []);
+});
+
+test('merge policy is read from GraphQL and mapped to prcheck inputs', async () => {
+  const h = harness();
+  await h.run('Read repository merge policy');
+
+  assert.match(h.mergePolicyQueries[0].query, /mergeCommitAllowed/);
+  assert.deepEqual(h.mergePolicyQueries[0].variables, { owner: 'owner', repo: 'repo' });
+  assert.deepEqual({
+    merge: h.env.REPO_ALLOW_MERGE_COMMIT,
+    rebase: h.env.REPO_ALLOW_REBASE_MERGE,
+    squash: h.env.REPO_ALLOW_SQUASH_MERGE,
+    title: h.env.REPO_SQUASH_MERGE_COMMIT_TITLE,
+  }, { merge: 'false', rebase: 'false', squash: 'true', title: 'PR_TITLE' });
+});
+
+test('merge policy query errors and missing fields fail closed', async () => {
+  await assert.rejects(
+    harness({ mergePolicyError: new Error('GraphQL policy denied') }).run('Read repository merge policy'),
+    /GraphQL policy denied/,
+  );
+  await assert.rejects(
+    harness({ mergePolicy: { mergeCommitAllowed: false, rebaseMergeAllowed: false, squashMergeAllowed: true } }).run('Read repository merge policy'),
+    /incomplete/,
+  );
 });
 
 test('a successful validator cannot publish success after metadata changes', async () => {
