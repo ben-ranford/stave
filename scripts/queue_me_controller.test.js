@@ -64,6 +64,11 @@ function makeHarness(options = {}) {
     external_id: testables.metadataCheckExternalID(pull),
     app: { slug: 'github-actions' },
     head_sha: pull.head.sha,
+    details_url: 'https://github.com/octo/stave/actions/runs/123',
+  }));
+  const workflowJobs = options.workflowJobs || metadataChecks.map((check) => ({
+    name: `metadata/${check.external_id}`,
+    conclusion: 'success',
   }));
   const comments = new Map();
   const branchRules = options.branchRules ?? [{
@@ -78,11 +83,13 @@ function makeHarness(options = {}) {
     comments: [],
     createdLabels: [],
     disabled: [],
+    mergeInputs: [],
     merged: [],
     notices: [],
     rebased: [],
     repositoryReads: [],
     rules: [],
+    workflowRuns: [],
   };
   const repository = {
     default_branch: 'main',
@@ -140,6 +147,22 @@ function makeHarness(options = {}) {
       checks: {
         listForRef: async () => {},
       },
+      actions: {
+        getWorkflowRun: async ({ run_id }) => {
+          calls.workflowRuns.push(run_id);
+          return { data: options.workflowRun || {
+            conclusion: 'success',
+            event: 'pull_request_target',
+            path: '.github/workflows/pr-metadata.yml@main',
+            head_branch: 'main',
+            pull_requests: allPulls.map((pull) => ({
+              number: pull.number,
+              base: { ref: pull.base.ref, repo: { full_name: 'octo/stave' } },
+            })),
+          } };
+        },
+        listJobsForWorkflowRun: async () => {},
+      },
       repos: {
         get: async () => {
           const response = repositoryResponses[
@@ -169,6 +192,9 @@ function makeHarness(options = {}) {
       }
       if (_method === github.rest.checks.listForRef) {
         return metadataChecks.filter((check) => check.head_sha === input.ref);
+      }
+      if (_method === github.rest.actions.listJobsForWorkflowRun) {
+        return workflowJobs;
       }
       return input.base
         ? openPulls.filter((pull) => pull.base?.ref === input.base)
@@ -213,6 +239,7 @@ function makeHarness(options = {}) {
       }
       if (query.includes('MergeQueuedPull')) {
         const state = [...states.values()].find((value) => value.id === variables.pullRequestId);
+        calls.mergeInputs.push(variables);
         calls.merged.push(state.number);
         return { mergePullRequest: { pullRequest: { number: state.number, merged: true } } };
       }
@@ -496,6 +523,12 @@ test('queue leaves a waiting pull unarmed, then directly merges after fresh vali
   await runController(harness.args);
 
   assert.deepEqual(harness.calls.merged, [10]);
+  assert.deepEqual(harness.calls.mergeInputs[0], {
+    pullRequestId: 'PR_10',
+    expectedHeadOid: 'head-10',
+    commitHeadline: pull.title,
+    commitBody: pull.body,
+  });
   assert.equal(harness.states.get(10).autoMergeRequest, null);
   assert.match(commentsFor(harness, 10), /GitHub squash-merged it/);
 });
@@ -550,6 +583,25 @@ test('queue rejects a matching metadata check not produced by GitHub Actions', a
   assert.match(commentsFor(harness, 10), /waiting for a successful current `pr-metadata` validation/);
 });
 
+test('queue rejects a forged GitHub Actions check without a trusted metadata job', async () => {
+  const pull = makePull(10);
+  const harness = makeHarness({
+    pulls: [pull],
+    workflowRun: {
+      conclusion: 'success',
+      event: 'pull_request_target',
+      path: '.github/workflows/pr-metadata.yml@main',
+      head_branch: 'main',
+      pull_requests: [],
+    },
+  });
+
+  await runController(harness.args);
+
+  assert.deepEqual(harness.calls.merged, []);
+  assert.match(commentsFor(harness, 10), /waiting for a successful current `pr-metadata` validation/);
+});
+
 test('queue rejects metadata validated under a previous release author configuration', async () => {
   const pull = makePull(10);
   const checks = [{
@@ -558,10 +610,13 @@ test('queue rejects metadata validated under a previous release author configura
     external_id: testables.metadataCheckExternalID(pull, 'release-bot-old'),
     app: { slug: 'github-actions' },
     head_sha: pull.head.sha,
+    details_url: 'https://github.com/octo/stave/actions/runs/123',
   }];
+  const jobs = [{ name: `metadata/${checks[0].external_id}`, conclusion: 'success' }];
   const harness = makeHarness({
     pulls: [pull],
     metadataChecks: checks,
+    workflowJobs: jobs,
     initialStates: { 10: { mergeStateStatus: 'CLEAN' } },
   });
 
@@ -571,6 +626,7 @@ test('queue rejects metadata validated under a previous release author configura
     assert.match(commentsFor(harness, 10), /waiting for a successful current `pr-metadata` validation/);
 
     checks[0].external_id = testables.metadataCheckExternalID(pull, 'release-bot-new');
+    jobs[0].name = `metadata/${checks[0].external_id}`;
     await runController(harness.args);
   });
 

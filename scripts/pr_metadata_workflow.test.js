@@ -13,7 +13,7 @@ function stepScript(name) {
   assert.ok(step, `missing workflow step ${name}`);
   const script = step.split('          script: |\n')[1];
   assert.ok(script, `missing inline script for ${name}`);
-  return script.split('\n').map((line) => line.replace(/^            /, '')).join('\n');
+  return script.split('\n  attest:\n')[0].split('\n').map((line) => line.replace(/^            /, '')).join('\n');
 }
 
 function harness({
@@ -32,8 +32,8 @@ function harness({
     GITHUB_REF: githubRef,
     RELEASE_PLEASE_AUTHOR_LOGIN: releasePleaseAuthorLogin,
   };
-  const created = [], updated = [], failures = [], files = new Map(), renders = [];
-  const context = { eventName, repo: { owner: 'owner', repo: 'repo' },
+  const created = [], updated = [], failures = [], files = new Map(), renders = [], outputs = {};
+  const context = { eventName, serverUrl: 'https://github.com', runId: 123, repo: { owner: 'owner', repo: 'repo' },
     payload: eventName === 'workflow_dispatch'
       ? { inputs: { 'pr-number': String(current.number) } }
       : { pull_request: { ...current, body: 'Stale event body' } } };
@@ -52,11 +52,15 @@ function harness({
       update: async (check) => { updated.push(check); },
     },
   } };
-  const core = { exportVariable: (key, value) => { env[key] = value; }, setFailed: (message) => failures.push(message) };
+  const core = {
+    exportVariable: (key, value) => { env[key] = value; },
+    setFailed: (message) => failures.push(message),
+    setOutput: (key, value) => { outputs[key] = value; },
+  };
   const load = (name) => name === 'node:fs' ? { writeFileSync: (file, text) => files.set(file, text) } : require(name);
   const run = (name) => new AsyncFunction('require', 'github', 'context', 'core', 'process', stepScript(name))(
     load, github, context, core, { env });
-  return { run, env, created, updated, failures, files, renders, current, edit: (changes) => { current = { ...current, ...changes }; } };
+  return { run, env, created, updated, failures, files, renders, outputs, current, edit: (changes) => { current = { ...current, ...changes }; } };
 }
 
 test('workflow validates current API metadata and produces the queue fingerprint', async () => {
@@ -65,6 +69,8 @@ test('workflow validates current API metadata and produces the queue fingerprint
   assert.equal(h.files.get('/tmp/pr-body.md'), '<p>Current body</p>');
   assert.deepEqual(h.renders, [{ text: 'Current body', mode: 'gfm', context: 'owner/repo' }]);
   assert.equal(h.created[0].external_id, metadataCheckExternalID(h.current));
+  assert.equal(h.created[0].details_url, 'https://github.com/owner/repo/actions/runs/123');
+  assert.equal(h.outputs.external_id, metadataCheckExternalID(h.current));
   await h.run('Publish PR metadata result');
   assert.equal(h.updated[0].conclusion, 'success');
   assert.deepEqual(h.failures, []);

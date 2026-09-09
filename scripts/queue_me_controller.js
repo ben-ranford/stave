@@ -7,6 +7,7 @@ const DEFAULT_QUEUE_LABEL = 'queue-me';
 const METADATA_CHECK_NAME = 'pr-metadata';
 const METADATA_CHECK_EXTERNAL_ID_PREFIX = 'stave-pr-metadata/v1:';
 const METADATA_CHECK_APP_SLUG = 'github-actions';
+const METADATA_WORKFLOW_PATH = '.github/workflows/pr-metadata.yml';
 
 function labelName(label) {
   return typeof label === 'string' ? label : label?.name;
@@ -98,7 +99,16 @@ async function getCurrentPull(github, owner, repo, number) {
   return pull;
 }
 
-async function hasCurrentMetadataValidation(github, owner, repo, pull) {
+function workflowRunID(detailsURL) {
+  try {
+    const match = new URL(detailsURL).pathname.match(/\/actions\/runs\/(\d+)$/);
+    return match ? Number(match[1]) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function hasCurrentMetadataValidation(github, owner, repo, pull, defaultBranch) {
   const checks = await github.paginate(github.rest.checks.listForRef, {
     owner,
     repo,
@@ -108,13 +118,38 @@ async function hasCurrentMetadataValidation(github, owner, repo, pull) {
     per_page: 100,
   });
   const expectedExternalID = metadataCheckExternalID(pull);
-  return checks.some(
+  const candidate = checks.find(
     (check) =>
       check.name === METADATA_CHECK_NAME &&
       check.conclusion === 'success' &&
       check.external_id === expectedExternalID &&
       check.app?.slug === METADATA_CHECK_APP_SLUG,
   );
+  const runID = workflowRunID(candidate?.details_url);
+  if (!runID) return false;
+  const { data: run } = await github.rest.actions.getWorkflowRun({ owner, repo, run_id: runID });
+  const trustedPullRequestTarget = run.event === 'pull_request_target' &&
+    Array.isArray(run.pull_requests) && run.pull_requests.some(
+      (associatedPull) =>
+        associatedPull.number === pull.number &&
+        associatedPull.base?.ref === defaultBranch &&
+        associatedPull.base?.repo?.full_name === `${owner}/${repo}`,
+    );
+  const trustedManualDispatch = run.event === 'workflow_dispatch' &&
+    run.head_branch === defaultBranch;
+  if (
+    run.conclusion !== 'success' ||
+    run.path !== `${METADATA_WORKFLOW_PATH}@${defaultBranch}` ||
+    !(trustedPullRequestTarget || trustedManualDispatch)
+  ) return false;
+  const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
+    owner,
+    repo,
+    run_id: runID,
+    filter: 'latest',
+    per_page: 100,
+  });
+  return jobs.some((job) => job.name === `metadata/${expectedExternalID}` && job.conclusion === 'success');
 }
 
 function safeError(error) {
@@ -301,29 +336,36 @@ async function rebaseOntoDefault(
   };
 }
 
-async function mergeNow(github, pullRequestId, expectedHeadOid) {
+async function mergeNow(github, pullRequestId, expectedHeadOid, commitHeadline, commitBody) {
   return github.graphql(
-    `mutation MergeQueuedPull($pullRequestId: ID!, $expectedHeadOid: GitObjectID!) {
+    `mutation MergeQueuedPull($pullRequestId: ID!, $expectedHeadOid: GitObjectID!, $commitHeadline: String!, $commitBody: String!) {
       mergePullRequest(input: {
         pullRequestId: $pullRequestId
         expectedHeadOid: $expectedHeadOid
+        commitHeadline: $commitHeadline
+        commitBody: $commitBody
         mergeMethod: SQUASH
       }) {
         pullRequest { number merged mergedAt }
       }
     }`,
-    { pullRequestId, expectedHeadOid },
+    { pullRequestId, expectedHeadOid, commitHeadline, commitBody },
   );
 }
 
-async function mergeIfReady(github, owner, repo, number, state, { expectedBaseRefName, expectedBaseRefOid }) {
+async function mergeIfReady(github, owner, repo, number, state, {
+  expectedBaseRefName,
+  expectedBaseRefOid,
+  commitHeadline,
+  commitBody,
+}) {
   assertExpectedBaseState(state, expectedBaseRefName, expectedBaseRefOid);
   if (state.autoMergeRequest) {
     await disableAutoMerge(github, owner, repo, number);
     return 'auto-merge-disabled';
   }
   if (state.mergeable === 'MERGEABLE' && state.mergeStateStatus === 'CLEAN') {
-    await mergeNow(github, state.id, state.headRefOid);
+    await mergeNow(github, state.id, state.headRefOid, commitHeadline, commitBody);
     return 'merged';
   }
   return 'waiting';
@@ -470,7 +512,7 @@ async function mergeQueuedPull({
         'Pull request changed while completing the queue advance.',
       );
     }
-    if (!(await hasCurrentMetadataValidation(github, owner, repo, current))) {
+    if (!(await hasCurrentMetadataValidation(github, owner, repo, current, defaultBranch))) {
       await syncStatusComment(
         github,
         owner,
@@ -491,6 +533,8 @@ async function mergeQueuedPull({
     const result = await mergeIfReady(github, owner, repo, candidate.number, state, {
       expectedBaseRefName: defaultBranch,
       expectedBaseRefOid: defaultBranchSHA,
+      commitHeadline: current.title,
+      commitBody: current.body,
     });
     const rebaseSummary = update.rebased
       ? `Rebased \`${shortSHA(candidate.head.sha)}\` to \`${shortSHA(update.headSHA)}\` on current \`${defaultBranch}\`.`
@@ -550,7 +594,7 @@ async function advanceQueuedPull({
     );
     return false;
   }
-  if (!(await hasCurrentMetadataValidation(github, owner, repo, current))) {
+  if (!(await hasCurrentMetadataValidation(github, owner, repo, current, defaultBranch))) {
     await syncStatusComment(
       github,
       owner,
@@ -722,4 +766,5 @@ module.exports.testables = {
   safeError,
   shortSHA,
   sortQueuedPulls,
+  workflowRunID,
 };

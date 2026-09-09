@@ -17,6 +17,8 @@ concurrency:
 jobs:
   validate:
     name: pr-metadata
+    outputs:
+      metadata_external_id: ${{ steps.metadata.outputs.external_id }}
     if: >-
       github.event_name != 'workflow_dispatch' ||
       github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
@@ -29,6 +31,7 @@ jobs:
       pull-requests: read
     steps:
       - name: Read pull request metadata
+        id: metadata
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         with:
           script: |
@@ -43,9 +46,10 @@ jobs:
               if (process.env.GITHUB_REF !== `refs/heads/${repository.default_branch}`) throw new Error('manual validation must run from the trusted default branch workflow ref');
             }
             const metadataExternalID = `stave-pr-metadata/v1:${crypto.createHash('sha256').update(JSON.stringify({ title: pullRequest.title || '', body: pullRequest.body || '', labels: (pullRequest.labels || []).map((label) => label.name).filter(Boolean).sort(), headSHA: pullRequest.head.sha || '', number: pullRequest.number || 0, headRef: pullRequest.head.ref || '', headRepoFullName: pullRequest.head.repo?.full_name || '', authorLogin: pullRequest.user?.login || '', baseRefName: pullRequest.base.ref || '', releasePleaseAuthorLogin: process.env.RELEASE_PLEASE_AUTHOR_LOGIN || '' })).digest('hex')}`;
-            const { data: check } = await github.rest.checks.create({ owner: context.repo.owner, repo: context.repo.repo, name: 'pr-metadata', head_sha: pullRequest.head.sha, external_id: metadataExternalID, status: 'in_progress', output: { title: 'PR metadata validation', summary: 'Trusted metadata validation is running.' } });
+            const { data: check } = await github.rest.checks.create({ owner: context.repo.owner, repo: context.repo.repo, name: 'pr-metadata', head_sha: pullRequest.head.sha, external_id: metadataExternalID, details_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`, status: 'in_progress', output: { title: 'PR metadata validation', summary: 'Trusted metadata validation is running.' } });
             core.exportVariable('PR_METADATA_CHECK_RUN_ID', String(check.id));
             core.exportVariable('PR_METADATA_EXTERNAL_ID', metadataExternalID);
+            core.setOutput('external_id', metadataExternalID);
             if (pullRequest.labels.length === 0) core.setFailed('Pull requests must have at least one label.');
             const { data: renderedBody } = await github.rest.markdown.render({
               text: pullRequest.body || '',
@@ -110,3 +114,11 @@ jobs:
                 : 'PR metadata validation failed. See the Validate PR title and template step.';
             await github.rest.checks.update({ owner: context.repo.owner, repo: context.repo.repo, check_run_id: Number(process.env.PR_METADATA_CHECK_RUN_ID), status: 'completed', conclusion: success ? 'success' : 'failure', output: { title: 'PR metadata validation', summary } });
             if (!success) core.setFailed(stale ? 'PR metadata validation was superseded by a newer edit.' : 'PR metadata validation failed.');
+  attest:
+    name: metadata/${{ needs.validate.outputs.metadata_external_id }}
+    needs: validate
+    if: needs.validate.result == 'success'
+    runs-on: stave-arc
+    permissions: {}
+    steps:
+      - run: true
