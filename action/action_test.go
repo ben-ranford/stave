@@ -3,6 +3,7 @@ package action
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"github.com/ben-ranford/stave/semantic"
 	"sync"
 	"testing"
@@ -105,6 +106,108 @@ func TestTokenOnlyConfirmation(t *testing.T) {
 	p := Confirmation{Token: g.Token, SessionID: "s"}
 	if r.Invoke(context.Background(), Call{ActionID: d.ID, SessionID: "s", Arguments: json.RawMessage(`{}`), Confirmation: &p}).Status != ResultOK {
 		t.Fatal("token-only rejected")
+	}
+}
+
+func TestConfirmationPolicyBindingIsStrict(t *testing.T) {
+	r := NewRegistry()
+	d := Definition{ID: "policy.v1", Version: "1", InputSchema: Schema{ID: "i", JSON: json.RawMessage(`{}`)}, OutputSchema: Schema{ID: "o", JSON: json.RawMessage(`{}`)}, Safety: Consequential, Confirmation: ConfirmationPolicy{Required: true}}
+	if err := r.Register(d, func(context.Context, Call, any) (any, error) { return map[string]any{}, nil }); err != nil {
+		t.Fatal(err)
+	}
+	grant, err := NewConfirmation("s", d, semantic.Target{}, json.RawMessage(`{}`), time.Now().Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant.PolicyID, grant.PolicyEpoch = "policy", 4
+	if err := r.IssueConfirmation(grant); err != nil {
+		t.Fatal(err)
+	}
+	call := Call{ActionID: d.ID, SessionID: "s", Arguments: json.RawMessage(`{}`), Confirmation: &grant, PolicyID: "policy", PolicyEpoch: 5}
+	if result := r.Invoke(context.Background(), call); result.Error == nil || result.Error.Code != ConfirmationInvalid {
+		t.Fatalf("policy epoch change accepted: %+v", result)
+	}
+	call.PolicyEpoch = 4
+	if result := r.Invoke(context.Background(), call); result.Status != ResultOK {
+		t.Fatalf("matching policy rejected: %+v", result)
+	}
+}
+
+func TestConfirmationRegistryPrunesAndBoundsState(t *testing.T) {
+	r := NewRegistry()
+	d := Definition{ID: "cap.v1", Version: "1", InputSchema: Schema{ID: "i", JSON: json.RawMessage(`{}`)}, OutputSchema: Schema{ID: "o", JSON: json.RawMessage(`{}`)}, Safety: ReadOnly, Confirmation: ConfirmationPolicy{Required: true}}
+	if err := r.Register(d, func(context.Context, Call, any) (any, error) { return map[string]any{}, nil }); err != nil {
+		t.Fatal(err)
+	}
+	expired, err := NewConfirmation("s", d, semantic.Target{}, json.RawMessage(`{}`), time.Now().Add(-time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.IssueConfirmation(expired); err == nil {
+		t.Fatal("expired confirmation was issued")
+	}
+	consumed, err := NewConfirmation("s", d, semantic.Target{}, json.RawMessage(`{}`), time.Now().Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.IssueConfirmation(consumed); err != nil {
+		t.Fatal(err)
+	}
+	if result := r.Invoke(context.Background(), Call{ActionID: d.ID, SessionID: "s", Arguments: json.RawMessage(`{}`), Confirmation: &consumed}); result.Status != ResultOK {
+		t.Fatalf("confirmation rejected: %+v", result)
+	}
+	for i := 0; i < maxConfirmationGrants-1; i++ {
+		grant, err := NewConfirmation("s", d, semantic.Target{}, json.RawMessage(`{}`), time.Now().Add(time.Minute))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := r.IssueConfirmation(grant); err != nil {
+			t.Fatalf("issue %d: %v", i, err)
+		}
+	}
+	extra, err := NewConfirmation("s", d, semantic.Target{}, json.RawMessage(`{}`), time.Now().Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.IssueConfirmation(extra); !errors.Is(err, ErrConfirmationLimit) {
+		t.Fatalf("cap error = %v, want ErrConfirmationLimit", err)
+	}
+}
+
+func TestConfirmationRegistryPrunesExpiredAndRetainsConsumedToken(t *testing.T) {
+	r := NewRegistry()
+	d := Definition{ID: "state.v1", Version: "1", InputSchema: Schema{ID: "i", JSON: json.RawMessage(`{}`)}, OutputSchema: Schema{ID: "o", JSON: json.RawMessage(`{}`)}, Safety: ReadOnly, Confirmation: ConfirmationPolicy{Required: true}}
+	if err := r.Register(d, func(context.Context, Call, any) (any, error) { return map[string]any{}, nil }); err != nil {
+		t.Fatal(err)
+	}
+	grant, err := NewConfirmation("s", d, semantic.Target{}, json.RawMessage(`{}`), time.Now().Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.IssueConfirmation(grant); err != nil {
+		t.Fatal(err)
+	}
+	expired := r.grants[grant.Token]
+	expired.ExpiresAt = time.Now().Add(-time.Second)
+	r.grants[grant.Token] = expired
+	replacement, err := NewConfirmation("s", d, semantic.Target{}, json.RawMessage(`{}`), time.Now().Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.IssueConfirmation(replacement); err != nil {
+		t.Fatalf("expired grant was not pruned: %v", err)
+	}
+	if _, present := r.grants[grant.Token]; present {
+		t.Fatal("expired grant remains registered")
+	}
+	if result := r.Invoke(context.Background(), Call{ActionID: d.ID, SessionID: "s", Arguments: json.RawMessage(`{}`), Confirmation: &replacement}); result.Status != ResultOK {
+		t.Fatalf("confirmation rejected: %+v", result)
+	}
+	if _, present := r.grants[replacement.Token]; present {
+		t.Fatal("consumed grant remains registered")
+	}
+	if err := r.IssueConfirmation(replacement); err == nil {
+		t.Fatal("consumed confirmation token was reissued")
 	}
 }
 func TestSchemaKeywordNegatives(t *testing.T) {

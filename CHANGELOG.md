@@ -5,6 +5,23 @@ Keep a Changelog and Stave uses Semantic Versioning.
 
 ## [Unreleased]
 
+### Security
+
+- Bind agent confirmation grants to the authorizing policy ID and epoch, and
+  reject grants after either changes. Direct registry users must copy the
+  authorized call's policy binding into manually issued grants.
+- Bound retained confirmation state, expire old grants, and reject duplicate
+  and replayed tokens. Capacity exhaustion returns a typed resource-limit error.
+- Scan the root module and every optional adapter module for reachable Go
+  vulnerabilities in CI.
+
+### Fixed
+
+- Limit the protocol schema to the implemented `full` and `patch` snapshot
+  modes. Previously advertised `hash`, `action`, and `diagnostic` modes were
+  never accepted by the server; working clients require no wire migration.
+- Complete the MIT license and add a tested public-API quick start.
+
 ## [1.0.0-rc.1] - 2026-08-13
 
 ### Target

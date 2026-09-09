@@ -591,7 +591,7 @@ func (b *syncBuffer) String() string {
 func requireNoRacePTY(t *testing.T) {
 	t.Helper()
 	if raceEnabled {
-		t.Skip("PTY integration is skipped under -race because charm.land/ssh v0.4.2 exposes a session.Pty() race during window-state mutation")
+		t.Skip("PTY integration is skipped under -race because charm.land/ssh v0.4.3 exposes unsynchronized PTY state during window mutation")
 	}
 }
 
