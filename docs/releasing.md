@@ -10,10 +10,17 @@ Read the candidate from `.release-please-manifest.json`; publish it from the
 hardened final `main` commit, never from an older release-please pull request
 merge commit.
 
-1. Merge the hosted-runner migration and the Stave ARC retirement. Before
-   changing repository visibility, verify Flux has pruned the Stave ARC
-   HelmRelease and that its scale set, listener, and pods are absent. Confirm
-   no repository or organization runner eligibility remains where applicable.
+1. Merge the hosted-runner migration and the Stave-only ARC retirement. Before
+   changing repository visibility, prove GitHub has deregistered Stave's
+   scheduler boundary: the current GitOps deletion is applied, the repository's
+   persistent runner scale-set record is gone, and the repository's
+   self-hosted-runner inventory is empty. Repeat those two GitHub observations
+   after the reconciliation interval; an idle runner count of zero alone is
+   not evidence of deregistration. The scale-set page is
+   [`Settings > Actions > Runner scale sets`](https://github.com/ben-ranford/stave/settings/actions/runner-scale-sets/1).
+   If cluster access is available, separately record Flux, HelmRelease,
+   listener, and pod cleanup. Do not represent that physical cleanup as
+   verified when only the GitHub scheduler-boundary proof is available.
 2. On the final `main` commit, wait for a fresh successful required-check run.
    Record its commit SHA and confirm it contains the intended candidate
    manifest, changelog, and release workflow.
@@ -37,10 +44,10 @@ merge commit.
    It validates the tag, runs `make ci` and `make release-contract`, then
    publishes a prerelease with `CHANGELOG.md`, `LICENSE`, and the performance
    evidence artifact. Wait for that workflow and verify all published assets.
-5. Change repository visibility only after the Stave ARC prune and eligibility
-   proof in step 1 passes.
-   Then run a controlled real external fork pull request and prove it uses the
-   hosted untrusted path before approving general outside workflow runs.
+5. Change repository visibility only after the scheduler-boundary proof in
+   step 1 passes. Then run a controlled real public-fork pull request and
+   prove it uses the hosted untrusted path before approving general outside
+   workflow runs.
 6. From a clean module outside this repository, resolve the public module at
    the exact tag, for example:
 
