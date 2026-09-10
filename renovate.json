@@ -27,6 +27,13 @@
         "golang"
       ],
       "groupName": "Go toolchain"
+    },
+    {
+      "description": "Actionlint upgrades require an explicit Go 1.22 compatibility review for both the bootstrap binary and workflow guard module",
+      "matchDepNames": [
+        "github.com/rhysd/actionlint"
+      ],
+      "enabled": false
     }
   ]
 }

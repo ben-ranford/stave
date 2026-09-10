@@ -47,7 +47,7 @@ jobs:
             sudo apt-get install -y "${packages[@]}"
           fi
       - name: Validate minimum floor
-        run: make fmt-check vet suppression-check test coverage-threshold
+        run: GOTOOLCHAIN=local make fmt-check vet suppression-check test coverage-threshold workflow-validate
 
   current:
     name: ci / go-current
