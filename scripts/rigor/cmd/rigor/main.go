@@ -48,10 +48,11 @@ type packageInfo struct {
 }
 
 type dependencyInventory struct {
-	ModulePath      string        `json:"modulePath"`
-	GoVersion       string        `json:"goVersion"`
-	Packages        []packageInfo `json:"packages"`
-	ExternalModules []moduleInfo  `json:"externalModules"`
+	ModulePath      string          `json:"modulePath"`
+	GoVersion       string          `json:"goVersion"`
+	Packages        []packageInfo   `json:"packages"`
+	ExternalModules []moduleInfo    `json:"externalModules"`
+	ToolingModules  []toolingModule `json:"toolingModules"`
 }
 
 type moduleInfo struct {
@@ -59,10 +60,17 @@ type moduleInfo struct {
 	Version string `json:"version,omitempty"`
 }
 
+type toolingModule struct {
+	Path            string       `json:"path"`
+	ModulePath      string       `json:"modulePath"`
+	ExternalModules []moduleInfo `json:"externalModules"`
+}
+
 type licenseInventory struct {
-	ModulePath        string       `json:"modulePath"`
-	RepositoryLicense licenseFile  `json:"repositoryLicense"`
-	ExternalModules   []moduleInfo `json:"externalModules"`
+	ModulePath        string          `json:"modulePath"`
+	RepositoryLicense licenseFile     `json:"repositoryLicense"`
+	ExternalModules   []moduleInfo    `json:"externalModules"`
+	ToolingModules    []toolingModule `json:"toolingModules"`
 }
 
 type licenseFile struct {
@@ -337,12 +345,42 @@ func renderDependencyInventory(ctx context.Context) (dependencyInventory, error)
 	}
 	sort.Slice(modules, func(i, j int) bool { return modules[i].Path < modules[j].Path })
 
+	tooling, err := renderToolingModules(ctx)
+	if err != nil {
+		return dependencyInventory{}, err
+	}
 	return dependencyInventory{
 		ModulePath:      modulePath,
 		GoVersion:       readGoVersion(),
 		Packages:        packages,
 		ExternalModules: modules,
+		ToolingModules:  tooling,
 	}, nil
+}
+
+func renderToolingModules(ctx context.Context) ([]toolingModule, error) {
+	const directory = "scripts/rigor/workflow-guard"
+	deps, err := listPackagesInDir(ctx, directory, true)
+	if err != nil {
+		return nil, err
+	}
+	modulePath, err := modulePathFor(deps)
+	if err != nil {
+		return nil, err
+	}
+	seen := map[string]moduleInfo{}
+	for _, dep := range deps {
+		if dep.Standard || dep.Module == nil || dep.Module.Main || dep.Module.Path == modulePath {
+			continue
+		}
+		seen[dep.Module.Path] = moduleInfo{Path: dep.Module.Path, Version: dep.Module.Version}
+	}
+	modules := make([]moduleInfo, 0, len(seen))
+	for _, module := range seen {
+		modules = append(modules, module)
+	}
+	sort.Slice(modules, func(i, j int) bool { return modules[i].Path < modules[j].Path })
+	return []toolingModule{{Path: directory, ModulePath: modulePath, ExternalModules: modules}}, nil
 }
 
 func renderLicenseInventory(ctx context.Context) (licenseInventory, error) {
@@ -363,6 +401,7 @@ func renderLicenseInventory(ctx context.Context) (licenseInventory, error) {
 			SHA256: hex.EncodeToString(sum[:]),
 		},
 		ExternalModules: dependencyContent.ExternalModules,
+		ToolingModules:  dependencyContent.ToolingModules,
 	}, nil
 }
 
@@ -502,13 +541,17 @@ func boundaryCheck(ctx context.Context) error {
 }
 
 func listPackages(ctx context.Context, withDeps bool) ([]goListPackage, error) {
+	return listPackagesInDir(ctx, mustRepoRoot(), withDeps)
+}
+
+func listPackagesInDir(ctx context.Context, directory string, withDeps bool) ([]goListPackage, error) {
 	args := []string{"list", "-e", "-json"}
 	if withDeps {
 		args = append(args, "-deps")
 	}
 	args = append(args, "./...")
 
-	output, err := execCommand(ctx, "go", args...)
+	output, err := execCommandInDir(ctx, directory, "go", args...)
 	if err != nil {
 		return nil, err
 	}
@@ -588,8 +631,12 @@ func writeFile(path string, content []byte) error {
 }
 
 func execCommand(ctx context.Context, name string, args ...string) ([]byte, error) {
+	return execCommandInDir(ctx, mustRepoRoot(), name, args...)
+}
+
+func execCommandInDir(ctx context.Context, directory, name string, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Dir = mustRepoRoot()
+	cmd.Dir = directory
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.Stdout = &stdout

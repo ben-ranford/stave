@@ -4,5 +4,61 @@
     "path": "LICENSE",
     "sha256": "2d2e54505876b22c8eed74a204de5088be51e9f563b940e2623e195fa297e4d6"
   },
-  "externalModules": []
+  "externalModules": [],
+  "toolingModules": [
+    {
+      "path": "scripts/rigor/workflow-guard",
+      "modulePath": "github.com/ben-ranford/stave/scripts/rigor/workflow-guard",
+      "externalModules": [
+        {
+          "path": "github.com/bmatcuk/doublestar/v4",
+          "version": "v4.8.0"
+        },
+        {
+          "path": "github.com/fatih/color",
+          "version": "v1.18.0"
+        },
+        {
+          "path": "github.com/mattn/go-colorable",
+          "version": "v0.1.14"
+        },
+        {
+          "path": "github.com/mattn/go-isatty",
+          "version": "v0.0.20"
+        },
+        {
+          "path": "github.com/mattn/go-runewidth",
+          "version": "v0.0.16"
+        },
+        {
+          "path": "github.com/mattn/go-shellwords",
+          "version": "v1.0.12"
+        },
+        {
+          "path": "github.com/rhysd/actionlint",
+          "version": "v1.7.7"
+        },
+        {
+          "path": "github.com/rivo/uniseg",
+          "version": "v0.4.7"
+        },
+        {
+          "path": "github.com/robfig/cron/v3",
+          "version": "v3.0.1"
+        },
+        {
+          "path": "golang.org/x/sync",
+          "version": "v0.10.0"
+        },
+        {
+          "path": "golang.org/x/sys",
+          "version": "v0.29.0"
+        },
+        {
+          "path": "gopkg.in/yaml.v3",
+          "version": "v3.0.1"
+        }
+      ]
+    }
+  ]
 }
