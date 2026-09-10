@@ -219,11 +219,14 @@ func TestRuntimeProtocolMismatchBoundsRestoreAndCloses(t *testing.T) {
 	}()
 	select {
 	case restoreCtx := <-d.restoreStarted:
-		if restoreCtx.Err() != nil {
-			t.Fatalf("restore context was already canceled: %v", restoreCtx.Err())
+		if errors.Is(restoreCtx.Err(), context.Canceled) {
+			t.Fatalf("restore context inherited caller cancellation: %v", restoreCtx.Err())
 		}
 		if got := restoreCtx.Value(key); got != "request-value" {
 			t.Fatalf("restore context value=%v", got)
+		}
+		if _, ok := restoreCtx.Deadline(); !ok {
+			t.Fatal("restore context has no deadline")
 		}
 	case <-time.After(time.Second):
 		t.Fatal("Restore did not start")
