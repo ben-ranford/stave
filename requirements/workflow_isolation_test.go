@@ -128,6 +128,15 @@ func workflowStepsHaveExactlySetting(lines []string, action, setting string) boo
 }
 
 func actionWithHasExactlySetting(lines []string, usesIndex, stepIndent int, settingKey, setting string) bool {
+	withIndex, found := actionWithIndex(lines, usesIndex, stepIndent)
+	if !found {
+		return false
+	}
+	settingCount, correctSettingCount := directWithSettingCounts(lines, withIndex, settingKey, setting)
+	return settingCount == 1 && correctSettingCount == 1
+}
+
+func actionWithIndex(lines []string, usesIndex, stepIndent int) (int, bool) {
 	usesIndent := indentation(lines[usesIndex])
 	withIndex := -1
 	for index := usesIndex + 1; index < len(lines); index++ {
@@ -135,17 +144,18 @@ func actionWithHasExactlySetting(lines []string, usesIndex, stepIndent int, sett
 		if isStep(line) && indentation(line) <= stepIndent {
 			break
 		}
-		if indentation(line) == usesIndent && strings.TrimSpace(line) == "with:" {
-			if withIndex >= 0 {
-				return false
-			}
-			withIndex = index
+		if indentation(line) != usesIndent || strings.TrimSpace(line) != "with:" {
+			continue
 		}
+		if withIndex >= 0 {
+			return 0, false
+		}
+		withIndex = index
 	}
-	if withIndex < 0 {
-		return false
-	}
+	return withIndex, withIndex >= 0
+}
 
+func directWithSettingCounts(lines []string, withIndex int, settingKey, setting string) (int, int) {
 	withIndent := indentation(lines[withIndex])
 	directChildIndent := -1
 	settingCount := 0
@@ -170,7 +180,7 @@ func actionWithHasExactlySetting(lines []string, usesIndex, stepIndent int, sett
 			}
 		}
 	}
-	return settingCount == 1 && correctSettingCount == 1
+	return settingCount, correctSettingCount
 }
 
 func enclosingStepIndent(lines []string, index int) (int, bool) {
