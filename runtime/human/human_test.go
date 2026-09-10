@@ -198,6 +198,56 @@ func TestRuntimeOpenFailureClosesAndReportsSafeDiagnostic(t *testing.T) {
 	}
 }
 
+func TestRuntimeProtocolMismatchBoundsRestoreAndCloses(t *testing.T) {
+	type contextKey struct{}
+	key := contextKey{}
+	d := &blockingRestoreDriver{
+		fakeDriver:     newFakeDriver(capability.Manifest{ProtocolVersions: []string{"unsupported"}}),
+		restoreStarted: make(chan context.Context, 1),
+		restoreDone:    make(chan struct{}),
+	}
+	r, err := New(Options{Driver: d, RestoreTimeout: 10 * time.Millisecond})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.WithValue(context.Background(), key, "request-value"))
+	cancel()
+	result := make(chan error, 1)
+	go func() {
+		_, err := r.Open(ctx)
+		result <- err
+	}()
+	select {
+	case restoreCtx := <-d.restoreStarted:
+		if restoreCtx.Err() != nil {
+			t.Fatalf("restore context was already canceled: %v", restoreCtx.Err())
+		}
+		if got := restoreCtx.Value(key); got != "request-value" {
+			t.Fatalf("restore context value=%v", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Restore did not start")
+	}
+	select {
+	case err := <-result:
+		if !errors.Is(err, ErrOpenFailed) {
+			t.Fatalf("Open error=%v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Open did not finish after the restore timeout")
+	}
+	select {
+	case <-d.restoreDone:
+	default:
+		t.Fatal("Restore did not receive its deadline")
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.restoreCount != 1 || d.closeCount != 1 {
+		t.Fatalf("restore=%d close=%d", d.restoreCount, d.closeCount)
+	}
+}
+
 func TestRuntimeOpenIsSingleFlight(t *testing.T) {
 	d := newFakeDriver(capability.Manifest{TTY: true, Interactive: true})
 	d.openGate = make(chan struct{})
@@ -272,5 +322,21 @@ func (d *fakeDriver) Restore(context.Context) error {
 	return nil
 }
 func (d *fakeDriver) Close() error { d.mu.Lock(); defer d.mu.Unlock(); d.closeCount++; return nil }
+
+type blockingRestoreDriver struct {
+	*fakeDriver
+	restoreStarted chan context.Context
+	restoreDone    chan struct{}
+}
+
+func (d *blockingRestoreDriver) Restore(ctx context.Context) error {
+	d.mu.Lock()
+	d.restoreCount++
+	d.mu.Unlock()
+	d.restoreStarted <- ctx
+	<-ctx.Done()
+	close(d.restoreDone)
+	return ctx.Err()
+}
 
 var _ = time.Second
