@@ -4,10 +4,13 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
 )
+
+var releaseCandidateVersion = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-rc\.([1-9][0-9]*)$`)
 
 func TestRootReleasePleaseConfiguration(t *testing.T) {
 	type packageConfig struct {
@@ -54,8 +57,16 @@ func TestRootReleasePleaseConfiguration(t *testing.T) {
 	if err := json.Unmarshal(rawManifest, &manifest); err != nil {
 		t.Fatalf("decode %s: %v", manifestPath, err)
 	}
-	if manifest["."] != "1.0.0-rc.1" {
-		t.Fatalf("root manifest must retain the published candidate version, got %q", manifest["."])
+	if !releaseCandidateVersion.MatchString(manifest["."]) {
+		t.Fatalf("root manifest must contain a non-zero rc prerelease version, got %q", manifest["."])
+	}
+	changelogPath := filepath.Join("..", "CHANGELOG.md")
+	changelog, err := os.ReadFile(changelogPath)
+	if err != nil {
+		t.Fatalf("read %s: %v", changelogPath, err)
+	}
+	if !strings.Contains(string(changelog), "## [Unreleased]") || !strings.Contains(string(changelog), "## ["+manifest["."]+"]") {
+		t.Fatalf("%s must include Unreleased and manifest candidate %q headings", changelogPath, manifest["."])
 	}
 
 	workflowPath := filepath.Join("..", ".github", "workflows", "release-please.yml")
@@ -67,5 +78,28 @@ func TestRootReleasePleaseConfiguration(t *testing.T) {
 		if !strings.Contains(string(workflow), setting) {
 			t.Fatalf("%s must use %q", workflowPath, setting)
 		}
+	}
+}
+
+func TestReleaseCandidateVersionContract(t *testing.T) {
+	for version, want := range map[string]bool{
+		"1.0.0-rc.1":         true,
+		"2.14.3-rc.42":       true,
+		"0.0.0-rc.1":         true,
+		"01.0.0-rc.1":        false,
+		"1.01.0-rc.1":        false,
+		"1.0.01-rc.1":        false,
+		"1.0.0-rc.0":         false,
+		"1.0.0-rc.01":        false,
+		"1.0.0":              false,
+		"1.0.0-beta.1":       false,
+		"v1.0.0-rc.1":        false,
+		"1.0.0-rc.1+build.7": false,
+	} {
+		t.Run(version, func(t *testing.T) {
+			if got := releaseCandidateVersion.MatchString(version); got != want {
+				t.Fatalf("release candidate validation for %q = %t, want %t", version, got, want)
+			}
+		})
 	}
 }

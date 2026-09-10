@@ -2,9 +2,9 @@
 
 This module isolates the optional Lip Gloss dependency from the root Stave module.
 
-It is internal through the root `v1.0.0-rc.1` release and is not a supported
-consumer dependency yet. The local root `replace` is workspace-only and must
-be removed for independent adapter publication with its own version and tag.
+It is an internal nested module and is not a supported consumer dependency yet.
+The local root `replace` is workspace-only and must be removed for independent
+adapter publication with its own version and tag.
 
 ## Scope
 

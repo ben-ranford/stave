@@ -2,9 +2,9 @@
 
 `adapters/ssh` is an optional nested Go module that keeps Wish/SSH transport types out of the root Stave module.
 
-It is internal through the root `v1.0.0-rc.1` release and is not a supported
-consumer dependency yet. The local root `replace` is workspace-only and must
-be removed for independent adapter publication with its own version and tag.
+It is an internal nested module and is not a supported consumer dependency yet.
+The local root `replace` is workspace-only and must be removed for independent
+adapter publication with its own version and tag.
 
 ## Version pin
 

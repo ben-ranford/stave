@@ -5,6 +5,8 @@ Keep a Changelog and Stave uses Semantic Versioning.
 
 ## [Unreleased]
 
+## [1.0.0-rc.2] - 2026-09-10
+
 ### Security
 
 - Bind agent confirmation grants to the authorizing policy ID and epoch, and
