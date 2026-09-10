@@ -5,7 +5,7 @@ theme, actions, and effects. Stave provides the semantic UI and runtime
 contracts that let those choices work consistently across human and automated
 interfaces.
 
-The root module release candidate prepared for publication is `v1.0.0-rc.2` <!-- x-release-please-version -->.
+The current root module release candidate is `v1.0.0-rc.2` <!-- x-release-please-version -->.
 It is not a GA promise; published Lopper parity and rollback evidence remains
 the promotion gate. Begin with the root module only. The nested SSH, Bubble Tea,
 and Lip Gloss modules are internal and are not yet supported consumer
