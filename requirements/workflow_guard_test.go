@@ -41,3 +41,18 @@ func TestMinimumGoCIValidatesWorkflowGuardWithoutToolchainUpgrade(t *testing.T) 
 		t.Fatalf("minimum Go CI must retain %q", minimumValidationCommand)
 	}
 }
+
+func TestCITriggersPullRequestsAndMainPushes(t *testing.T) {
+	workflow, err := os.ReadFile(filepath.Join("..", ".github", "workflows", "ci.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, fragment := range []string{
+		"  pull_request:\n",
+		"  push:\n    branches:\n      - main\n",
+	} {
+		if !strings.Contains(string(workflow), fragment) {
+			t.Fatalf("CI trigger must retain %q", fragment)
+		}
+	}
+}
