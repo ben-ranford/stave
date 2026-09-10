@@ -9,16 +9,14 @@ import (
 )
 
 func TestWorkflowTrustBoundaryContract(t *testing.T) {
-	for _, name := range []string{
-		"ci.yml",
-		"pr-metadata.yml",
-		"prerelease-dry-run.yml",
-		"queue-me.yml",
-		"release-please.yml",
-		"release.yml",
-	} {
+	workflowDirectory := filepath.Join("..", ".github", "workflows")
+	names, err := workflowFileNames(workflowDirectory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range names {
 		t.Run(name, func(t *testing.T) {
-			workflow, err := os.ReadFile(filepath.Join("..", ".github", "workflows", name))
+			workflow, err := os.ReadFile(filepath.Join(workflowDirectory, name))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -45,6 +43,23 @@ func TestWorkflowTrustBoundaryContract(t *testing.T) {
 	}
 }
 
+func TestWorkflowFileNamesIncludesYAML(t *testing.T) {
+	workflowDirectory := t.TempDir()
+	for _, name := range []string{"current.yml", "future.yaml", "notes.txt"} {
+		if err := os.WriteFile(filepath.Join(workflowDirectory, name), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	names, err := workflowFileNames(workflowDirectory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := strings.Join(names, ","), "current.yml,future.yaml"; got != want {
+		t.Fatalf("workflow files = %q, want %q", got, want)
+	}
+}
+
 func TestValidateWorkflowTrustBoundaryRejectsUnsafeSettings(t *testing.T) {
 	valid := `jobs:
   test:
@@ -62,19 +77,23 @@ func TestValidateWorkflowTrustBoundaryRejectsUnsafeSettings(t *testing.T) {
 	if err := validateWorkflowTrustBoundary(valid); err != nil {
 		t.Fatalf("valid workflow rejected: %v", err)
 	}
+	if err := validateWorkflowTrustBoundary(strings.Replace(valid, "runs-on:", "runs-on :", 1)); err != nil {
+		t.Fatalf("valid spaced runner key rejected: %v", err)
+	}
 	for name, workflow := range map[string]string{
-		"self-hosted runner":      strings.Replace(valid, "ubuntu-24.04", "stave-arc", 1),
-		"array runner":            strings.Replace(valid, "ubuntu-24.04", "[ubuntu-24.04]", 1),
-		"multiline runner":        strings.Replace(valid, "runs-on: ubuntu-24.04", "runs-on:\n      - ubuntu-24.04", 1),
-		"persisted token":         strings.Replace(valid, "persist-credentials: false", "persist-credentials: true", 1),
-		"missing token setting":   strings.Replace(valid, "\n          persist-credentials: false", "", 1),
-		"duplicate token setting": strings.Replace(valid, "persist-credentials: false", "persist-credentials: false\n          persist-credentials: true", 1),
-		"nested token setting":    strings.Replace(valid, "persist-credentials: false", "nested:\n            persist-credentials: false", 1),
-		"Go cache":                strings.Replace(valid, "cache: false", "cache: true", 1),
-		"missing Go cache":        strings.Replace(valid, "\n          cache: false", "", 1),
-		"duplicate Go cache":      strings.Replace(valid, "cache: false", "cache: false\n          cache: true", 1),
-		"environment cache":       strings.Replace(valid, "cache: false", "cache-key: disabled\n        env:\n          cache: false", 1),
-		"shell cache":             strings.Replace(valid, "cache: false", "cache-key: disabled\n        run: |\n          cache: false", 1),
+		"self-hosted runner":        strings.Replace(valid, "ubuntu-24.04", "stave-arc", 1),
+		"spaced self-hosted runner": strings.Replace(valid, "runs-on: ubuntu-24.04", "runs-on : stave-arc", 1),
+		"array runner":              strings.Replace(valid, "ubuntu-24.04", "[ubuntu-24.04]", 1),
+		"multiline runner":          strings.Replace(valid, "runs-on: ubuntu-24.04", "runs-on:\n      - ubuntu-24.04", 1),
+		"persisted token":           strings.Replace(valid, "persist-credentials: false", "persist-credentials: true", 1),
+		"missing token setting":     strings.Replace(valid, "\n          persist-credentials: false", "", 1),
+		"duplicate token setting":   strings.Replace(valid, "persist-credentials: false", "persist-credentials: false\n          persist-credentials: true", 1),
+		"nested token setting":      strings.Replace(valid, "persist-credentials: false", "nested:\n            persist-credentials: false", 1),
+		"Go cache":                  strings.Replace(valid, "cache: false", "cache: true", 1),
+		"missing Go cache":          strings.Replace(valid, "\n          cache: false", "", 1),
+		"duplicate Go cache":        strings.Replace(valid, "cache: false", "cache: false\n          cache: true", 1),
+		"environment cache":         strings.Replace(valid, "cache: false", "cache-key: disabled\n        env:\n          cache: false", 1),
+		"shell cache":               strings.Replace(valid, "cache: false", "cache-key: disabled\n        run: |\n          cache: false", 1),
 	} {
 		t.Run(name, func(t *testing.T) {
 			if err := validateWorkflowTrustBoundary(workflow); err == nil {
@@ -88,12 +107,11 @@ func validateWorkflowTrustBoundary(workflow string) error {
 	lines := strings.Split(workflow, "\n")
 	runnerCount := 0
 	for _, line := range lines {
-		setting := strings.TrimSpace(line)
-		if !strings.HasPrefix(setting, "runs-on:") {
+		key, runner, found := yamlKeyValue(line)
+		if !found || key != "runs-on" {
 			continue
 		}
 		runnerCount++
-		runner := strings.TrimSpace(strings.TrimPrefix(setting, "runs-on:"))
 		if runner != "ubuntu-24.04" {
 			return fmt.Errorf("workflow runner %q is not the hosted ubuntu-24.04 boundary", runner)
 		}
@@ -110,8 +128,32 @@ func validateWorkflowTrustBoundary(workflow string) error {
 	return nil
 }
 
+func workflowFileNames(workflowDirectory string) ([]string, error) {
+	entries, err := os.ReadDir(workflowDirectory)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		extension := filepath.Ext(entry.Name())
+		if extension == ".yml" || extension == ".yaml" {
+			names = append(names, entry.Name())
+		}
+	}
+	if len(names) == 0 {
+		return nil, fmt.Errorf("workflow directory has no YAML files")
+	}
+	return names, nil
+}
+
 func workflowStepsHaveExactlySetting(lines []string, action, setting string) bool {
-	settingKey := strings.SplitN(setting, ":", 2)[0] + ":"
+	settingKey, settingValue, found := yamlKeyValue(setting)
+	if !found {
+		return false
+	}
 	for index, line := range lines {
 		if !strings.Contains(line, "uses: "+action) {
 			continue
@@ -120,19 +162,19 @@ func workflowStepsHaveExactlySetting(lines []string, action, setting string) boo
 		if !found {
 			return false
 		}
-		if !actionWithHasExactlySetting(lines, index, stepIndent, settingKey, setting) {
+		if !actionWithHasExactlySetting(lines, index, stepIndent, settingKey, settingValue) {
 			return false
 		}
 	}
 	return true
 }
 
-func actionWithHasExactlySetting(lines []string, usesIndex, stepIndent int, settingKey, setting string) bool {
+func actionWithHasExactlySetting(lines []string, usesIndex, stepIndent int, settingKey, settingValue string) bool {
 	withIndex, found := actionWithIndex(lines, usesIndex, stepIndent)
 	if !found {
 		return false
 	}
-	settingCount, correctSettingCount := directWithSettingCounts(lines, withIndex, settingKey, setting)
+	settingCount, correctSettingCount := directWithSettingCounts(lines, withIndex, settingKey, settingValue)
 	return settingCount == 1 && correctSettingCount == 1
 }
 
@@ -155,7 +197,7 @@ func actionWithIndex(lines []string, usesIndex, stepIndent int) (int, bool) {
 	return withIndex, withIndex >= 0
 }
 
-func directWithSettingCounts(lines []string, withIndex int, settingKey, setting string) (int, int) {
+func directWithSettingCounts(lines []string, withIndex int, settingKey, settingValue string) (int, int) {
 	withIndent := indentation(lines[withIndex])
 	directChildIndent := -1
 	settingCount := 0
@@ -173,14 +215,24 @@ func directWithSettingCounts(lines []string, withIndex int, settingKey, setting 
 		if directChildIndent < 0 {
 			directChildIndent = lineIndent
 		}
-		if lineIndent == directChildIndent && strings.HasPrefix(trimmed, settingKey) {
+		key, value, found := yamlKeyValue(trimmed)
+		if lineIndent == directChildIndent && found && key == settingKey {
 			settingCount++
-			if trimmed == setting {
+			if value == settingValue {
 				correctSettingCount++
 			}
 		}
 	}
 	return settingCount, correctSettingCount
+}
+
+func yamlKeyValue(line string) (string, string, bool) {
+	key, value, found := strings.Cut(strings.TrimSpace(line), ":")
+	key = strings.TrimSpace(key)
+	if !found || key == "" {
+		return "", "", false
+	}
+	return key, strings.TrimSpace(value), true
 }
 
 func enclosingStepIndent(lines []string, index int) (int, bool) {
