@@ -23,6 +23,13 @@ jobs:
 	if err := checkWorkflow("workflow.yml", []byte(workflow)); err != nil {
 		t.Fatalf("supported workflow rejected: %v", err)
 	}
+	mixedCaseWorkflow := strings.NewReplacer(
+		"actions/checkout@", "Actions/Checkout@",
+		"actions/setup-go@", "ACTIONS/SETUP-GO@",
+	).Replace(workflow)
+	if err := checkWorkflow("workflow.yml", []byte(mixedCaseWorkflow)); err != nil {
+		t.Fatalf("supported mixed-case actions rejected: %v", err)
+	}
 }
 
 func TestCheckWorkflowRejectsUnsafeTrustBoundaries(t *testing.T) {
@@ -48,6 +55,8 @@ func TestCheckWorkflowRejectsUnsafeTrustBoundaries(t *testing.T) {
 		"duplicate checkout credential setting": workflowPrefix + "  unsafe:" + strings.Replace(validJob, "persist-credentials: false", "persist-credentials: false\n          persist-credentials: false", 1),
 		"cached Go":                             workflowPrefix + "  unsafe:" + strings.Replace(validJob, "cache: false", "cache: true", 1),
 		"credential expression":                 workflowPrefix + "  unsafe:" + strings.Replace(validJob, "persist-credentials: false", "persist-credentials: ${{ false }}", 1),
+		"mixed-case checkout":                   workflowPrefix + "  unsafe:" + strings.Replace(strings.Replace(validJob, "actions/checkout@", "Actions/Checkout@", 1), "persist-credentials: false", "persist-credentials: true", 1),
+		"mixed-case setup-go":                   workflowPrefix + "  unsafe:" + strings.Replace(strings.Replace(validJob, "actions/setup-go@", "ACTIONS/SETUP-GO@", 1), "cache: false", "cache: true", 1),
 	} {
 		t.Run(name, func(t *testing.T) {
 			if err := checkWorkflow("workflow.yml", []byte(workflow)); err == nil {

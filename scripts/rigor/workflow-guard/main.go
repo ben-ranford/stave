@@ -94,10 +94,10 @@ func checkActionInputs(path, jobID string, action *actionlint.ExecAction) error 
 		return fmt.Errorf("%s job %q has an action step without uses", path, jobID)
 	}
 	var input string
-	switch {
-	case strings.HasPrefix(action.Uses.Value, "actions/checkout@"):
+	switch actionIdentity(action.Uses.Value) {
+	case "actions/checkout":
 		input = "persist-credentials"
-	case strings.HasPrefix(action.Uses.Value, "actions/setup-go@"):
+	case "actions/setup-go":
 		input = "cache"
 	default:
 		return nil
@@ -107,4 +107,12 @@ func checkActionInputs(path, jobID string, action *actionlint.ExecAction) error 
 		return fmt.Errorf("%s job %q action %q must set %s: false", path, jobID, action.Uses.Value, input)
 	}
 	return nil
+}
+
+func actionIdentity(uses string) string {
+	name, _, found := strings.Cut(uses, "@")
+	if !found {
+		return ""
+	}
+	return strings.ToLower(name)
 }
