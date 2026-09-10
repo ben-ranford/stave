@@ -51,6 +51,7 @@ func TestCheckWorkflowRejectsUnsafeTrustBoundaries(t *testing.T) {
 		"runner expression":                     workflowPrefix + "  dynamic:\n    runs-on: ${{ github.event.inputs.runner }}\n    steps:\n      - run: true\n",
 		"runner array":                          workflowPrefix + "  multiple:\n    runs-on: [ubuntu-24.04, self-hosted]\n    steps:\n      - run: true\n",
 		"wrong runner":                          workflowPrefix + "  unsafe:\n    runs-on: stave-arc\n    steps:\n      - run: true\n",
+		"local composite action":                workflowPrefix + "  unsafe:\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: ./.github/actions/bootstrap\n",
 		"missing checkout credential setting":   workflowPrefix + "  unsafe:" + strings.Replace(validJob, "\n          persist-credentials: false", "", 1),
 		"duplicate checkout credential setting": workflowPrefix + "  unsafe:" + strings.Replace(validJob, "persist-credentials: false", "persist-credentials: false\n          persist-credentials: false", 1),
 		"cached Go":                             workflowPrefix + "  unsafe:" + strings.Replace(validJob, "cache: false", "cache: true", 1),

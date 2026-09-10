@@ -30,6 +30,13 @@ func TestGovulncheckStopsAtFirstNestedModuleFailureWithoutShellErrexit(t *testin
 			t.Fatal(err)
 		}
 	}
+	guardDir := filepath.Join(root, "scripts", "rigor", "workflow-guard")
+	if err := os.MkdirAll(guardDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(guardDir, "go.mod"), []byte("module example/workflow-guard\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	writeExecutable(t, filepath.Join(root, "scripts", "rigor", "install-tools.sh"), "#!/bin/sh\nexit 0\n")
 	writeExecutable(t, filepath.Join(root, ".cache", "rigor", "bin", "govulncheck"), `#!/bin/sh
 printf '%s\n' "$PWD" >> "$SCAN_LOG"
@@ -47,7 +54,7 @@ esac
 		{name: "root failure", failAt: "root", want: []string{""}},
 		{name: "bubbletea failure", failAt: "bubbletea", want: []string{"", "adapters/bubbletea"}},
 		{name: "lipgloss failure", failAt: "lipgloss", want: []string{"", "adapters/bubbletea", "adapters/lipgloss"}},
-		{name: "all modules pass", want: []string{"", "adapters/bubbletea", "adapters/lipgloss", "adapters/ssh"}, success: true},
+		{name: "all modules pass", want: []string{"", "adapters/bubbletea", "adapters/lipgloss", "adapters/ssh", "scripts/rigor/workflow-guard"}, success: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

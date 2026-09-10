@@ -75,7 +75,7 @@ verify-performance:
 govulncheck:
 	./scripts/rigor/install-tools.sh govulncheck
 	./.cache/rigor/bin/govulncheck ./...
-	@for module in adapters/*/go.mod; do \
+	@for module in adapters/*/go.mod scripts/rigor/workflow-guard/go.mod; do \
 		module_dir="$${module%/go.mod}"; \
 		printf 'scanning nested module %s\n' "$$module_dir"; \
 		(cd "$$module_dir" && "$(CURDIR)/.cache/rigor/bin/govulncheck" ./...) || exit "$$?"; \

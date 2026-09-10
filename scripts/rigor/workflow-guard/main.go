@@ -93,6 +93,9 @@ func checkActionInputs(path, jobID string, action *actionlint.ExecAction) error 
 	if action.Uses == nil {
 		return fmt.Errorf("%s job %q has an action step without uses", path, jobID)
 	}
+	if strings.HasPrefix(action.Uses.Value, "./") {
+		return fmt.Errorf("%s job %q uses local composite action %q", path, jobID, action.Uses.Value)
+	}
 	var input string
 	switch actionIdentity(action.Uses.Value) {
 	case "actions/checkout":
