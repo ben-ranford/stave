@@ -37,7 +37,7 @@ func TestQueueMeWorkflowContract(t *testing.T) {
 		"github.event.workflow_run.name != github.workflow",
 		"permissions:\n  contents: read",
 		"actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1",
-		"app-id: ${{ vars.QUEUE_APP_CLIENT_ID }}",
+		"client-id: ${{ vars.QUEUE_APP_CLIENT_ID }}",
 		"permission-contents: write",
 		"permission-checks: read",
 		"permission-issues: write",
@@ -56,6 +56,7 @@ func TestQueueMeWorkflowContract(t *testing.T) {
 	}
 	for _, forbidden := range []string{
 		"actions/checkout@",
+		"app-id: ${{ vars.QUEUE_APP_CLIENT_ID }}",
 		"github.event.pull_request.head",
 		"pull_request:\n",
 	} {

@@ -1,6 +1,6 @@
 # Contributing
 
-Stave is a private Go source library with release-grade repository gates. Keep the core standard-library-only, preserve deterministic snapshots and schema contracts, and treat public API drift as an intentional reviewed change.
+Stave is a Go source library with release-grade repository gates. Keep the core standard-library-only, preserve deterministic snapshots and schema contracts, and treat public API drift as an intentional reviewed change.
 
 ## Development prerequisites
 
@@ -25,6 +25,9 @@ The rigor harness installs pinned repo-local tools into `.cache/rigor/bin`; no g
 Inline static-analysis suppression markers are blocked by `make suppression-check`. The two hermetic SSH test fixtures that require `nolint:gosec` are recorded line-by-line in `scripts/rigor/suppression-allowlist.txt`; any new or changed exception needs explicit review and a pull-request rationale.
 
 ## Release and compatibility policy
+
+Follow the [release runbook](docs/releasing.md) when publishing a candidate or
+assessing a GA promotion.
 
 - Use a Conventional Commit pull-request title (`feat:`, `fix:`, `perf:`,
   `docs:`, `refactor:`, `test:`, `build:`, `ci:`, `chore:`, or `revert:`).
