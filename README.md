@@ -4,7 +4,7 @@ Stave is a renderer-independent Go UI primitives framework for branded human and
 
 ## Release status
 
-`v1.0.0-rc.2` is the root-module release candidate prepared for publication. It
+`v1.0.0-rc.2` <!-- x-release-please-version --> is the root-module release candidate prepared for publication. It
 is not a GA release: promotion requires published immutable Lopper proving-client
 evidence for parity and rollback. The nested SSH, Bubble Tea, and Lip Gloss
 adapters remain internal until they receive independent module versions and tags.
@@ -64,6 +64,7 @@ Start with the [adoption guide](docs/client-adoption.md), then see the
 [accessibility and agent-control expectations](docs/accessibility-agent-parity.md),
 [compatibility guarantees](docs/compatibility.md), and
 [security contract](docs/security.md).
+Maintainers should follow the [release runbook](docs/releasing.md).
 
 ## Verify
 

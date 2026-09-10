@@ -1,6 +1,6 @@
 # Support
 
-This repository is a private library, not a public support channel. Use the tracked issue forms for reproducible bugs and scoped feature requests.
+This repository accepts public issue reports through its tracked forms. Use them for reproducible bugs and scoped feature requests.
 
 ## Before opening an issue
 

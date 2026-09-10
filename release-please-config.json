@@ -7,6 +7,10 @@
       "prerelease": true,
       "prerelease-type": "rc",
       "include-component-in-tag": false,
+      "extra-files": [
+        "README.md",
+        "docs/client-adoption.md"
+      ],
       "exclude-paths": [
         "adapters"
       ]

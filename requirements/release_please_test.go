@@ -19,6 +19,7 @@ func TestRootReleasePleaseConfiguration(t *testing.T) {
 		Prerelease            bool     `json:"prerelease"`
 		PrereleaseType        string   `json:"prerelease-type"`
 		IncludeComponentInTag bool     `json:"include-component-in-tag"`
+		ExtraFiles            []string `json:"extra-files"`
 		ExcludePaths          []string `json:"exclude-paths"`
 	}
 	type config struct {
@@ -46,6 +47,18 @@ func TestRootReleasePleaseConfiguration(t *testing.T) {
 	}
 	if !slices.Contains(root.ExcludePaths, "adapters") {
 		t.Fatalf("root release must exclude internal adapter-only commits: %v", root.ExcludePaths)
+	}
+	for _, path := range []string{"README.md", "docs/client-adoption.md"} {
+		if !slices.Contains(root.ExtraFiles, path) {
+			t.Fatalf("root release must update candidate reference %q: %v", path, root.ExtraFiles)
+		}
+		content, err := os.ReadFile(filepath.Join("..", path))
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		if !strings.Contains(string(content), "x-release-please-version") {
+			t.Fatalf("%s must annotate its candidate reference for release-please", path)
+		}
 	}
 
 	manifestPath := filepath.Join("..", ".release-please-manifest.json")
