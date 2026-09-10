@@ -80,20 +80,32 @@ func TestValidateWorkflowTrustBoundaryRejectsUnsafeSettings(t *testing.T) {
 	if err := validateWorkflowTrustBoundary(strings.Replace(valid, "runs-on:", "runs-on :", 1)); err != nil {
 		t.Fatalf("valid spaced runner key rejected: %v", err)
 	}
+	spacedCheckout := strings.Replace(valid, "uses: actions/checkout@", "uses : actions/checkout@", 1)
+	if err := validateWorkflowTrustBoundary(spacedCheckout); err != nil {
+		t.Fatalf("valid spaced checkout key rejected: %v", err)
+	}
+	inlineCheckout := strings.Replace(valid, "      - name: Check out repository\n        uses:", "      - uses:", 1)
+	if err := validateWorkflowTrustBoundary(inlineCheckout); err != nil {
+		t.Fatalf("valid inline checkout step rejected: %v", err)
+	}
 	for name, workflow := range map[string]string{
-		"self-hosted runner":        strings.Replace(valid, "ubuntu-24.04", "stave-arc", 1),
-		"spaced self-hosted runner": strings.Replace(valid, "runs-on: ubuntu-24.04", "runs-on : stave-arc", 1),
-		"array runner":              strings.Replace(valid, "ubuntu-24.04", "[ubuntu-24.04]", 1),
-		"multiline runner":          strings.Replace(valid, "runs-on: ubuntu-24.04", "runs-on:\n      - ubuntu-24.04", 1),
-		"persisted token":           strings.Replace(valid, "persist-credentials: false", "persist-credentials: true", 1),
-		"missing token setting":     strings.Replace(valid, "\n          persist-credentials: false", "", 1),
-		"duplicate token setting":   strings.Replace(valid, "persist-credentials: false", "persist-credentials: false\n          persist-credentials: true", 1),
-		"nested token setting":      strings.Replace(valid, "persist-credentials: false", "nested:\n            persist-credentials: false", 1),
-		"Go cache":                  strings.Replace(valid, "cache: false", "cache: true", 1),
-		"missing Go cache":          strings.Replace(valid, "\n          cache: false", "", 1),
-		"duplicate Go cache":        strings.Replace(valid, "cache: false", "cache: false\n          cache: true", 1),
-		"environment cache":         strings.Replace(valid, "cache: false", "cache-key: disabled\n        env:\n          cache: false", 1),
-		"shell cache":               strings.Replace(valid, "cache: false", "cache-key: disabled\n        run: |\n          cache: false", 1),
+		"flow-style self-hosted job": valid + "\n  unsafe: {runs-on: stave-arc, steps: []}\n",
+		"flow-style checkout step":   strings.Replace(valid, "      - name: Check out repository\n        uses:", "      - { uses:", 1),
+		"spaced checkout key":        strings.Replace(spacedCheckout, "persist-credentials: false", "persist-credentials: true", 1),
+		"inline checkout step":       strings.Replace(inlineCheckout, "persist-credentials: false", "persist-credentials: true", 1),
+		"self-hosted runner":         strings.Replace(valid, "ubuntu-24.04", "stave-arc", 1),
+		"spaced self-hosted runner":  strings.Replace(valid, "runs-on: ubuntu-24.04", "runs-on : stave-arc", 1),
+		"array runner":               strings.Replace(valid, "ubuntu-24.04", "[ubuntu-24.04]", 1),
+		"multiline runner":           strings.Replace(valid, "runs-on: ubuntu-24.04", "runs-on:\n      - ubuntu-24.04", 1),
+		"persisted token":            strings.Replace(valid, "persist-credentials: false", "persist-credentials: true", 1),
+		"missing token setting":      strings.Replace(valid, "\n          persist-credentials: false", "", 1),
+		"duplicate token setting":    strings.Replace(valid, "persist-credentials: false", "persist-credentials: false\n          persist-credentials: true", 1),
+		"nested token setting":       strings.Replace(valid, "persist-credentials: false", "nested:\n            persist-credentials: false", 1),
+		"Go cache":                   strings.Replace(valid, "cache: false", "cache: true", 1),
+		"missing Go cache":           strings.Replace(valid, "\n          cache: false", "", 1),
+		"duplicate Go cache":         strings.Replace(valid, "cache: false", "cache: false\n          cache: true", 1),
+		"environment cache":          strings.Replace(valid, "cache: false", "cache-key: disabled\n        env:\n          cache: false", 1),
+		"shell cache":                strings.Replace(valid, "cache: false", "cache-key: disabled\n        run: |\n          cache: false", 1),
 	} {
 		t.Run(name, func(t *testing.T) {
 			if err := validateWorkflowTrustBoundary(workflow); err == nil {
@@ -105,6 +117,9 @@ func TestValidateWorkflowTrustBoundaryRejectsUnsafeSettings(t *testing.T) {
 
 func validateWorkflowTrustBoundary(workflow string) error {
 	lines := strings.Split(workflow, "\n")
+	if hasUnsupportedFlowStyleTrustBoundary(lines) {
+		return fmt.Errorf("workflow uses unsupported flow-style runner or action mapping")
+	}
 	runnerCount := 0
 	for _, line := range lines {
 		key, runner, found := yamlKeyValue(line)
@@ -155,22 +170,66 @@ func workflowStepsHaveExactlySetting(lines []string, action, setting string) boo
 		return false
 	}
 	for index, line := range lines {
-		if !strings.Contains(line, "uses: "+action) {
+		if !actionUses(line, action) {
 			continue
 		}
-		stepIndent, found := enclosingStepIndent(lines, index)
+		stepIndent, found := actionStepIndent(lines, index)
 		if !found {
 			return false
 		}
-		if !actionWithHasExactlySetting(lines, index, stepIndent, settingKey, settingValue) {
+		if !actionWithHasExactlySetting(lines, index, stepIndent, actionPropertyIndent(lines[index]), settingKey, settingValue) {
 			return false
 		}
 	}
 	return true
 }
 
-func actionWithHasExactlySetting(lines []string, usesIndex, stepIndent int, settingKey, settingValue string) bool {
-	withIndex, found := actionWithIndex(lines, usesIndex, stepIndent)
+func hasUnsupportedFlowStyleTrustBoundary(lines []string) bool {
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		_, value, found := yamlKeyValue(line)
+		if (found && strings.HasPrefix(value, "{")) || strings.HasPrefix(trimmed, "- {") {
+			if strings.Contains(line, "runs-on") || strings.Contains(line, "uses") {
+				return true
+			}
+		}
+		if strings.HasPrefix(trimmed, "{") && (strings.Contains(line, "runs-on") || strings.Contains(line, "uses")) {
+			return true
+		}
+	}
+	return false
+}
+
+func actionUses(line, action string) bool {
+	key, value, found := yamlKeyValue(actionProperty(line))
+	return found && key == "uses" && strings.HasPrefix(value, action)
+}
+
+func actionStepIndent(lines []string, index int) (int, bool) {
+	if isStep(lines[index]) {
+		return indentation(lines[index]), true
+	}
+	return enclosingStepIndent(lines, index)
+}
+
+func actionPropertyIndent(line string) int {
+	indent := indentation(line)
+	if isStep(line) {
+		return indent + 2
+	}
+	return indent
+}
+
+func actionProperty(line string) string {
+	trimmed := strings.TrimSpace(line)
+	if isStep(line) {
+		return strings.TrimSpace(strings.TrimPrefix(trimmed, "- "))
+	}
+	return trimmed
+}
+
+func actionWithHasExactlySetting(lines []string, usesIndex, stepIndent, propertyIndent int, settingKey, settingValue string) bool {
+	withIndex, found := actionWithIndex(lines, usesIndex, stepIndent, propertyIndent)
 	if !found {
 		return false
 	}
@@ -178,15 +237,15 @@ func actionWithHasExactlySetting(lines []string, usesIndex, stepIndent int, sett
 	return settingCount == 1 && correctSettingCount == 1
 }
 
-func actionWithIndex(lines []string, usesIndex, stepIndent int) (int, bool) {
-	usesIndent := indentation(lines[usesIndex])
+func actionWithIndex(lines []string, usesIndex, stepIndent, propertyIndent int) (int, bool) {
 	withIndex := -1
 	for index := usesIndex + 1; index < len(lines); index++ {
 		line := lines[index]
 		if isStep(line) && indentation(line) <= stepIndent {
 			break
 		}
-		if indentation(line) != usesIndent || strings.TrimSpace(line) != "with:" {
+		key, _, found := yamlKeyValue(line)
+		if indentation(line) != propertyIndent || !found || key != "with" {
 			continue
 		}
 		if withIndex >= 0 {
