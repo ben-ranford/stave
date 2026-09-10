@@ -248,6 +248,61 @@ func TestRuntimeProtocolMismatchBoundsRestoreAndCloses(t *testing.T) {
 	}
 }
 
+func TestRuntimeProtocolMismatchExcludesConcurrentOpenDuringCleanup(t *testing.T) {
+	d := &gatedRestoreDriver{
+		fakeDriver:     newFakeDriver(capability.Manifest{ProtocolVersions: []string{"unsupported"}}),
+		restoreStarted: make(chan struct{}),
+		restoreRelease: make(chan struct{}),
+	}
+	r, err := New(Options{Driver: d, RestoreTimeout: time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := make(chan error, 1)
+	go func() {
+		_, err := r.Open(context.Background())
+		first <- err
+	}()
+	select {
+	case <-d.restoreStarted:
+	case <-time.After(time.Second):
+		t.Fatal("Restore did not start")
+	}
+	second := make(chan error, 1)
+	go func() {
+		_, err := r.Open(context.Background())
+		second <- err
+	}()
+	select {
+	case err := <-second:
+		if !errors.Is(err, ErrOpenFailed) {
+			t.Fatalf("concurrent Open error=%v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("concurrent Open did not return while cleanup was in progress")
+	}
+	d.mu.Lock()
+	if d.openCount != 1 || d.closeCount != 0 {
+		d.mu.Unlock()
+		t.Fatalf("open=%d close=%d before cleanup completes", d.openCount, d.closeCount)
+	}
+	d.mu.Unlock()
+	close(d.restoreRelease)
+	select {
+	case err := <-first:
+		if !errors.Is(err, ErrOpenFailed) {
+			t.Fatalf("first Open error=%v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("first Open did not finish after cleanup was released")
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.openCount != 1 || d.restoreCount != 1 || d.closeCount != 1 {
+		t.Fatalf("open=%d restore=%d close=%d", d.openCount, d.restoreCount, d.closeCount)
+	}
+}
+
 func TestRuntimeOpenIsSingleFlight(t *testing.T) {
 	d := newFakeDriver(capability.Manifest{TTY: true, Interactive: true})
 	d.openGate = make(chan struct{})
@@ -337,6 +392,25 @@ func (d *blockingRestoreDriver) Restore(ctx context.Context) error {
 	<-ctx.Done()
 	close(d.restoreDone)
 	return ctx.Err()
+}
+
+type gatedRestoreDriver struct {
+	*fakeDriver
+	restoreStarted chan struct{}
+	restoreRelease chan struct{}
+}
+
+func (d *gatedRestoreDriver) Restore(ctx context.Context) error {
+	d.mu.Lock()
+	d.restoreCount++
+	d.mu.Unlock()
+	close(d.restoreStarted)
+	select {
+	case <-d.restoreRelease:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 var _ = time.Second
