@@ -3,14 +3,9 @@
 All notable changes to this repository are tracked here. The format follows
 Keep a Changelog and Stave uses Semantic Versioning.
 
-## [1.0.0-rc.2](https://github.com/ben-ranford/stave/compare/v1.0.0-rc.1...v1.0.0-rc.2) (2026-09-10)
-
-
-### Bug Fixes
-
-* **core:** harden confirmation security and external adoption ([47c415e](https://github.com/ben-ranford/stave/commit/47c415ee4990246e444c513cc6ddc8eabb3c993e))
-
 ## [Unreleased]
+
+## [1.0.0-rc.2] - 2026-09-10
 
 ### Security
 

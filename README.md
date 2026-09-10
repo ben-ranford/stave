@@ -4,15 +4,14 @@ Stave is a renderer-independent Go UI primitives framework for branded human and
 
 ## Release status
 
-[`v1.0.0-rc.1`](https://github.com/ben-ranford/stave/releases/tag/v1.0.0-rc.1)
-is the current root-module release candidate. It is not a GA release: promotion
-requires published immutable Lopper proving-client evidence for parity and
-rollback. The nested SSH, Bubble Tea, and Lip Gloss adapters remain internal
-until they receive independent module versions and tags.
+`v1.0.0-rc.2` is the root-module release candidate prepared for publication. It
+is not a GA release: promotion requires published immutable Lopper proving-client
+evidence for parity and rollback. The nested SSH, Bubble Tea, and Lip Gloss
+adapters remain internal until they receive independent module versions and tags.
 
-Security fixes on `main` are listed under [Unreleased](CHANGELOG.md#unreleased)
-and are not included in that tag. Publish and pin a candidate containing those
-fixes before deploying consequential agent actions.
+`v1.0.0-rc.2` contains the confirmation-security fixes. After its tag is
+published, pin it before deploying consequential agent actions; until then,
+treat the development branch as evaluation-only source.
 
 ## Quick start
 

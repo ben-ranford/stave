@@ -2,10 +2,10 @@
 
 This module isolates Bubble Tea v2 integration from Stave core.
 
-It is an internal nested module through the root `v1.0.0-rc.1` release. It is
-not a supported consumer dependency yet. The local root `replace` is only for
-workspace verification; independent adapter publication must consume a matching
-tagged Stave module and have its own version and tag.
+It is an internal nested module and not a supported consumer dependency yet.
+The local root `replace` is only for workspace verification; independent adapter
+publication must consume a matching tagged Stave module and have its own version
+and tag.
 
 ## Scope
 
