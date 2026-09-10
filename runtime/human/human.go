@@ -180,11 +180,16 @@ func (r *Runtime) Open(ctx context.Context) (capability.Manifest, error) {
 		}
 		if !containsVersion(m.ProtocolVersions, protocol.Version) && len(m.ProtocolVersions) > 0 {
 			r.mu.Lock()
+			r.state = lifecycleRestoring
+			r.mu.Unlock()
+			restoreCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), r.opt.RestoreTimeout)
+			defer cancel()
+			_ = r.driver.Restore(restoreCtx)
+			_ = r.driver.Close()
+			r.mu.Lock()
 			r.state = lifecycleNew
 			close(r.openDone)
 			r.mu.Unlock()
-			_ = r.driver.Restore(context.Background())
-			_ = r.driver.Close()
 			r.diag("CAPABILITY_PROTOCOL_MISMATCH", "human runtime capability negotiation rejected unsupported protocol version", map[string]string{"protocol": protocol.Version})
 			return capability.Manifest{}, ErrOpenFailed
 		}

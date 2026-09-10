@@ -23,6 +23,7 @@ Keep a Changelog and Stave uses Semantic Versioning.
   modes. Previously advertised `hash`, `action`, and `diagnostic` modes were
   never accepted by the server; working clients require no wire migration.
 - Complete the MIT license and add a tested public-API quick start.
+- Bound the terminal cleanup context after a capability protocol mismatch.
 
 ## [1.0.0-rc.1] - 2026-08-13
 
