@@ -71,17 +71,18 @@ target, argument, expiry, or policy change.
 ## Public CI launch prerequisite
 
 Before enabling external pull requests, establish and verify isolation between
-untrusted contributor code and privileged automation. The current workflows use
-`stave-arc` for both PR tests and secret-bearing queue/release jobs. Runner
-provisioning and isolation policy are not tracked in this repository, so the
-shared label is not evidence that this boundary is safe.
+untrusted contributor code and privileged automation. Repository workflows use
+GitHub-hosted `ubuntu-24.04` runners, disable persisted checkout credentials,
+and disable the Go cache. The queue workflow never checks out pull-request
+code and materializes its controller from the trusted workflow revision.
 
-Prefer GitHub-hosted runners for untrusted PR code. If self-hosted runners are
-necessary, document and verify single-job teardown, workspace/cache isolation,
-network access, and absence of reusable host credentials. Protect privileged
-runner access so contributor-controlled workflows cannot select those runners;
-changing a label alone does not enforce that restriction. Verify the operational
-configuration before changing repository visibility or accepting external PRs.
+Self-hosted Stave ARC runners still require an operational isolation review.
+Before enabling public forks, revoke their external pull-request eligibility and
+prove that policy with a real fork pull-request workflow run. Document and
+verify single-job teardown, workspace/cache isolation, network access, and the
+absence of reusable host credentials. Changing a runner label in YAML cannot
+prevent malicious pull requests from selecting an eligible self-hosted runner;
+the runner-group and repository policy must enforce that boundary.
 
 See GitHub's [secure-use guidance](https://docs.github.com/en/actions/reference/security/secure-use)
 and [self-hosted runner guidance](https://docs.github.com/en/actions/reference/runners/self-hosted-runners).

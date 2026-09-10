@@ -18,7 +18,7 @@ concurrency:
 jobs:
   prepare:
     name: release-please / prepare
-    runs-on: stave-arc
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Prepare release pull request

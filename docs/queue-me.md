@@ -51,6 +51,14 @@ temporary storage before executing it. The workflow is inert until its
 repository configuration is supplied. A trusted five-minute schedule also
 rechecks queued pull requests after review or third-party check completion.
 
+The queue and metadata workflows run on GitHub-hosted `ubuntu-24.04` runners.
+They do not retain checkout credentials, and repository workflows disable the
+Go cache to keep dependencies out of a cross-trust cache. Existing Stave ARC
+runner eligibility remains an operational setting: before public forks are
+enabled, revoke its external pull-request eligibility and prove the restriction
+with a real fork pull-request run. A workflow label alone cannot stop a
+malicious pull request from selecting an eligible self-hosted runner.
+
 ## Merge snapshot semantics
 
 The queue re-reads metadata immediately before merging and supplies the validated

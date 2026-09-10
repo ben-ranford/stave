@@ -20,18 +20,19 @@ env:
 jobs:
   minimum:
     name: ci / go-minimum
-    runs-on: stave-arc
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
+          persist-credentials: false
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version: ${{ env.GO_VERSION_MINIMUM }}
-          cache: true
+          cache: false
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -50,18 +51,19 @@ jobs:
 
   current:
     name: ci / go-current
-    runs-on: stave-arc
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
+          persist-credentials: false
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version: ${{ env.GO_VERSION_CURRENT }}
-          cache: true
+          cache: false
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -83,16 +85,18 @@ jobs:
 
   security:
     name: ci / security
-    runs-on: stave-arc
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version: ${{ env.GO_VERSION_CURRENT }}
-          cache: true
+          cache: false
       - name: Install build tools
         run: |
           packages=()
@@ -107,7 +111,7 @@ jobs:
 
   contracts:
     name: ci / contracts
-    runs-on: stave-arc
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - name: Verify repository merge policy with read-only token
@@ -126,11 +130,13 @@ jobs:
             core.info('Read-only token verified the repository squash merge policy.');
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version: ${{ env.GO_VERSION_CURRENT }}
-          cache: true
+          cache: false
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -152,16 +158,18 @@ jobs:
 
   portability:
     name: ci / portability
-    runs-on: stave-arc
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version: ${{ env.GO_VERSION_CURRENT }}
-          cache: true
+          cache: false
       - name: Verify cross-platform terminal capability fixtures
         run: go test ./capability -run 'TestCrossPlatformTerminalColourDetection|TestCapabilityProfileMatrix' -count=20
       - name: Cross-compile public packages
