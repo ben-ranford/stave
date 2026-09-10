@@ -12,33 +12,50 @@ import (
 
 var releaseCandidateVersion = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-rc\.([1-9][0-9]*)$`)
 
-func TestRootReleasePleaseConfiguration(t *testing.T) {
-	type packageConfig struct {
-		ReleaseType           string   `json:"release-type"`
-		Versioning            string   `json:"versioning"`
-		Prerelease            bool     `json:"prerelease"`
-		PrereleaseType        string   `json:"prerelease-type"`
-		IncludeComponentInTag bool     `json:"include-component-in-tag"`
-		ExtraFiles            []string `json:"extra-files"`
-		ExcludePaths          []string `json:"exclude-paths"`
-	}
-	type config struct {
-		Packages map[string]packageConfig `json:"packages"`
-	}
+type releasePleasePackageConfig struct {
+	ReleaseType           string   `json:"release-type"`
+	Versioning            string   `json:"versioning"`
+	Prerelease            bool     `json:"prerelease"`
+	PrereleaseType        string   `json:"prerelease-type"`
+	IncludeComponentInTag bool     `json:"include-component-in-tag"`
+	ExtraFiles            []string `json:"extra-files"`
+	ExcludePaths          []string `json:"exclude-paths"`
+}
 
-	configPath := filepath.Join("..", "release-please-config.json")
+type releasePleaseConfig struct {
+	Packages map[string]releasePleasePackageConfig `json:"packages"`
+}
+
+func TestRootReleasePleaseConfiguration(t *testing.T) {
+	root := rootReleasePleasePackage(t)
+	assertRootReleasePleasePackage(t, root)
+	assertReleasePleaseCandidateDocuments(t, root)
+	assertReleasePleaseManifestAndChangelog(t)
+	assertReleasePleaseWorkflow(t)
+}
+
+func rootReleasePleasePackage(t *testing.T) releasePleasePackageConfig {
+	t.Helper()
+
+	const configPath = "../release-please-config.json"
 	rawConfig, err := os.ReadFile(configPath)
 	if err != nil {
 		t.Fatalf("read %s: %v", configPath, err)
 	}
-	var got config
-	if err := json.Unmarshal(rawConfig, &got); err != nil {
+	var config releasePleaseConfig
+	if err := json.Unmarshal(rawConfig, &config); err != nil {
 		t.Fatalf("decode %s: %v", configPath, err)
 	}
-	root, ok := got.Packages["."]
+	root, ok := config.Packages["."]
 	if !ok {
 		t.Fatalf("%s must configure the root package", configPath)
 	}
+	return root
+}
+
+func assertRootReleasePleasePackage(t *testing.T, root releasePleasePackageConfig) {
+	t.Helper()
+
 	if root.ReleaseType != "go" || root.Versioning != "prerelease" || !root.Prerelease || root.PrereleaseType != "rc" {
 		t.Fatalf("root release must remain a Go rc prerelease: %+v", root)
 	}
@@ -48,6 +65,11 @@ func TestRootReleasePleaseConfiguration(t *testing.T) {
 	if !slices.Contains(root.ExcludePaths, "adapters") {
 		t.Fatalf("root release must exclude internal adapter-only commits: %v", root.ExcludePaths)
 	}
+}
+
+func assertReleasePleaseCandidateDocuments(t *testing.T, root releasePleasePackageConfig) {
+	t.Helper()
+
 	for _, path := range []string{"README.md", "docs/client-adoption.md"} {
 		if !slices.Contains(root.ExtraFiles, path) {
 			t.Fatalf("root release must update candidate reference %q: %v", path, root.ExtraFiles)
@@ -60,8 +82,12 @@ func TestRootReleasePleaseConfiguration(t *testing.T) {
 			t.Fatalf("%s must annotate its candidate reference for release-please", path)
 		}
 	}
+}
 
-	manifestPath := filepath.Join("..", ".release-please-manifest.json")
+func assertReleasePleaseManifestAndChangelog(t *testing.T) {
+	t.Helper()
+
+	const manifestPath = "../.release-please-manifest.json"
 	rawManifest, err := os.ReadFile(manifestPath)
 	if err != nil {
 		t.Fatalf("read %s: %v", manifestPath, err)
@@ -81,6 +107,10 @@ func TestRootReleasePleaseConfiguration(t *testing.T) {
 	if !strings.Contains(string(changelog), "## [Unreleased]") || !strings.Contains(string(changelog), "## ["+manifest["."]+"]") {
 		t.Fatalf("%s must include Unreleased and manifest candidate %q headings", changelogPath, manifest["."])
 	}
+}
+
+func assertReleasePleaseWorkflow(t *testing.T) {
+	t.Helper()
 
 	workflowPath := filepath.Join("..", ".github", "workflows", "release-please.yml")
 	workflow, err := os.ReadFile(workflowPath)
