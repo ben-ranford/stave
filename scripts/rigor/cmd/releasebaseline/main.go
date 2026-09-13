@@ -350,6 +350,10 @@ func compatibleStructFieldAddition(baselineDeclaration, candidateDeclaration str
 	}
 	baselineFields := structFields(baselineDeclaration)
 	candidateFields := structFields(candidateDeclaration)
+	return baselineStructFieldsAllowAdditions(baselineFields, candidateFields)
+}
+
+func baselineStructFieldsAllowAdditions(baselineFields, candidateFields []string) bool {
 	if len(candidateFields) < len(baselineFields) {
 		return false
 	}
@@ -360,19 +364,30 @@ func compatibleStructFieldAddition(baselineDeclaration, candidateDeclaration str
 	}
 	candidateIndex := 0
 	for _, field := range baselineFields {
-		for candidateIndex < len(candidateFields) && candidateFields[candidateIndex] != field {
-			if embeddedStructField(candidateFields[candidateIndex]) {
-				return false
-			}
-			candidateIndex++
-		}
-		if candidateIndex == len(candidateFields) {
+		matched, found := nextCompatibleStructField(candidateFields, candidateIndex, field)
+		if !found {
 			return false
 		}
-		candidateIndex++
+		candidateIndex = matched + 1
 	}
-	for ; candidateIndex < len(candidateFields); candidateIndex++ {
-		if embeddedStructField(candidateFields[candidateIndex]) {
+	return noEmbeddedStructFields(candidateFields[candidateIndex:])
+}
+
+func nextCompatibleStructField(candidateFields []string, start int, baselineField string) (int, bool) {
+	for index := start; index < len(candidateFields); index++ {
+		if candidateFields[index] == baselineField {
+			return index, true
+		}
+		if embeddedStructField(candidateFields[index]) {
+			return 0, false
+		}
+	}
+	return 0, false
+}
+
+func noEmbeddedStructFields(fields []string) bool {
+	for _, field := range fields {
+		if embeddedStructField(field) {
 			return false
 		}
 	}

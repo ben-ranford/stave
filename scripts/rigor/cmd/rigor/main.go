@@ -457,36 +457,53 @@ type hiddenTypeCollector struct {
 }
 
 func (collector *hiddenTypeCollector) collect(declaration ast.Decl) {
-	switch declaration := declaration.(type) {
-	case *ast.GenDecl:
-		switch declaration.Tok {
-		case token.TYPE:
-			for _, spec := range typeDeclarationSpecs(declaration) {
-				if ast.IsExported(spec.Name.Name) {
-					collector.visitTypeSpec(spec)
-				}
+	if declaration, ok := declaration.(*ast.GenDecl); ok {
+		collector.collectGeneralDeclaration(declaration)
+		return
+	}
+	if declaration, ok := declaration.(*ast.FuncDecl); ok {
+		collector.collectFunctionDeclaration(declaration)
+	}
+}
+
+func (collector *hiddenTypeCollector) collectGeneralDeclaration(declaration *ast.GenDecl) {
+	switch declaration.Tok {
+	case token.TYPE:
+		collector.collectExportedTypeSpecs(typeDeclarationSpecs(declaration))
+	case token.CONST, token.VAR:
+		collector.collectExportedValueSpecs(declaration.Specs)
+	}
+}
+
+func (collector *hiddenTypeCollector) collectExportedTypeSpecs(specs []*ast.TypeSpec) {
+	for _, spec := range specs {
+		if ast.IsExported(spec.Name.Name) {
+			collector.visitTypeSpec(spec)
+		}
+	}
+}
+
+func (collector *hiddenTypeCollector) collectExportedValueSpecs(specs []ast.Spec) {
+	for _, declaration := range specs {
+		valueSpec, ok := declaration.(*ast.ValueSpec)
+		if !ok {
+			continue
+		}
+		for _, name := range valueSpec.Names {
+			if ast.IsExported(name.Name) {
+				collector.visitTypeOf(name)
 			}
-		case token.CONST, token.VAR:
-			for _, declaration := range declaration.Specs {
-				valueSpec, ok := declaration.(*ast.ValueSpec)
-				if !ok {
-					continue
-				}
-				for _, name := range valueSpec.Names {
-					if ast.IsExported(name.Name) {
-						collector.visitTypeOf(name)
-					}
-				}
-			}
 		}
-	case *ast.FuncDecl:
-		if declaration.Name == nil || !ast.IsExported(declaration.Name.Name) {
-			return
-		}
-		collector.visitExpression(declaration.Type)
-		if declaration.Recv != nil {
-			collector.visitExpression(declaration.Recv)
-		}
+	}
+}
+
+func (collector *hiddenTypeCollector) collectFunctionDeclaration(declaration *ast.FuncDecl) {
+	if declaration.Name == nil || !ast.IsExported(declaration.Name.Name) {
+		return
+	}
+	collector.visitExpression(declaration.Type)
+	if declaration.Recv != nil {
+		collector.visitExpression(declaration.Recv)
 	}
 }
 
@@ -552,48 +569,66 @@ func (collector *hiddenTypeCollector) visitType(typ types.Type) {
 	}
 	switch typ := typ.(type) {
 	case *types.Named:
-		if spec, exists := collector.hiddenTypes[typ.Obj()]; exists && !ast.IsExported(spec.Name.Name) {
-			collector.visitSpec(spec)
-		}
-		for index := 0; index < typ.TypeArgs().Len(); index++ {
-			collector.visitType(typ.TypeArgs().At(index))
-		}
-	case *types.Pointer:
-		collector.visitType(typ.Elem())
-	case *types.Slice:
-		collector.visitType(typ.Elem())
-	case *types.Array:
-		collector.visitType(typ.Elem())
+		collector.visitNamedType(typ)
 	case *types.Map:
-		collector.visitType(typ.Key())
-		collector.visitType(typ.Elem())
-	case *types.Chan:
+		collector.visitMapType(typ)
+	case interface{ Elem() types.Type }:
 		collector.visitType(typ.Elem())
 	case *types.Signature:
-		collector.visitTuple(typ.Params())
-		collector.visitTuple(typ.Results())
-		collector.visitTypeParameters(typ.TypeParams())
+		collector.visitSignatureType(typ)
 	case *types.Struct:
-		for index := 0; index < typ.NumFields(); index++ {
-			field := typ.Field(index)
-			if field.Embedded() || field.Exported() {
-				collector.visitType(field.Type())
-			}
-		}
+		collector.visitStructType(typ)
 	case *types.Interface:
-		typ.Complete()
-		for index := 0; index < typ.NumEmbeddeds(); index++ {
-			collector.visitType(typ.EmbeddedType(index))
-		}
-		for index := 0; index < typ.NumExplicitMethods(); index++ {
-			collector.visitType(typ.ExplicitMethod(index).Type())
-		}
+		collector.visitInterfaceType(typ)
 	case *types.TypeParam:
 		collector.visitType(typ.Constraint())
 	case *types.Union:
-		for index := 0; index < typ.Len(); index++ {
-			collector.visitType(typ.Term(index).Type())
+		collector.visitUnionType(typ)
+	}
+}
+
+func (collector *hiddenTypeCollector) visitNamedType(typ *types.Named) {
+	if spec, exists := collector.hiddenTypes[typ.Obj()]; exists && !ast.IsExported(spec.Name.Name) {
+		collector.visitSpec(spec)
+	}
+	for index := 0; index < typ.TypeArgs().Len(); index++ {
+		collector.visitType(typ.TypeArgs().At(index))
+	}
+}
+
+func (collector *hiddenTypeCollector) visitMapType(typ *types.Map) {
+	collector.visitType(typ.Key())
+	collector.visitType(typ.Elem())
+}
+
+func (collector *hiddenTypeCollector) visitSignatureType(typ *types.Signature) {
+	collector.visitTuple(typ.Params())
+	collector.visitTuple(typ.Results())
+	collector.visitTypeParameters(typ.TypeParams())
+}
+
+func (collector *hiddenTypeCollector) visitStructType(typ *types.Struct) {
+	for index := 0; index < typ.NumFields(); index++ {
+		field := typ.Field(index)
+		if field.Embedded() || field.Exported() {
+			collector.visitType(field.Type())
 		}
+	}
+}
+
+func (collector *hiddenTypeCollector) visitInterfaceType(typ *types.Interface) {
+	typ.Complete()
+	for index := 0; index < typ.NumEmbeddeds(); index++ {
+		collector.visitType(typ.EmbeddedType(index))
+	}
+	for index := 0; index < typ.NumExplicitMethods(); index++ {
+		collector.visitType(typ.ExplicitMethod(index).Type())
+	}
+}
+
+func (collector *hiddenTypeCollector) visitUnionType(typ *types.Union) {
+	for index := 0; index < typ.Len(); index++ {
+		collector.visitType(typ.Term(index).Type())
 	}
 }
 
@@ -1478,8 +1513,8 @@ func typeDeclaration(fset *token.FileSet, spec *ast.TypeSpec, typeInfo *types.In
 
 func typeDeclarationEntries(fset *token.FileSet, spec *ast.TypeSpec, typeInfo *types.Info, qualifier types.Qualifier) []string {
 	entries := []string{typeDeclaration(fset, spec, typeInfo, qualifier)}
-	if comparable, ok := structComparability(spec, typeInfo); ok {
-		entries = append(entries, fmt.Sprintf("struct-comparable %s %t", spec.Name.Name, comparable))
+	if isComparable, ok := structComparability(spec, typeInfo); ok {
+		entries = append(entries, fmt.Sprintf("struct-comparable %s %t", spec.Name.Name, isComparable))
 	}
 	return entries
 }

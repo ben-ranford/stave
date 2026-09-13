@@ -52,16 +52,20 @@ if [[ "$target" == "$STAVE_BASELINE_FAILURE" ]]; then exit 23; fi
 			if err != nil {
 				t.Fatal(err)
 			}
-			want := []string{"linux/amd64", "darwin/amd64", "darwin/arm64", "windows/amd64"}
-			for i, target := range want {
-				if target == failedTarget {
-					want = want[:i+1]
-					break
-				}
-			}
+			want := releaseBaselineTargetPrefix(failedTarget)
 			if got := strings.TrimSpace(string(data)); got != strings.Join(want, "\n") {
 				t.Fatalf("target calls=%q, want %q", got, want)
 			}
 		})
 	}
+}
+
+func releaseBaselineTargetPrefix(failedTarget string) []string {
+	targets := []string{"linux/amd64", "darwin/amd64", "darwin/arm64", "windows/amd64"}
+	for i, target := range targets {
+		if target == failedTarget {
+			return targets[:i+1]
+		}
+	}
+	return targets
 }
