@@ -21,6 +21,75 @@ type model struct {
 	EffectOrdinals []int `json:"effectOrdinals,omitempty"`
 }
 
+var diagnosticTailSink []Diagnostic
+
+func TestSessionDiagnosticsTailBoundsAndClones(t *testing.T) {
+	s := newSession(t, Options[model]{
+		Reduce: func(_ context.Context, current model, _ event.Event) (model, []effect.Request, error) {
+			return current, nil, nil
+		},
+		View: testView,
+	})
+	defer s.Close()
+
+	s.mu.Lock()
+	s.diagnostics = []Diagnostic{
+		{Code: "first", SafeContext: map[string]string{"kind": "first"}},
+		{Code: "second", SafeContext: map[string]string{"kind": "second"}},
+		{Code: "third", SafeContext: map[string]string{"kind": "third"}},
+	}
+	s.mu.Unlock()
+	if got := s.Diagnostics(); len(got) != 3 || got[0].Code != "first" || got[2].Code != "third" {
+		t.Fatalf("Diagnostics full-history result = %#v", got)
+	}
+
+	for _, limit := range []int{0, -1} {
+		if got := s.DiagnosticsTail(limit); len(got) != 0 {
+			t.Fatalf("DiagnosticsTail(%d) = %#v, want empty", limit, got)
+		}
+	}
+	if got := s.DiagnosticsTail(10); len(got) != 3 || got[0].Code != "first" || got[2].Code != "third" {
+		t.Fatalf("DiagnosticsTail over-length result = %#v", got)
+	}
+
+	tail := s.DiagnosticsTail(2)
+	if len(tail) != 2 || tail[0].Code != "second" || tail[1].Code != "third" {
+		t.Fatalf("DiagnosticsTail order = %#v, want second then third", tail)
+	}
+	tail[0].SafeContext["kind"] = "mutated"
+	if got := s.DiagnosticsTail(2); got[0].SafeContext["kind"] != "second" {
+		t.Fatalf("DiagnosticsTail leaked SafeContext ownership: %#v", got)
+	}
+}
+
+func TestSessionDiagnosticsTailAllocationIsBounded(t *testing.T) {
+	s := newSession(t, Options[model]{
+		Reduce: func(_ context.Context, current model, _ event.Event) (model, []effect.Request, error) {
+			return current, nil, nil
+		},
+		View: testView,
+	})
+	defer s.Close()
+
+	measure := func(count int) float64 {
+		s.mu.Lock()
+		s.diagnostics = make([]Diagnostic, count)
+		for i := range s.diagnostics {
+			s.diagnostics[i].SafeContext = map[string]string{"kind": "measured"}
+		}
+		s.mu.Unlock()
+		return testing.AllocsPerRun(100, func() {
+			diagnosticTailSink = s.DiagnosticsTail(16)
+		})
+	}
+
+	small := measure(16)
+	huge := measure(1000)
+	if huge > small+1 {
+		t.Fatalf("DiagnosticsTail allocation grew with history: small=%f huge=%f", small, huge)
+	}
+}
+
 func TestSessionSerializesReducerOwnership(t *testing.T) {
 	var concurrent int32
 	var maxConcurrent int32

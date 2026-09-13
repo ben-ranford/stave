@@ -47,6 +47,8 @@ type sessionBridge[M any] struct {
 	cancelOnce       sync.Once
 }
 
+const maxBridgeDiagnostics = 16
+
 func (b *sessionBridge[M]) cancel(context.Context) error {
 	b.cancelOnce.Do(b.session.Cancel)
 	return nil
@@ -68,7 +70,7 @@ func (b *sessionBridge[M]) snapshot(_ context.Context, mode string, since uint64
 		TreeHash: current.Tree.Hash(), CapabilityHash: current.Hashes.Capability,
 		SemanticVersion: current.Versions.SemanticSchema, ConfigHash: current.ConfigHash,
 		ThemeHash: current.ThemeHash, WidthVersion: current.WidthPolicy,
-		Diagnostics: bridgeDiagnostics(b.session.Diagnostics(), sequence, current.Revision),
+		Diagnostics: bridgeDiagnostics(b.session.DiagnosticsTail(maxBridgeDiagnostics), sequence, current.Revision),
 	}
 	if b.actions != nil {
 		envelope.Actions = b.actions.Manifest()
@@ -89,9 +91,8 @@ func (b *sessionBridge[M]) snapshot(_ context.Context, mode string, since uint64
 }
 
 func bridgeDiagnostics(in []session.Diagnostic, sequence, revision uint64) []diag.Diagnostic {
-	const maxDiagnostics = 16
-	if len(in) > maxDiagnostics {
-		in = in[len(in)-maxDiagnostics:]
+	if len(in) > maxBridgeDiagnostics {
+		in = in[len(in)-maxBridgeDiagnostics:]
 	}
 	out := make([]diag.Diagnostic, 0, len(in))
 	for range in {

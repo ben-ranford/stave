@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/ben-ranford/stave/action"
 	"github.com/ben-ranford/stave/effect"
@@ -149,5 +151,72 @@ func TestBridgeDiagnosticsBoundsAndRedactsHistory(t *testing.T) {
 		if item.Sequence != 7 || item.Revision != 4 || !item.Redacted {
 			t.Fatalf("invalid projected metadata: %#v", item)
 		}
+	}
+}
+
+func TestBindSessionIncludesTransientDiagnosticTail(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var startedOnce sync.Once
+	s, err := session.New(context.Background(), session.Options[int]{
+		SessionID:     "transient-diagnostics",
+		ConfigHash:    strings.Repeat("a", 64),
+		ThemeHash:     strings.Repeat("b", 64),
+		QueueCapacity: 1,
+		Reduce: func(_ context.Context, current int, _ event.Event) (int, []effect.Request, error) {
+			startedOnce.Do(func() { close(started) })
+			<-release
+			return current + 1, nil, nil
+		},
+		View: func(_ context.Context, current int) (session.ViewResult, error) {
+			id, err := semantic.NodeIDFor(semantic.NodeKey{AppNamespace: "test", View: "bridge", Kind: "root", Entity: fmt.Sprint(current), Slot: "main"})
+			if err != nil {
+				return session.ViewResult{}, err
+			}
+			node, err := semantic.NewNode(semantic.NodeSpec{ID: id, Generation: 1, Role: "application", Name: "bridge"})
+			if err != nil {
+				return session.ViewResult{}, err
+			}
+			tree, err := semantic.NewTree(uint64(current+1), node)
+			return session.ViewResult{Tree: tree, SurfaceHash: fmt.Sprintf("surface-%d", current)}, err
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		close(release)
+		s.Close()
+	}()
+
+	if err := s.Send(bridgeEvent(t)); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("reducer did not start")
+	}
+	if err := s.Send(bridgeEvent(t)); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Send(bridgeEvent(t)); err == nil {
+		t.Fatal("queue overflow did not create a transient diagnostic")
+	}
+
+	bound, err := BindSession(s, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	envelope, err := bound.SnapshotEnvelope(context.Background(), "full", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(envelope.Diagnostics) != 1 {
+		t.Fatalf("projected %d transient diagnostics, want 1", len(envelope.Diagnostics))
+	}
+	item := envelope.Diagnostics[0]
+	if item.Code != "SESSION_DIAGNOSTIC" || !item.Redacted || item.Sequence != envelope.Sequence || item.Revision != envelope.Revision {
+		t.Fatalf("unexpected projected transient diagnostic: %#v", item)
 	}
 }

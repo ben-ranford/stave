@@ -186,11 +186,22 @@ func (s *Session[M]) Transcript() (replay.Transcript, error) {
 func (s *Session[M]) Diagnostics() []Diagnostic {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	out := make([]Diagnostic, 0, len(s.diagnostics))
-	for _, diagnostic := range s.diagnostics {
-		out = append(out, cloneDiagnostic(diagnostic))
+	return cloneDiagnostics(s.diagnostics)
+}
+
+// DiagnosticsTail returns cloned copies of at most the most recent limit diagnostics.
+// It returns empty for a nonpositive limit and preserves oldest-to-newest order.
+func (s *Session[M]) DiagnosticsTail(limit int) []Diagnostic {
+	if limit <= 0 {
+		return nil
 	}
-	return out
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	start := len(s.diagnostics) - limit
+	if start < 0 {
+		start = 0
+	}
+	return cloneDiagnostics(s.diagnostics[start:])
 }
 
 func (s *Session[M]) Lifecycle() Lifecycle {
