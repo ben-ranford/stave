@@ -761,6 +761,7 @@ method (*Session[M]) Send(ev event.Event) error
 method (*Session[M]) Snapshot() (state.State[M], error)
 method (*Session[M]) Transcript() (replay.Transcript, error)
 method (*Session[M]) Wait(ctx context.Context, predicate func(state.State[M]) bool) error
+method (*Session[M]) WaitForPublication(ctx context.Context, predicate func(state.State[M]) bool) error
 type Diagnostic struct { Code string; Message string; SafeContext map[string]string }
 type Lifecycle string
 type Options[M any] struct { SessionID string; Initial M; Reduce Reducer[M]; View View[M]; QueueCapacity int; ReduceTimeout time.Duration; ViewTimeout time.Duration; EffectParallelism int; EffectDelivery effect.Delivery; EffectPorts map[string]effect.Port; MaxActiveBatches int; ModelPolicy state.ModelPolicy[M]; Capabilities capability.Manifest; ConfigHash string; ThemeHash string; WidthPolicy string; Versions state.Versions }
