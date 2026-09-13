@@ -28,6 +28,9 @@ func BindSession[M any](s *session.Session[M], options Options) (Options, error)
 	if options.SessionID != "" && options.SessionID != current.SessionID {
 		return Options{}, errors.New("agent: session id does not match bound session")
 	}
+	if !validHash(current.ConfigHash) || !validHash(current.ThemeHash) {
+		return Options{}, errors.New("agent: bound session requires valid config and theme hashes")
+	}
 	bridge := &sessionBridge[M]{session: s, actions: options.Actions}
 	options.SessionID = current.SessionID
 	options.SnapshotEnvelope = bridge.snapshot
@@ -86,9 +89,13 @@ func (b *sessionBridge[M]) snapshot(_ context.Context, mode string, since uint64
 }
 
 func bridgeDiagnostics(in []session.Diagnostic, sequence, revision uint64) []diag.Diagnostic {
+	const maxDiagnostics = 16
+	if len(in) > maxDiagnostics {
+		in = in[len(in)-maxDiagnostics:]
+	}
 	out := make([]diag.Diagnostic, 0, len(in))
-	for _, item := range in {
-		out = append(out, diag.Diagnostic{SchemaVersion: "stave.diag/v1", ID: item.Code, Sequence: sequence, Revision: revision, Severity: diag.Warning, Code: item.Code, Redacted: true})
+	for range in {
+		out = append(out, diag.Diagnostic{SchemaVersion: "stave.diag/v1", ID: "SESSION_DIAGNOSTIC", Sequence: sequence, Revision: revision, Severity: diag.Warning, Code: "SESSION_DIAGNOSTIC", Redacted: true})
 	}
 	return out
 }

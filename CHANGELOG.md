@@ -5,6 +5,11 @@ Keep a Changelog and Stave uses Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- Add an opt-in session bridge for agent snapshots and idempotent cancellation,
+  preserving application authorization and exposing bounded redacted diagnostics.
+
 ## [1.0.0-rc.2] - 2026-09-10
 
 ### Security

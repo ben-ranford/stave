@@ -3,6 +3,7 @@ package agent
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync/atomic"
@@ -78,10 +79,15 @@ func TestBindSessionServesValidatedFullAndPatchAndPreservesAuthority(t *testing.
 
 func bridgeSession(t *testing.T, sessionID string) *session.Session[int] {
 	t.Helper()
+	return bridgeSessionWithHashes(t, sessionID, strings.Repeat("a", 64), strings.Repeat("b", 64))
+}
+
+func bridgeSessionWithHashes(t *testing.T, sessionID, configHash, themeHash string) *session.Session[int] {
+	t.Helper()
 	s, err := session.New(context.Background(), session.Options[int]{
 		SessionID:  sessionID,
-		ConfigHash: strings.Repeat("a", 64),
-		ThemeHash:  strings.Repeat("b", 64),
+		ConfigHash: configHash,
+		ThemeHash:  themeHash,
 		Reduce: func(_ context.Context, current int, _ event.Event) (int, []effect.Request, error) {
 			return current + 1, nil, nil
 		},
@@ -111,4 +117,37 @@ func bridgeEvent(t *testing.T) event.Event {
 		t.Fatal(err)
 	}
 	return ev
+}
+
+func TestBindSessionRejectsUnusableHashMetadata(t *testing.T) {
+	for _, hashes := range [][2]string{{"", ""}, {"invalid", strings.Repeat("b", 64)}, {strings.Repeat("a", 64), "invalid"}} {
+		s := bridgeSessionWithHashes(t, "metadata", hashes[0], hashes[1])
+		if _, err := BindSession(s, Options{}); err == nil {
+			t.Error("BindSession accepted unusable hashes")
+		}
+		s.Close()
+	}
+}
+
+func TestBridgeDiagnosticsBoundsAndRedactsHistory(t *testing.T) {
+	in := make([]session.Diagnostic, 1000)
+	for i := range in {
+		in[i] = session.Diagnostic{Code: "secret-token-abc", Message: "private message"}
+	}
+	out := bridgeDiagnostics(in, 7, 4)
+	if len(out) != 16 {
+		t.Fatalf("projected %d diagnostics, want bounded tail 16", len(out))
+	}
+	raw, err := json.Marshal(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(raw, []byte("secret-token-abc")) || bytes.Contains(raw, []byte("private message")) {
+		t.Fatalf("diagnostic leaked: %s", raw)
+	}
+	for _, item := range out {
+		if item.Sequence != 7 || item.Revision != 4 || !item.Redacted {
+			t.Fatalf("invalid projected metadata: %#v", item)
+		}
+	}
 }
