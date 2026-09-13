@@ -592,12 +592,17 @@ const DivergenceSurfaceHash DivergenceCode = "SURFACE_HASH_MISMATCH"
 const DivergenceThemeHash DivergenceCode = "THEME_HASH_MISMATCH"
 const DivergenceTreeHash DivergenceCode = "TREE_HASH_MISMATCH"
 const DivergenceWidthPolicy DivergenceCode = "WIDTH_POLICY_MISMATCH"
+const MaxTranscriptBytes untyped int = 16777216
+const MaxTranscriptRecords untyped int = 100000
 const SchemaVersion untyped string = "stave.replay/v1"
+func DecodeTranscript(data []byte) (Transcript, error)
 func DigestFromState[M any](snapshot state.State[M]) Digest
 func Encode(record Record) ([]byte, error)
 func Execute(ctx context.Context, transcript Transcript, apply ApplyFunc) (Transcript, error)
 func NewTranscript(sessionID string, versions state.Versions, initial state.Checkpoint) Transcript
+func RedactedDivergence(divergence *Divergence) *Divergence
 func Validate(expected, actual Transcript) error
+func ValidateTranscript(transcript Transcript) error
 method (*Divergence) Error() string
 method (*Transcript) Append(record Record)
 method (Transcript) CanonicalJSON() ([]byte, error)
