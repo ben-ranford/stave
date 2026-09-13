@@ -1,6 +1,7 @@
 package semantic
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"sort"
@@ -12,6 +13,12 @@ import (
 type PatchDetailVersion string
 
 const PatchDetailV1 PatchDetailVersion = "stave.semantic.patch-detail/v1"
+
+var patchDetailFields = map[string]struct{}{
+	"/actions": {}, "/children": {}, "/description": {}, "/flags": {},
+	"/layout": {}, "/metadata": {}, "/name": {}, "/relations": {},
+	"/role": {}, "/states": {}, "/style": {}, "/value": {},
+}
 
 // NegotiatePatchDetailVersion returns the detail version supported by both peers.
 // Callers that do not negotiate a version must continue to use Patch.
@@ -56,6 +63,9 @@ func (p PatchDetail) Validate() error {
 	if err := (Patch{FromRevision: p.FromRevision, ToRevision: p.ToRevision, Added: p.Added, Removed: p.Removed, GenerationChanged: p.GenerationChanged}).Validate(); err != nil {
 		return err
 	}
+	if !sortedNodeIDs(p.Added) || !sortedNodeIDs(p.Removed) || !sortedNodeIDs(p.GenerationChanged) {
+		return errors.New("semantic patch detail node IDs are not sorted")
+	}
 	previous := NodeID("")
 	for _, change := range p.Changed {
 		if !change.NodeID.Valid() || (previous != "" && change.NodeID <= previous) || len(change.Fields) == 0 {
@@ -64,13 +74,32 @@ func (p PatchDetail) Validate() error {
 		previous = change.NodeID
 		path := ""
 		for _, field := range change.Fields {
-			if field.Path == "" || field.Path <= path || !json.Valid(field.Before) || !json.Valid(field.After) {
+			if !supportedPatchDetailField(field.Path) || field.Path <= path || !canonicalRawJSON(field.Before) || !canonicalRawJSON(field.After) {
 				return errors.New("invalid semantic patch detail field")
 			}
 			path = field.Path
 		}
 	}
 	return nil
+}
+
+func sortedNodeIDs(ids []NodeID) bool {
+	for i := 1; i < len(ids); i++ {
+		if ids[i] <= ids[i-1] {
+			return false
+		}
+	}
+	return true
+}
+
+func supportedPatchDetailField(path string) bool {
+	_, ok := patchDetailFields[path]
+	return ok
+}
+
+func canonicalRawJSON(raw json.RawMessage) bool {
+	canonicalized, err := canonical.JSON(raw)
+	return err == nil && bytes.Equal(canonicalized, raw)
 }
 
 // DiffDetail returns changed-field detail only for a previously negotiated
@@ -112,6 +141,7 @@ func nodesByID(root Node) map[NodeID]Node {
 }
 
 func changedFields(a, b Node) []FieldChange {
+	beforeValue, afterValue := detailValues(a, b)
 	fields := []struct {
 		path          string
 		before, after any
@@ -120,18 +150,33 @@ func changedFields(a, b Node) []FieldChange {
 		{"/description", a.description, b.description}, {"/flags", a.flags, b.flags},
 		{"/layout", a.layout, b.layout}, {"/metadata", a.metadata, b.metadata}, {"/name", a.name, b.name},
 		{"/relations", a.relations, b.relations}, {"/role", a.role, b.role}, {"/states", a.states, b.states},
-		{"/style", a.style, b.style}, {"/value", detailValue(a), detailValue(b)},
+		{"/style", a.style, b.style},
 	}
 	out := make([]FieldChange, 0, len(fields))
 	for _, field := range fields {
 		if canonical.Equal(field.before, field.after) {
 			continue
 		}
-		before, _ := canonical.Encode(field.before)
-		after, _ := canonical.Encode(field.after)
+		before := canonicalFieldValue(field.before)
+		after := canonicalFieldValue(field.after)
 		out = append(out, FieldChange{Path: field.path, Before: before, After: after})
 	}
+	if !canonical.Equal(a.value, b.value) || detailValueRedacted(a) != detailValueRedacted(b) {
+		out = append(out, FieldChange{Path: "/value", Before: canonicalFieldValue(beforeValue), After: canonicalFieldValue(afterValue)})
+	}
 	return out
+}
+
+func canonicalFieldValue(value any) json.RawMessage {
+	raw, err := canonical.Encode(value)
+	if err != nil {
+		return nil
+	}
+	canonicalized, err := canonical.JSON(raw)
+	if err != nil {
+		return nil
+	}
+	return canonicalized
 }
 
 func childIDs(children []Node) []NodeID {
@@ -142,10 +187,20 @@ func childIDs(children []Node) []NodeID {
 	return out
 }
 
-func detailValue(node Node) Value {
-	value := node.value
-	if node.flags.Sensitive || value.Redacted {
-		value.Text = ""
+func detailValues(before, after Node) (Value, Value) {
+	beforeValue, afterValue := before.value, after.value
+	if detailValueRedacted(before) || detailValueRedacted(after) {
+		return redactedDetailValue(beforeValue), redactedDetailValue(afterValue)
 	}
+	return beforeValue, afterValue
+}
+
+func detailValueRedacted(node Node) bool {
+	return node.flags.Sensitive || node.value.Redacted
+}
+
+func redactedDetailValue(value Value) Value {
+	value.Text = ""
+	value.Redacted = true
 	return value
 }

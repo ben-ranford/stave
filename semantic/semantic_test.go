@@ -1,12 +1,16 @@
 package semantic
 
 import (
+	"bytes"
 	"encoding/base32"
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/ben-ranford/stave/internal/canonical"
 )
 
 func TestNodeIdentityStable(t *testing.T) {
@@ -377,5 +381,134 @@ func TestPatchDetailNoOpAndDeterministicOrdering(t *testing.T) {
 	second, _ := json.Marshal(detail)
 	if string(first) != string(second) {
 		t.Fatalf("detail is not deterministic: %s != %s", first, second)
+	}
+}
+
+func TestPatchDetailValidateRequiresCanonicalSupportedFields(t *testing.T) {
+	first, _ := NodeIDFor(NodeKey{"detail", "v", "node", "first", "slot"})
+	second, _ := NodeIDFor(NodeKey{"detail", "v", "node", "second", "slot"})
+	if first > second {
+		first, second = second, first
+	}
+	valid := PatchDetail{
+		SchemaVersion: PatchDetailV1, FromRevision: 1, ToRevision: 2,
+		Added:   []NodeID{first, second},
+		Changed: []NodeChange{{NodeID: first, Fields: []FieldChange{{Path: "/metadata", Before: json.RawMessage(`1e0`), After: json.RawMessage(`2e0`)}}}},
+	}
+	if err := valid.Validate(); err != nil {
+		t.Fatalf("valid detail rejected: %v", err)
+	}
+	for _, mutate := range []func(*PatchDetail){
+		func(detail *PatchDetail) { detail.Added = []NodeID{second, first} },
+		func(detail *PatchDetail) { detail.Changed[0].Fields[0].Path = "metadata" },
+		func(detail *PatchDetail) { detail.Changed[0].Fields[0].Path = "/metadata/key" },
+		func(detail *PatchDetail) { detail.Changed[0].Fields[0].Path = "/bogus" },
+		func(detail *PatchDetail) { detail.Changed[0].Fields[0].Before = json.RawMessage(`1.0`) },
+		func(detail *PatchDetail) { detail.Changed[0].Fields[0].After = json.RawMessage(`{"b":1,"a":2}`) },
+	} {
+		detail := valid
+		detail.Added = append([]NodeID(nil), valid.Added...)
+		detail.Changed = append([]NodeChange(nil), valid.Changed...)
+		detail.Changed[0].Fields = append([]FieldChange(nil), valid.Changed[0].Fields...)
+		mutate(&detail)
+		if err := detail.Validate(); err == nil {
+			t.Fatal("invalid patch detail accepted")
+		}
+	}
+}
+
+func TestPatchDetailCanonicalValueTransitionsRedactBothEndpoints(t *testing.T) {
+	id, _ := NodeIDFor(NodeKey{"detail", "v", "node", "value", "slot"})
+	beforeNode, _ := NewNode(NodeSpec{ID: id, Role: "text", Name: "before", Value: Value{Text: "secret-before", HasValue: true}, Flags: Flags{Visible: true}})
+	afterNode, _ := NewNode(NodeSpec{ID: id, Role: "text", Name: "after", Value: SecretValue(), Flags: Flags{Visible: true, Sensitive: true}})
+	before, _ := NewTree(1, beforeNode)
+	after, _ := NewTree(2, afterNode)
+	detail, err := DiffDetail(before, after, PatchDetailV1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fields := detail.Changed[0].Fields
+	var value FieldChange
+	for _, field := range fields {
+		if field.Path == "/value" {
+			value = field
+		}
+	}
+	if string(value.Before) != `{"hasValue":true,"redacted":true}` || string(value.After) != `{"hasValue":true,"redacted":true}` {
+		t.Fatalf("value endpoints = %s -> %s", value.Before, value.After)
+	}
+	for _, field := range fields {
+		for _, endpoint := range []json.RawMessage{field.Before, field.After} {
+			canonicalized, err := canonical.JSON(endpoint)
+			if err != nil || !bytes.Equal(endpoint, canonicalized) {
+				t.Fatalf("non-canonical generated field %s: %s", field.Path, endpoint)
+			}
+		}
+	}
+	encoded, _ := json.Marshal(detail)
+	if strings.Contains(string(encoded), "secret-before") {
+		t.Fatalf("detail leaked redacted endpoint: %s", encoded)
+	}
+}
+
+func TestPatchDetailValueAndFlagOnlyRedactionTransitions(t *testing.T) {
+	id, _ := NodeIDFor(NodeKey{"detail", "v", "node", "value-transition", "slot"})
+	ordinaryBefore, _ := NewNode(NodeSpec{ID: id, Role: "text", Name: "value", Value: Value{Text: "before", HasValue: true}, Flags: Flags{Visible: true}})
+	ordinaryAfter, _ := NewNode(NodeSpec{ID: id, Role: "text", Name: "value", Value: Value{Text: "after", HasValue: true}, Flags: Flags{Visible: true}})
+	before, _ := NewTree(1, ordinaryBefore)
+	after, _ := NewTree(2, ordinaryAfter)
+	ordinary, err := DiffDetail(before, after, PatchDetailV1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := ordinary.Changed[0].Fields; len(got) != 1 || got[0].Path != "/value" || string(got[0].Before) != `{"hasValue":true,"text":"before"}` || string(got[0].After) != `{"hasValue":true,"text":"after"}` {
+		t.Fatalf("ordinary value transition = %+v", got)
+	}
+	flagBefore, _ := NewNode(NodeSpec{ID: id, Role: "text", Name: "value", Value: Value{HasValue: true}, Flags: Flags{Visible: true}})
+	flagAfter, _ := NewNode(NodeSpec{ID: id, Role: "text", Name: "value", Value: Value{HasValue: true}, Flags: Flags{Visible: true, Sensitive: true}})
+	before, _ = NewTree(1, flagBefore)
+	after, _ = NewTree(2, flagAfter)
+	redacted, err := DiffDetail(before, after, PatchDetailV1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := redacted.Changed[0].Fields; len(got) != 2 || got[0].Path != "/flags" || got[1].Path != "/value" || string(got[1].Before) != `{"hasValue":true,"redacted":true}` || string(got[1].After) != `{"hasValue":true,"redacted":true}` {
+		t.Fatalf("flag-only redaction transition = %+v", got)
+	}
+}
+
+func TestPatchDetailNegotiatedBytesKeepLegacyPatchUnchanged(t *testing.T) {
+	ids := make([]NodeID, 4)
+	for i, entity := range []string{"root", "removed", "generation", "added"} {
+		ids[i], _ = NodeIDFor(NodeKey{"detail", "v", "node", entity, "slot"})
+	}
+	removed, _ := NewNode(NodeSpec{ID: ids[1], Role: "text", Name: "removed"})
+	beforeGeneration, _ := NewNode(NodeSpec{ID: ids[2], Role: "text", Name: "generation"})
+	added, _ := NewNode(NodeSpec{ID: ids[3], Role: "text", Name: "added"})
+	afterGeneration, _ := NewNode(NodeSpec{ID: ids[2], Generation: 1, Role: "text", Name: "generation"})
+	beforeRoot, _ := NewNode(NodeSpec{ID: ids[0], Role: "group", Name: "root", Children: []Node{removed, beforeGeneration}})
+	afterRoot, _ := NewNode(NodeSpec{ID: ids[0], Role: "group", Name: "root", Children: []Node{afterGeneration, added}})
+	before, _ := NewTree(1, beforeRoot)
+	after, _ := NewTree(2, afterRoot)
+	legacy, _ := json.Marshal(Diff(before, after))
+	wantLegacy := fmt.Sprintf(`{"fromRevision":1,"toRevision":2,"added":[%q],"removed":[%q],"generationChanged":[%q]}`, ids[3], ids[1], ids[2])
+	if string(legacy) != wantLegacy {
+		t.Fatalf("legacy patch = %s, want %s", legacy, wantLegacy)
+	}
+	if _, ok := NegotiatePatchDetailVersion([]PatchDetailVersion{"other"}); ok {
+		t.Fatal("unnegotiated detail version accepted")
+	}
+	detail, err := DiffDetail(before, after, PatchDetailV1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, _ := json.Marshal(detail)
+	wantDetail := fmt.Sprintf(`{"schemaVersion":"stave.semantic.patch-detail/v1","fromRevision":1,"toRevision":2,"added":[%q],"removed":[%q],"generationChanged":[%q],"changed":[{"nodeId":%q,"fields":[{"path":"/children","before":[%q,%q],"after":[%q,%q]}]}]}`, ids[3], ids[1], ids[2], ids[0], ids[1], ids[2], ids[2], ids[3])
+	if string(encoded) != wantDetail {
+		t.Fatalf("negotiated detail = %s, want %s", encoded, wantDetail)
+	}
+	legacyAfter, _ := json.Marshal(Diff(before, after))
+	if !bytes.Equal(legacy, legacyAfter) {
+		t.Fatalf("detail generation changed legacy bytes: %s != %s", legacy, legacyAfter)
 	}
 }
