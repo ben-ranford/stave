@@ -3,6 +3,7 @@ package semantic
 import (
 	"encoding/base32"
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -166,5 +167,85 @@ func TestNodeRejectsDELAndC1Controls(t *testing.T) {
 		if _, err := NewNode(NodeSpec{ID: id, Role: "text", Name: hostile}); err == nil {
 			t.Fatalf("control text %q accepted", hostile)
 		}
+	}
+}
+
+func TestPatchDetailV1ReportsCanonicalChangedFields(t *testing.T) {
+	ids := make([]NodeID, 3)
+	for i, entity := range []string{"root", "left", "right"} {
+		ids[i], _ = NodeIDFor(NodeKey{"detail", "v", "node", entity, "slot"})
+	}
+	left, _ := NewNode(NodeSpec{ID: ids[1], Role: "text", Name: "left"})
+	right, _ := NewNode(NodeSpec{ID: ids[2], Role: "text", Name: "right"})
+	before, _ := NewNode(NodeSpec{ID: ids[0], Role: "group", Name: "before", Description: "old", Value: SecretValue(), States: []State{"old"}, Relations: []Relation{{Kind: "owns", Target: ids[1]}}, Actions: []ActionRef{{ID: "old"}}, Layout: LayoutSpec{Width: 1}, Style: StyleIntent{Role: "old"}, Flags: Flags{Visible: true}, Metadata: map[string]string{"a": "old"}, Children: []Node{left, right}})
+	after, _ := NewNode(NodeSpec{ID: ids[0], Role: "region", Name: "after", Description: "new", Value: SecretValue(), States: []State{"new"}, Relations: []Relation{{Kind: "owns", Target: ids[2]}}, Actions: []ActionRef{{ID: "new", Default: true}}, Layout: LayoutSpec{Width: 2}, Style: StyleIntent{Role: "new"}, Flags: Flags{Visible: true, Disabled: true}, Metadata: map[string]string{"a": "new"}, Children: []Node{right, left}})
+	a, _ := NewTree(1, before)
+	b, _ := NewTree(2, after)
+	detail, err := DiffDetail(a, b, PatchDetailV1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := detail.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if len(detail.Changed) != 1 || detail.Changed[0].NodeID != ids[0] {
+		t.Fatalf("changes=%+v", detail.Changed)
+	}
+	var paths []string
+	for _, field := range detail.Changed[0].Fields {
+		paths = append(paths, field.Path)
+	}
+	want := []string{"/actions", "/children", "/description", "/flags", "/layout", "/metadata", "/name", "/relations", "/role", "/states", "/style"}
+	if !reflect.DeepEqual(paths, want) {
+		t.Fatalf("paths=%v want=%v", paths, want)
+	}
+	encoded, _ := json.Marshal(detail)
+	if strings.Contains(string(encoded), "secret") || strings.Contains(string(encoded), `"text":"`) {
+		t.Fatalf("detail leaked value: %s", encoded)
+	}
+}
+
+func TestPatchDetailNegotiationAndLegacyPatchCompatibility(t *testing.T) {
+	id, _ := NodeIDFor(NodeKey{"detail", "v", "node", "root", "slot"})
+	aNode, _ := NewNode(NodeSpec{ID: id, Role: "text", Name: "a"})
+	bNode, _ := NewNode(NodeSpec{ID: id, Generation: 1, Role: "text", Name: "b"})
+	a, _ := NewTree(1, aNode)
+	b, _ := NewTree(2, bNode)
+	before, _ := json.Marshal(Diff(a, b))
+	if got := string(before); got != `{"fromRevision":1,"toRevision":2,"generationChanged":["`+string(id)+`"]}` {
+		t.Fatalf("legacy patch=%s", got)
+	}
+	if version, ok := NegotiatePatchDetailVersion([]PatchDetailVersion{"other", PatchDetailV1}); !ok || version != PatchDetailV1 {
+		t.Fatalf("negotiation=%q,%v", version, ok)
+	}
+	if _, ok := NegotiatePatchDetailVersion([]PatchDetailVersion{"other"}); ok {
+		t.Fatal("unsupported detail negotiated")
+	}
+	if _, err := DiffDetail(a, b, "other"); err == nil {
+		t.Fatal("unsupported detail version accepted")
+	}
+	after, _ := json.Marshal(Diff(a, b))
+	if string(before) != string(after) {
+		t.Fatalf("legacy patch changed: %s != %s", before, after)
+	}
+	detail, err := DiffDetail(a, b, PatchDetailV1)
+	if err != nil || len(detail.Changed) != 1 || detail.Changed[0].Fields[0].Path != "/name" {
+		t.Fatalf("detail=%+v err=%v", detail, err)
+	}
+}
+
+func TestPatchDetailNoOpAndDeterministicOrdering(t *testing.T) {
+	id, _ := NodeIDFor(NodeKey{"detail", "v", "node", "root", "slot"})
+	node, _ := NewNode(NodeSpec{ID: id, Role: "text", Name: "same"})
+	a, _ := NewTree(1, node)
+	b, _ := NewTree(2, node)
+	detail, err := DiffDetail(a, b, PatchDetailV1)
+	if err != nil || len(detail.Changed) != 0 || len(detail.Added) != 0 || len(detail.Removed) != 0 || len(detail.GenerationChanged) != 0 {
+		t.Fatalf("detail=%+v err=%v", detail, err)
+	}
+	first, _ := json.Marshal(detail)
+	second, _ := json.Marshal(detail)
+	if string(first) != string(second) {
+		t.Fatalf("detail is not deterministic: %s != %s", first, second)
 	}
 }
