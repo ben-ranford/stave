@@ -2,6 +2,8 @@ package keymap
 
 import (
 	"encoding/json"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -10,6 +12,94 @@ import (
 	"github.com/ben-ranford/stave/primitive"
 	"github.com/ben-ranford/stave/semantic"
 )
+
+func TestCodecEncodeIsDeterministicAndRoundTrips(t *testing.T) {
+	tab, _ := input.ParseKey("tab")
+	enter, _ := input.ParseKey("enter")
+	activate := action.ID(primitive.CanonicalActionID("activate"))
+	mappings := []Mapping{
+		{Binding: Binding{Sequence: []input.KeyChord{tab}, Command: CommandFocusNext}, Route: Route{Kind: RouteAction, ActionID: activate}},
+		{Binding: Binding{Sequence: []input.KeyChord{enter}, Command: CommandShutdown}, Route: Route{Kind: RouteEvent, EventKind: "shutdown"}},
+	}
+	first, err := New("portable", mappings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := New("portable", []Mapping{mappings[1], mappings[0]})
+	if err != nil {
+		t.Fatal(err)
+	}
+	encodedFirst, err := first.Encode()
+	if err != nil {
+		t.Fatalf("encode first: %v", err)
+	}
+	encodedSecond, err := second.Encode()
+	if err != nil {
+		t.Fatalf("encode second: %v", err)
+	}
+	if string(encodedFirst) != string(encodedSecond) {
+		t.Fatalf("encoding depends on mapping order:\n%s\n%s", encodedFirst, encodedSecond)
+	}
+	var document codecDocument
+	if err := json.Unmarshal(encodedFirst, &document); err != nil {
+		t.Fatalf("decode document: %v", err)
+	}
+	if document.Version != CodecVersion {
+		t.Fatalf("version=%q, want %q", document.Version, CodecVersion)
+	}
+	roundTripped, err := Decode(encodedFirst, []action.Definition{{ID: activate}})
+	if err != nil {
+		t.Fatalf("round trip: %v", err)
+	}
+	expected, err := New(document.Profile, document.Mappings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if roundTripped.Profile() != "portable" || !reflect.DeepEqual(roundTripped.Bindings(), expected.Bindings()) {
+		t.Fatalf("round trip changed map: %#v", roundTripped)
+	}
+}
+
+func TestDecodeRejectsInvalidVersionsBindingsAndUnknownFields(t *testing.T) {
+	for _, raw := range [][]byte{
+		[]byte(`{"version":"stave.keymap.v2","profile":"portable","mappings":[]}`),
+		[]byte(`{"version":"stave.keymap.v1","profile":"portable","mappings":[{"binding":{"command":"stave.activate.v1","sequence":[]},"route":{"kind":"event","eventKind":"shutdown"}}]}`),
+		[]byte(`{"version":"stave.keymap.v1","profile":"portable","mappings":[],"unexpected":true}`),
+	} {
+		if _, err := Decode(raw, nil); err == nil {
+			t.Fatalf("Decode(%s) succeeded", raw)
+		}
+	}
+}
+
+func TestDecodeRejectsConflictingBindingsAndActionManifestMismatches(t *testing.T) {
+	tab, _ := input.ParseKey("tab")
+	conflicting, err := json.Marshal(codecDocument{Version: CodecVersion, Profile: "portable", Mappings: []Mapping{
+		{Binding: Binding{Sequence: []input.KeyChord{tab}, Command: CommandFocusNext}, Route: Route{Kind: RouteEvent, EventKind: "shutdown"}},
+		{Binding: Binding{Sequence: []input.KeyChord{tab}, Command: CommandFocusPrevious}, Route: Route{Kind: RouteEvent, EventKind: "shutdown"}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Decode(conflicting, nil); err == nil {
+		t.Fatal("expected conflicting bindings to fail")
+	}
+	activate := action.ID(primitive.CanonicalActionID("activate"))
+	profile, err := New("portable", []Mapping{{Binding: Binding{Sequence: []input.KeyChord{tab}, Command: CommandActivate}, Route: Route{Kind: RouteAction, ActionID: activate}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := profile.Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Decode(raw, nil); err == nil || !strings.Contains(err.Error(), "absent from action manifest") {
+		t.Fatalf("expected manifest parity error, got %v", err)
+	}
+	if _, err := Decode(raw, []action.Definition{{ID: activate}}); err != nil {
+		t.Fatalf("expected matching manifest to import profile: %v", err)
+	}
+}
 
 func TestNewRejectsAmbiguousBindings(t *testing.T) {
 	tab, _ := input.ParseKey("tab")
