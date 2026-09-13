@@ -199,11 +199,27 @@ func (s Surface) WithStyledGrapheme(x, y int, grapheme string, style ResolvedSty
 }
 
 func (s Surface) WithText(x, y int, text string, style ResolvedStyle, link string, nodeID semantic.NodeID, generation uint32, clip layout.Rect) (Surface, error) {
-	builder := builderFromSurface(s)
-	if err := builder.WithText(x, y, text, style, link, nodeID, generation, clip); err != nil {
+	var builder *Builder
+	err := visitTextClusters(x, text, func(cursor int, cluster width.Cluster) error {
+		if builder == nil && canPlaceCluster(s, cursor, y, cluster, clip) {
+			builder = builderFromSurface(s)
+		}
+		if builder != nil {
+			return builder.placeCluster(cursor, y, cluster, style, link, nodeID, generation, clip)
+		}
+		return nil
+	})
+	if err != nil || builder == nil {
 		return s, err
 	}
 	return builder.Surface(), nil
+}
+
+func canPlaceCluster(s Surface, x, y int, cluster width.Cluster, clip layout.Rect) bool {
+	if y < 0 || y >= s.Height || cluster.Width == 0 || x < 0 || x+cluster.Width > s.Width {
+		return false
+	}
+	return (clip.Width == 0 && clip.Height == 0) || (y >= clip.Y && y < clip.Y+clip.Height && x >= clip.X && x+cluster.Width <= clip.X+clip.Width)
 }
 
 func (b *Builder) WithText(x, y int, text string, style ResolvedStyle, link string, nodeID semantic.NodeID, generation uint32, clip layout.Rect) error {

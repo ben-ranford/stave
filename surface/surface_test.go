@@ -123,7 +123,7 @@ func TestWithTextMatchesSeededBuilderAndPreservesInput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	before := base
+	before := base.clone()
 
 	builder := seededBuilder(base)
 	style := ResolvedStyle{Foreground: "#abcdef", Background: "#010203", Bold: true}
@@ -202,18 +202,75 @@ func TestWithTextUsesFirstMatchingInternedValues(t *testing.T) {
 	if cell := got.At(0, 0); cell.Style != 1 || cell.Link != 1 {
 		t.Fatalf("WithText changed first-match interning: %#v", cell)
 	}
+	builder := seededBuilder(base)
+	if err := builder.WithText(0, 0, "x", style, link, semantic.NodeID("n1_duplicateeeeeeeeeeeeeeeeee"), 1, layout.Rect{Width: 2, Height: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if built := builder.Surface(); built.Hash() != got.Hash() {
+		t.Fatalf("seeded builder changed first-match interning: %#v", built.At(0, 0))
+	}
 }
 
 func seededBuilder(s Surface) *Builder {
 	styles := make(map[ResolvedStyle]StyleID, len(s.styles))
 	for i, style := range s.styles {
-		styles[style] = StyleID(i + 1)
+		if _, exists := styles[style]; !exists {
+			styles[style] = StyleID(i + 1)
+		}
 	}
 	links := make(map[string]LinkID, len(s.links))
 	for i, link := range s.links {
-		links[link] = LinkID(i + 1)
+		if _, exists := links[link]; !exists {
+			links[link] = LinkID(i + 1)
+		}
 	}
 	return &Builder{surface: s.clone(), styleIndex: styles, linkIndex: links}
+}
+
+func TestWithTextNoOpsPreserveZeroSizedAndClippedSurfaces(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		s    Surface
+		text string
+		clip layout.Rect
+	}{
+		{name: "zero width", s: New(0, 1), text: "x", clip: layout.Rect{Width: 1, Height: 1}},
+		{name: "zero height", s: New(1, 0), text: "x", clip: layout.Rect{Width: 1, Height: 1}},
+		{name: "empty", s: New(80, 50), text: "", clip: layout.Rect{Width: 80, Height: 50}},
+		{name: "newline", s: New(80, 50), text: "\ntext", clip: layout.Rect{Width: 80, Height: 50}},
+		{name: "clipped", s: New(80, 50), text: "text", clip: layout.Rect{X: 80, Y: 0, Width: 1, Height: 1}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			before := tc.s.clone()
+			got, err := tc.s.WithText(0, 0, tc.text, ResolvedStyle{Foreground: "#abcdef"}, "https://text.example", semantic.NodeID("n1_nooppppppppppppppppppppppp"), 1, tc.clip)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Hash() != before.Hash() || !slices.Equal(got.Cells(), before.Cells()) || !slices.Equal(got.Styles(), before.Styles()) || !slices.Equal(got.Links(), before.Links()) {
+				t.Fatalf("no-op write changed surface: got=%#v want=%#v", got, before)
+			}
+		})
+	}
+}
+
+func TestWithTextClippedWriteAvoidsSurfaceClone(t *testing.T) {
+	base := New(240, 40)
+	clip := layout.Rect{X: 240, Y: 0, Width: 1, Height: 1}
+	allocs := testing.AllocsPerRun(10, func() {
+		got, err := base.WithText(0, 0, "text", ResolvedStyle{}, "", "", 0, clip)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Hash() != base.Hash() {
+			t.Fatal("clipped write changed hash")
+		}
+	})
+	t.Logf("clipped WithText allocations %.0f", allocs)
+	if allocs > 2 {
+		t.Fatalf("clipped WithText allocations %.0f indicate a surface clone", allocs)
+	}
 }
 
 func TestDiffRepresentsResize(t *testing.T) {
