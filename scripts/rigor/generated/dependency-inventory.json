@@ -474,6 +474,10 @@
         "github.com/ben-ranford/stave/internal/canonical",
         "github.com/ben-ranford/stave/state",
         "io",
+        "math",
+        "reflect",
+        "strings",
+        "sync",
         "unicode/utf8"
       ]
     },
