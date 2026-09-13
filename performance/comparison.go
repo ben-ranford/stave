@@ -55,6 +55,22 @@ type MetricDelta struct {
 	WithinTolerance bool    `json:"withinTolerance"`
 }
 
+// MarshalJSON preserves the public float64 API while making percentDelta
+// optional only for relative metrics with a zero baseline. A defined 0% delta
+// remains visible, while undefined relative and absolute deltas omit the field.
+func (delta MetricDelta) MarshalJSON() ([]byte, error) {
+	type metricDeltaWire MetricDelta
+	var percent *float64
+	if delta.ToleranceUnit == "relative" && delta.Baseline != 0 {
+		value := delta.PercentDelta
+		percent = &value
+	}
+	return json.Marshal(struct {
+		metricDeltaWire
+		PercentDelta *float64 `json:"percentDelta,omitempty"`
+	}{metricDeltaWire: metricDeltaWire(delta), PercentDelta: percent})
+}
+
 // DecodeReport strictly decodes an existing performance report without
 // changing its wire schema. It rejects duplicate and unknown fields so a
 // baseline cannot silently reinterpret saved measurements.
@@ -66,7 +82,7 @@ func DecodeReport(data []byte) (Report, error) {
 	if len(data) == 0 || !utf8.Valid(data) || data[0] != '{' {
 		return Report{}, errors.New("performance report must be a UTF-8 JSON object")
 	}
-	if err := validateJSONKeys(data, 0); err != nil {
+	if err := validateReportJSONKeys(data); err != nil {
 		return Report{}, fmt.Errorf("decode performance report: %w", err)
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
@@ -235,16 +251,25 @@ func absoluteDelta(metric, unit string, baseline, candidate, tolerance float64) 
 	return MetricDelta{Metric: metric, Unit: unit, Baseline: baseline, Candidate: candidate, Delta: delta, Tolerance: tolerance, ToleranceUnit: "absolute", WithinTolerance: delta <= tolerance && !math.IsNaN(candidate) && !math.IsInf(candidate, 0)}
 }
 
-func validateJSONKeys(data []byte, depth int) error {
+func validateReportJSONKeys(data []byte) error {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.UseNumber()
-	if err := validateJSONValue(decoder, depth); err != nil {
+	if err := validateTypedJSONValue(decoder, 0, reflect.TypeOf(Report{})); err != nil {
 		return err
 	}
 	return ensureReportEOF(decoder)
 }
 
-func validateJSONValue(decoder *json.Decoder, depth int) error {
+func validateJSONKeys(data []byte, depth int) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	if err := validateTypedJSONValue(decoder, depth, nil); err != nil {
+		return err
+	}
+	return ensureReportEOF(decoder)
+}
+
+func validateTypedJSONValue(decoder *json.Decoder, depth int, typ reflect.Type) error {
 	token, err := decoder.Token()
 	if err != nil {
 		return err
@@ -259,35 +284,90 @@ func validateJSONValue(decoder *json.Decoder, depth int) error {
 	if delim != '{' && delim != '[' {
 		return errors.New("invalid performance report JSON")
 	}
-	seen := map[string]struct{}{}
-	for decoder.More() {
-		if delim == '{' {
-			if err := validateJSONObjectKey(decoder, seen); err != nil {
+	typ = indirectJSONType(typ)
+	switch delim {
+	case '{':
+		fields := jsonStructFields(typ)
+		seen := map[string]struct{}{}
+		for decoder.More() {
+			key, err := validateJSONObjectKey(decoder, seen)
+			if err != nil {
+				return err
+			}
+			fieldType := reflect.Type(nil)
+			if fields != nil {
+				var exists bool
+				fieldType, exists = fields[key]
+				if !exists {
+					for name := range fields {
+						if strings.EqualFold(key, name) {
+							return fmt.Errorf("noncanonical performance report key %q, want %q", key, name)
+						}
+					}
+				}
+			}
+			if err := validateTypedJSONValue(decoder, depth+1, fieldType); err != nil {
 				return err
 			}
 		}
-		if err := validateJSONValue(decoder, depth+1); err != nil {
-			return err
+	case '[':
+		var element reflect.Type
+		if typ != nil && (typ.Kind() == reflect.Array || typ.Kind() == reflect.Slice) {
+			element = typ.Elem()
+		}
+		for decoder.More() {
+			if err := validateTypedJSONValue(decoder, depth+1, element); err != nil {
+				return err
+			}
 		}
 	}
 	_, err = decoder.Token()
 	return err
 }
 
-func validateJSONObjectKey(decoder *json.Decoder, seen map[string]struct{}) error {
+func indirectJSONType(typ reflect.Type) reflect.Type {
+	for typ != nil && typ.Kind() == reflect.Pointer {
+		typ = typ.Elem()
+	}
+	return typ
+}
+
+func jsonStructFields(typ reflect.Type) map[string]reflect.Type {
+	if typ == nil || typ.Kind() != reflect.Struct {
+		return nil
+	}
+	fields := make(map[string]reflect.Type)
+	for i := 0; i < typ.NumField(); i++ {
+		field := typ.Field(i)
+		if field.PkgPath != "" {
+			continue
+		}
+		name, _, _ := strings.Cut(field.Tag.Get("json"), ",")
+		if name == "-" {
+			continue
+		}
+		if name == "" {
+			name = field.Name
+		}
+		fields[name] = field.Type
+	}
+	return fields
+}
+
+func validateJSONObjectKey(decoder *json.Decoder, seen map[string]struct{}) (string, error) {
 	keyToken, err := decoder.Token()
 	if err != nil {
-		return err
+		return "", err
 	}
 	key, ok := keyToken.(string)
 	if !ok {
-		return errors.New("invalid performance report object key")
+		return "", errors.New("invalid performance report object key")
 	}
 	if _, exists := seen[key]; exists {
-		return fmt.Errorf("duplicate performance report key %q", key)
+		return "", fmt.Errorf("duplicate performance report key %q", key)
 	}
 	seen[key] = struct{}{}
-	return nil
+	return key, nil
 }
 
 func ensureReportEOF(decoder *json.Decoder) error {

@@ -452,6 +452,7 @@ method (*measurementDriver) Events() <-chan event.Event
 method (*measurementDriver) Open(context.Context, capability.Policy) (capability.Manifest, error)
 method (*measurementDriver) ReadSecret(context.Context, input.SecretPrompt) (secret.Handle, error)
 method (*measurementDriver) Restore(context.Context) error
+method (MetricDelta) MarshalJSON() ([]byte, error)
 type Attempt struct { P50 time.Duration `json:"p50"`; P95 time.Duration `json:"p95"`; P99 time.Duration `json:"p99"` }
 type Budget struct { Name string `json:"name"`; Limit time.Duration `json:"limit"` }
 type Comparison struct { SchemaVersion string `json:"schemaVersion"`; Policy string `json:"policy"`; BaselineRevision string `json:"baselineRevision,omitempty"`; CandidateRevision string `json:"candidateRevision,omitempty"`; Deltas []MetricDelta `json:"deltas"`; Passed bool `json:"passed"` }
