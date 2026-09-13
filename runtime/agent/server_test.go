@@ -14,10 +14,48 @@ import (
 
 	"github.com/ben-ranford/stave/action"
 	"github.com/ben-ranford/stave/capability"
+	"github.com/ben-ranford/stave/config"
 	"github.com/ben-ranford/stave/diag"
 	"github.com/ben-ranford/stave/protocol"
 	"github.com/ben-ranford/stave/semantic"
 )
+
+func TestOptionsFromConfigProjectsOnlyAgentLimits(t *testing.T) {
+	defaults, err := OptionsFromConfig(config.Defaults())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if defaults.MaxMessageBytes != 4<<20 || defaults.MaxTreeNodes != 100_000 {
+		t.Fatalf("default projection = %+v", defaults)
+	}
+
+	cfg := config.Defaults()
+	cfg.Protocol.MaxMessageBytes = 8192
+	cfg.Security.MaxTreeNodes = 42
+	cfg.Runtime.InputQueue = 7
+	projected, err := OptionsFromConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if projected.MaxMessageBytes != 8192 || projected.MaxTreeNodes != 42 {
+		t.Fatalf("projected limits = %+v", projected)
+	}
+	if projected.MaxOutputBytes != 0 || projected.Queue != 0 || projected.MaxInFlight != 0 {
+		t.Fatalf("adapter-only options were implicitly projected: %+v", projected)
+	}
+
+	projected.Queue = 3
+	projected.MaxTreeNodes = 17
+	server := New(projected)
+	if server.opt.Queue != 3 || server.limits.MaxTreeNodes != 17 || server.limits.MaxMessageBytes != 8192 {
+		t.Fatalf("explicit adapter overrides were not retained: %+v", server.opt)
+	}
+
+	cfg.Protocol.MaxMessageBytes = 0
+	if _, err := OptionsFromConfig(cfg); err == nil {
+		t.Fatal("invalid config was projected")
+	}
+}
 
 func input(value string) io.ReadCloser { return io.NopCloser(strings.NewReader(value)) }
 
