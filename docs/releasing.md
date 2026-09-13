@@ -24,7 +24,14 @@ merge commit.
 2. On the final `main` commit, wait for a fresh successful required-check run.
    Record its commit SHA and confirm it contains the intended candidate
    manifest, changelog, and release workflow.
-3. Derive the release tag from the manifest and tag that exact SHA. Do not move
+3. Obtain the authorized visibility transition and make the repository public
+   only after steps 1 and 2 have both passed. Do not tag a private repository:
+   the tag workflow's anonymous public-consumer probe cannot access a private
+   tag through the public GitHub API, Go proxy, or checksum database. Record
+   the visibility transition with the scheduler-boundary and source-CI proof.
+4. Run a controlled real public-fork pull request and prove it uses the hosted
+   untrusted path before approving general outside workflow runs.
+5. Derive the release tag from the manifest and tag that exact SHA. Do not move
    or recreate the tag after it is pushed:
 
    ```sh
@@ -40,7 +47,7 @@ merge commit.
    git push origin "${release_tag}"
    ```
 
-4. The tag triggers [the release workflow](../.github/workflows/release.yml).
+6. The tag triggers [the release workflow](../.github/workflows/release.yml).
    It validates the tag, runs `make ci` and `make release-contract`, then
    publishes a prerelease with `CHANGELOG.md`, `LICENSE`, and the performance
    evidence artifact. Its final `release / public consumer` job waits for public
@@ -48,21 +55,20 @@ merge commit.
    `sum.golang.org`, runs the quick-start consumer, and checks the three release
    asset SHA-256 digests. The job reports the annotated tag object SHA, peeled
    source commit SHA, canonical module version, module sum, and asset digests.
-   Build metadata remains part of the requested release tag while Go reports
-   its canonical module version without that metadata. It makes only anonymous
-   public reads and never changes tags, releases, or labels.
-5. Change repository visibility only after the scheduler-boundary proof in
-   step 1 passes. Then run a controlled real public-fork pull request and
-   prove it uses the hosted untrusted path before approving general outside
-   workflow runs.
-6. From a clean module outside this repository, resolve the public module at
+   Build metadata remains part of the requested release tag. Go can select a
+   canonical version without that metadata or a pseudo-version, depending on
+   the repository and tag state; the probe compares the selected module version
+   with the requested-tag resolution and retains the literal tag and source
+   provenance checks. It makes only anonymous public reads and never changes
+   tags, releases, or labels.
+7. From a clean module outside this repository, resolve the public module at
    the exact tag, for example:
 
    ```sh
    go list -m -json "github.com/ben-ranford/stave@${release_tag}"
    ```
 
-7. After the tag, prerelease, assets, and `release / public consumer` job are
+8. After the tag, prerelease, assets, and `release / public consumer` job are
    verified, replace `autorelease: pending` with `autorelease: tagged` on the original
    release-please pull request. `skip-github-release: true` delegates
    publication to the tag workflow, so release-please does not make that label

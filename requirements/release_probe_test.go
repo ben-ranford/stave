@@ -72,3 +72,31 @@ func TestPublishedReleaseProbeIsAnonymousAndWorkflowGated(t *testing.T) {
 		}
 	}
 }
+
+func TestReleaseRunbookMakesRepositoryPublicBeforeAnonymousProbe(t *testing.T) {
+	runbook, err := os.ReadFile(filepath.Join("..", "docs", "releasing.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	content := string(runbook)
+	position := func(fragment string) int {
+		t.Helper()
+		index := strings.Index(content, fragment)
+		if index < 0 {
+			t.Fatalf("release runbook must retain %q", fragment)
+		}
+		return index
+	}
+	schedulerProof := position("scheduler boundary")
+	sourceCI := position("fresh successful required-check run")
+	visibility := position("Obtain the authorized visibility transition")
+	tag := position("Derive the release tag")
+	probe := position("release / public consumer")
+	if schedulerProof >= sourceCI || sourceCI >= visibility || visibility >= tag || tag >= probe {
+		t.Fatal("release runbook must require scheduler proof, source CI, and authorized public visibility before tagging and the anonymous probe")
+	}
+	for _, fragment := range []string{"pseudo-version", "requested-tag resolution"} {
+		position(fragment)
+	}
+}
