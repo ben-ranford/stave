@@ -106,6 +106,8 @@ type Server struct {
 	negotiated                             any
 	limits                                 protocol.Limits
 	configErr                              error
+	closedContext                          context.Context
+	cancelClosed                           context.CancelFunc
 }
 
 type callSlot struct {
@@ -153,6 +155,7 @@ func New(opts Options) *Server {
 	if opts.Application.Version == "" {
 		opts.Application.Version = "development"
 	}
+	closedContext, cancelClosed := context.WithCancel(context.Background())
 	s := &Server{
 		opt:       opts,
 		calls:     map[string]callSlot{},
@@ -163,6 +166,8 @@ func New(opts Options) *Server {
 			MaxOutputBytes:  opts.MaxOutputBytes,
 			MaxTreeNodes:    opts.MaxTreeNodes,
 		},
+		closedContext: closedContext,
+		cancelClosed:  cancelClosed,
 	}
 	if opts.MaxOutputBytes < minimumOutputBytes {
 		s.configErr = fmt.Errorf("%w: max output bytes must be at least %d", ErrOutputLimit, minimumOutputBytes)
@@ -186,6 +191,12 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	subscriptionContext, cancelSubscriptions := context.WithCancel(ctx)
+	stopClosedSubscriptionCancellation := context.AfterFunc(s.closedContext, cancelSubscriptions)
+	defer func() {
+		stopClosedSubscriptionCancellation()
+		cancelSubscriptions()
+	}()
 	sc := bufio.NewScanner(in)
 	sc.Buffer(make([]byte, 4096), s.opt.MaxMessageBytes+1)
 	type outbound struct {
@@ -237,6 +248,13 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 		for {
 			select {
 			case <-subscriptionWake:
+				s.mu.Lock()
+				closed := s.closed
+				s.mu.Unlock()
+				if closed {
+					closeSubscription()
+					continue
+				}
 				subscriptionMu.Lock()
 				current := subscription
 				subscriptionMu.Unlock()
@@ -443,7 +461,7 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 			}
 			if response.Error == nil && baseline != nil {
 				subscriptionMu.Lock()
-				current := newSnapshotSubscription(ctx, *baseline, subscriptionWake, s.opt.SnapshotPublicationWaiter, func(waitCtx context.Context) (protocol.SnapshotResult, bool) {
+				current := newSnapshotSubscription(subscriptionContext, *baseline, subscriptionWake, s.opt.SnapshotPublicationWaiter, func(waitCtx context.Context) (protocol.SnapshotResult, bool) {
 					result, err := s.subscriptionSnapshot(waitCtx)
 					return result, err == nil
 				})
@@ -483,7 +501,7 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 		}
 		if control(r.Method) {
 			resp := s.handleSafely(ctx, r)
-			if r.Method == sessionCancelMethod && resp.Error == nil {
+			if (r.Method == sessionCancelMethod || r.Method == "stave.session.shutdown") && resp.Error == nil {
 				closeSubscription()
 			}
 			if len(r.ID) > 0 {
@@ -1308,6 +1326,7 @@ func (s *Server) Close() {
 		return
 	}
 	s.closed = true
+	s.cancelClosed()
 	for _, c := range s.calls {
 		c.cancel()
 	}

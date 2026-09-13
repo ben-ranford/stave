@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -675,6 +676,236 @@ func TestSnapshotSubscriptionServerCloseDuringBaselineWriteStopsPump(t *testing.
 	if err := <-done; err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestSnapshotSubscriptionShutdownAcknowledgementIsTerminal(t *testing.T) {
+	base := lifecycleEnvelope(t, 1, 1)
+	update := lifecycleEnvelope(t, 2, 1)
+	publication := make(chan struct{})
+	started, pending, stopped := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	var sequence atomic.Uint64
+	sequence.Store(1)
+	options := Options{
+		Negotiate: subscriptionNegotiator,
+		SubscriptionSnapshotEnvelope: func(context.Context, string, uint64) (SnapshotEnvelope, error) {
+			if sequence.Load() == 2 {
+				return update, nil
+			}
+			return base, nil
+		},
+		SnapshotPublicationWaiter: func(ctx context.Context, after uint64) error {
+			switch after {
+			case 1:
+				close(started)
+				select {
+				case <-publication:
+					return nil
+				case <-ctx.Done():
+					close(stopped)
+					return ctx.Err()
+				}
+			case 2:
+				close(pending)
+				<-ctx.Done()
+				close(stopped)
+				return ctx.Err()
+			default:
+				return errors.New("unexpected subscription sequence")
+			}
+		},
+	}
+	server := New(options)
+	reader, input := io.Pipe()
+	writer := &shutdownAckWriter{progressBlocked: make(chan struct{}), releaseProgress: make(chan struct{}), lines: make(chan []byte, 16)}
+	done := make(chan error, 1)
+	go func() { done <- server.Serve(context.Background(), reader, writer) }()
+	serveJoined := false
+	defer func() {
+		writer.release()
+		server.Close()
+		_ = input.Close()
+		if serveJoined {
+			return
+		}
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Errorf("Serve cleanup error = %v", err)
+			}
+		case <-time.After(time.Second):
+			t.Error("Serve cleanup did not finish")
+		}
+	}()
+	writeSubscriptionHandshake(t, input)
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("subscription waiter did not start")
+	}
+	if err := server.Notify(protocol.Notification{JSONRPC: protocol.JSONRPC, Method: "stave.progress"}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-writer.progressBlocked:
+	case <-time.After(time.Second):
+		t.Fatal("progress notification did not block the writer")
+	}
+	sequence.Store(2)
+	close(publication)
+	select {
+	case <-pending:
+	case <-time.After(time.Second):
+		t.Fatal("subscription update was not pending")
+	}
+	if _, err := io.WriteString(input, `{"jsonrpc":"2.0","id":4,"method":"stave.session.shutdown"}`+"\n"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-stopped:
+	case <-time.After(time.Second):
+		t.Fatal("shutdown did not stop the subscription before its acknowledgement")
+	}
+	writer.release()
+	writer.response(t, 4)
+	if output := writer.String(); strings.Contains(output, `"method":"stave.snapshot.subscription"`) {
+		t.Fatalf("subscription notification followed shutdown acknowledgement: %s", output)
+	}
+	_ = input.Close()
+	select {
+	case err := <-done:
+		serveJoined = true
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Serve did not finish")
+	}
+}
+
+func TestSnapshotSubscriptionServerCloseStopsBlockedWriterSubscription(t *testing.T) {
+	started, stopped := make(chan struct{}), make(chan struct{})
+	options := Options{
+		Negotiate: subscriptionNegotiator,
+		SubscriptionSnapshotEnvelope: func(context.Context, string, uint64) (SnapshotEnvelope, error) {
+			return lifecycleEnvelope(t, 1, 1), nil
+		},
+		SnapshotPublicationWaiter: func(ctx context.Context, _ uint64) error {
+			close(started)
+			<-ctx.Done()
+			close(stopped)
+			return ctx.Err()
+		},
+	}
+	server := New(options)
+	reader, input := io.Pipe()
+	writer := &shutdownAckWriter{progressBlocked: make(chan struct{}), releaseProgress: make(chan struct{}), lines: make(chan []byte, 16)}
+	done := make(chan error, 1)
+	go func() { done <- server.Serve(context.Background(), reader, writer) }()
+	serveJoined := false
+	defer func() {
+		writer.release()
+		server.Close()
+		_ = input.Close()
+		if serveJoined {
+			return
+		}
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Errorf("Serve cleanup error = %v", err)
+			}
+		case <-time.After(time.Second):
+			t.Error("Serve cleanup did not finish")
+		}
+	}()
+	writeSubscriptionHandshake(t, input)
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("subscription waiter did not start")
+	}
+	if err := server.Notify(protocol.Notification{JSONRPC: protocol.JSONRPC, Method: "stave.progress"}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-writer.progressBlocked:
+	case <-time.After(time.Second):
+		t.Fatal("progress notification did not block the writer")
+	}
+	server.Close()
+	select {
+	case <-stopped:
+	case <-time.After(time.Second):
+		t.Fatal("Server.Close did not stop subscription while writer was blocked")
+	}
+	writer.release()
+	_ = input.Close()
+	select {
+	case err := <-done:
+		serveJoined = true
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Serve did not finish")
+	}
+}
+
+type shutdownAckWriter struct {
+	mu sync.Mutex
+	bytes.Buffer
+	progressBlocked, releaseProgress chan struct{}
+	lines                            chan []byte
+	once                             sync.Once
+	releaseOnce                      sync.Once
+}
+
+func (w *shutdownAckWriter) release() {
+	w.releaseOnce.Do(func() { close(w.releaseProgress) })
+}
+
+func (w *shutdownAckWriter) Write(p []byte) (int, error) {
+	if bytes.Contains(p, []byte(`"method":"stave.progress"`)) {
+		w.once.Do(func() { close(w.progressBlocked) })
+		<-w.releaseProgress
+	}
+	copy := append([]byte(nil), p...)
+	w.mu.Lock()
+	n, err := w.Buffer.Write(copy)
+	w.mu.Unlock()
+	if err != nil {
+		return n, err
+	}
+	w.lines <- copy
+	return n, nil
+}
+
+func (w *shutdownAckWriter) response(t *testing.T, id int) {
+	t.Helper()
+	deadline := time.After(time.Second)
+	for {
+		select {
+		case line := <-w.lines:
+			var response struct {
+				ID    int
+				Error *protocol.Error
+			}
+			if err := json.Unmarshal(line, &response); err == nil && response.ID == id {
+				if response.Error != nil {
+					t.Fatalf("shutdown response = %s", line)
+				}
+				return
+			}
+		case <-deadline:
+			t.Fatal("shutdown acknowledgement was not written")
+		}
+	}
+}
+
+func (w *shutdownAckWriter) String() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.Buffer.String()
 }
 
 func lifecycleEnvelope(t *testing.T, revision uint64, nameSize int) SnapshotEnvelope {
