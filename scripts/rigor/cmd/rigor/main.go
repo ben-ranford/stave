@@ -345,7 +345,7 @@ func publicAPIEntriesForFiles(fset *token.FileSet, importPath string, files []*a
 				return nil, err
 			}
 			entries = append(entries, current...)
-			collector := aliasHiddenTypeCollector{fset: fset, typeInfo: &typeInfo, qualifier: qualifier, hiddenTypes: hiddenTypes, seen: seenHiddenTypes}
+			collector := hiddenTypeCollector{fset: fset, typeInfo: &typeInfo, qualifier: qualifier, hiddenTypes: hiddenTypes, seen: seenHiddenTypes, seenTypes: make(map[types.Type]struct{})}
 			collector.collect(declaration)
 			entries = append(entries, collector.entries...)
 		}
@@ -382,28 +382,77 @@ func typeDeclarationSpecs(declaration ast.Decl) []*ast.TypeSpec {
 	return specs
 }
 
-// aliasHiddenTypeCollector records only local hidden definitions that
-// are reachable through an exported alias. The alias remains nominal in the
-// inventory, while its otherwise omitted definition makes consumer-visible
-// field and identity changes observable to the release baseline.
-type aliasHiddenTypeCollector struct {
+// hiddenTypeCollector records local hidden definitions reachable from public
+// declarations. Their otherwise omitted definitions make consumer-visible
+// field, signature, and identity changes observable to the release baseline.
+type hiddenTypeCollector struct {
 	fset        *token.FileSet
 	typeInfo    *types.Info
 	qualifier   types.Qualifier
 	hiddenTypes map[types.Object]*ast.TypeSpec
 	seen        map[types.Object]struct{}
+	seenTypes   map[types.Type]struct{}
 	entries     []string
 }
 
-func (collector *aliasHiddenTypeCollector) collect(declaration ast.Decl) {
-	for _, spec := range typeDeclarationSpecs(declaration) {
-		if ast.IsExported(spec.Name.Name) && spec.Assign.IsValid() {
-			collector.visitExpression(spec.Type)
+func (collector *hiddenTypeCollector) collect(declaration ast.Decl) {
+	switch declaration := declaration.(type) {
+	case *ast.GenDecl:
+		switch declaration.Tok {
+		case token.TYPE:
+			for _, spec := range typeDeclarationSpecs(declaration) {
+				if ast.IsExported(spec.Name.Name) {
+					collector.visitTypeSpec(spec)
+				}
+			}
+		case token.CONST, token.VAR:
+			for _, declaration := range declaration.Specs {
+				valueSpec, ok := declaration.(*ast.ValueSpec)
+				if !ok {
+					continue
+				}
+				for _, name := range valueSpec.Names {
+					if ast.IsExported(name.Name) {
+						collector.visitTypeOf(name)
+					}
+				}
+			}
+		}
+	case *ast.FuncDecl:
+		if declaration.Name == nil || !ast.IsExported(declaration.Name.Name) {
+			return
+		}
+		collector.visitExpression(declaration.Type)
+		if declaration.Recv != nil {
+			collector.visitExpression(declaration.Recv)
 		}
 	}
 }
 
-func (collector *aliasHiddenTypeCollector) visitExpression(expression ast.Expr) {
+func (collector *hiddenTypeCollector) visitTypeSpec(spec *ast.TypeSpec) {
+	if spec.TypeParams != nil {
+		collector.visitExpression(spec.TypeParams)
+	}
+	switch typ := spec.Type.(type) {
+	case *ast.StructType:
+		if typ.Fields == nil {
+			return
+		}
+		for _, field := range typ.Fields.List {
+			if len(field.Names) == 0 || len(exportedFieldNames(field.Names)) > 0 {
+				collector.visitExpression(field.Type)
+			}
+		}
+	case *ast.InterfaceType:
+		if typ.Methods != nil {
+			collector.visitExpression(typ.Methods)
+		}
+	default:
+		collector.visitExpression(spec.Type)
+	}
+}
+
+func (collector *hiddenTypeCollector) visitExpression(expression ast.Node) {
 	ast.Inspect(expression, func(node ast.Node) bool {
 		identifier, ok := node.(*ast.Ident)
 		if !ok {
@@ -422,7 +471,90 @@ func (collector *aliasHiddenTypeCollector) visitExpression(expression ast.Expr) 
 	})
 }
 
-func (collector *aliasHiddenTypeCollector) visitSpec(spec *ast.TypeSpec) {
+func (collector *hiddenTypeCollector) visitTypeOf(identifier *ast.Ident) {
+	if object := collector.typeInfo.Defs[identifier]; object != nil {
+		collector.visitType(object.Type())
+	}
+}
+
+func (collector *hiddenTypeCollector) visitType(typ types.Type) {
+	if typ == nil {
+		return
+	}
+	if _, exists := collector.seenTypes[typ]; exists {
+		return
+	}
+	collector.seenTypes[typ] = struct{}{}
+	if alias, ok := typ.(interface{ Rhs() types.Type }); ok {
+		collector.visitType(alias.Rhs())
+		return
+	}
+	switch typ := typ.(type) {
+	case *types.Named:
+		if spec, exists := collector.hiddenTypes[typ.Obj()]; exists && !ast.IsExported(spec.Name.Name) {
+			collector.visitSpec(spec)
+		}
+		for index := 0; index < typ.TypeArgs().Len(); index++ {
+			collector.visitType(typ.TypeArgs().At(index))
+		}
+	case *types.Pointer:
+		collector.visitType(typ.Elem())
+	case *types.Slice:
+		collector.visitType(typ.Elem())
+	case *types.Array:
+		collector.visitType(typ.Elem())
+	case *types.Map:
+		collector.visitType(typ.Key())
+		collector.visitType(typ.Elem())
+	case *types.Chan:
+		collector.visitType(typ.Elem())
+	case *types.Signature:
+		collector.visitTuple(typ.Params())
+		collector.visitTuple(typ.Results())
+		collector.visitTypeParameters(typ.TypeParams())
+	case *types.Struct:
+		for index := 0; index < typ.NumFields(); index++ {
+			field := typ.Field(index)
+			if field.Embedded() || field.Exported() {
+				collector.visitType(field.Type())
+			}
+		}
+	case *types.Interface:
+		typ.Complete()
+		for index := 0; index < typ.NumEmbeddeds(); index++ {
+			collector.visitType(typ.EmbeddedType(index))
+		}
+		for index := 0; index < typ.NumExplicitMethods(); index++ {
+			collector.visitType(typ.ExplicitMethod(index).Type())
+		}
+	case *types.TypeParam:
+		collector.visitType(typ.Constraint())
+	case *types.Union:
+		for index := 0; index < typ.Len(); index++ {
+			collector.visitType(typ.Term(index).Type())
+		}
+	}
+}
+
+func (collector *hiddenTypeCollector) visitTuple(tuple *types.Tuple) {
+	if tuple == nil {
+		return
+	}
+	for index := 0; index < tuple.Len(); index++ {
+		collector.visitType(tuple.At(index).Type())
+	}
+}
+
+func (collector *hiddenTypeCollector) visitTypeParameters(parameters *types.TypeParamList) {
+	if parameters == nil {
+		return
+	}
+	for index := 0; index < parameters.Len(); index++ {
+		collector.visitType(parameters.At(index).Constraint())
+	}
+}
+
+func (collector *hiddenTypeCollector) visitSpec(spec *ast.TypeSpec) {
 	object := collector.typeInfo.Defs[spec.Name]
 	if object == nil {
 		return
@@ -431,8 +563,8 @@ func (collector *aliasHiddenTypeCollector) visitSpec(spec *ast.TypeSpec) {
 		return
 	}
 	collector.seen[object] = struct{}{}
-	collector.entries = append(collector.entries, typeDeclaration(collector.fset, spec, collector.typeInfo, collector.qualifier))
-	collector.visitExpression(spec.Type)
+	collector.entries = append(collector.entries, typeDeclarationEntries(collector.fset, spec, collector.typeInfo, collector.qualifier)...)
+	collector.visitTypeSpec(spec)
 }
 
 func publicAPIEntriesForDeclaration(fset *token.FileSet, declaration ast.Decl, typeInfo *types.Info, qualifier types.Qualifier) ([]string, error) {
@@ -487,7 +619,7 @@ func publicAPITypeDeclarationEntries(fset *token.FileSet, declaration *ast.GenDe
 	for _, spec := range declaration.Specs {
 		typeSpec, ok := spec.(*ast.TypeSpec)
 		if ok && ast.IsExported(typeSpec.Name.Name) {
-			entries = append(entries, typeDeclaration(fset, typeSpec, typeInfo, qualifier))
+			entries = append(entries, typeDeclarationEntries(fset, typeSpec, typeInfo, qualifier)...)
 		}
 	}
 	return entries
@@ -1238,6 +1370,25 @@ func typeDeclaration(fset *token.FileSet, spec *ast.TypeSpec, typeInfo *types.In
 		out.WriteString(canonicalExpressionType(fset, spec.Type, typeInfo, qualifier))
 	}
 	return out.String()
+}
+
+func typeDeclarationEntries(fset *token.FileSet, spec *ast.TypeSpec, typeInfo *types.Info, qualifier types.Qualifier) []string {
+	entries := []string{typeDeclaration(fset, spec, typeInfo, qualifier)}
+	if comparable, ok := structComparability(spec, typeInfo); ok {
+		entries = append(entries, fmt.Sprintf("struct-comparable %s %t", spec.Name.Name, comparable))
+	}
+	return entries
+}
+
+func structComparability(spec *ast.TypeSpec, typeInfo *types.Info) (bool, bool) {
+	object := typeInfo.Defs[spec.Name]
+	if object == nil || object.Type() == nil {
+		return false, false
+	}
+	if _, ok := object.Type().Underlying().(*types.Struct); !ok {
+		return false, false
+	}
+	return types.Comparable(object.Type()), true
 }
 
 func publicStructFields(fset *token.FileSet, fields *ast.FieldList, typeInfo *types.Info, qualifier types.Qualifier) []string {

@@ -130,6 +130,91 @@ type Public = hiddenTwo
 	}
 }
 
+func TestPublicAPIInventoryIncludesHiddenTypesReachableFromPublicDeclarations(t *testing.T) {
+	for name, source := range map[string][2]string{
+		"field": {
+			"type hidden string\ntype Public struct { Value hidden }",
+			"type hidden int\ntype Public struct { Value hidden }",
+		},
+		"function": {
+			"type hidden string\nfunc Convert(value hidden) hidden { return value }",
+			"type hidden int\nfunc Convert(value hidden) hidden { return value }",
+		},
+		"inferred variable": {
+			"type hidden string\nvar Default = hidden(\"default\")",
+			"type hidden int\nvar Default = hidden(1)",
+		},
+		"typed variable": {
+			"type hidden string\nvar Default hidden",
+			"type hidden int\nvar Default hidden",
+		},
+		"named type": {
+			"type hidden struct { Value string }\ntype Public hidden",
+			"type hidden struct { Value int }\ntype Public hidden",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "api.go")
+			render := func(declarations string) string {
+				t.Helper()
+				if err := os.WriteFile(path, []byte("package api\n"+declarations+"\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				inventory, err := renderPublicAPI("example.com/api", []goListPackage{{ImportPath: "example.com/api", Dir: dir, GoFiles: []string{"api.go"}}})
+				if err != nil {
+					t.Fatal(err)
+				}
+				return inventory
+			}
+			before := render(source[0])
+			after := render(source[1])
+			if before == after || !strings.Contains(before, "type hidden") || !strings.Contains(after, "type hidden") {
+				t.Fatalf("reachable hidden type change did not alter inventory:\n%s\n%s", before, after)
+			}
+		})
+	}
+}
+
+func TestPublicAPIInventoryRecordsStructComparabilityWithoutPrivateFields(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "api.go")
+	render := func(source string) string {
+		t.Helper()
+		if err := os.WriteFile(path, []byte(source), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		inventory, err := renderPublicAPI("example.com/api", []goListPackage{{ImportPath: "example.com/api", Dir: dir, GoFiles: []string{"api.go"}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return inventory
+	}
+
+	before := render(`package api
+type keyBody struct { ID int; private int }
+type Key keyBody
+type Labels struct { Values []string }
+`)
+	for _, want := range []string{"struct-comparable Key true", "struct-comparable Labels false"} {
+		if !strings.Contains(before, want) {
+			t.Fatalf("comparability marker missing %q:\n%s", want, before)
+		}
+	}
+	if strings.Contains(before, "private") {
+		t.Fatalf("private field leaked into inventory:\n%s", before)
+	}
+
+	after := render(`package api
+type keyBody struct { ID int; private []int }
+type Key keyBody
+type Labels struct { Values []string }
+`)
+	if before == after || !strings.Contains(after, "struct-comparable Key false") {
+		t.Fatalf("private-field comparability change did not alter inventory:\n%s\n%s", before, after)
+	}
+}
+
 func TestPublicAPIInventoryNormalizesParameterNamesAndInterfaceOrder(t *testing.T) {
 	dir := t.TempDir()
 	render := func(source string) string {

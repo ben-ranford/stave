@@ -11,6 +11,11 @@ method (ViewContext) Deadline() (time.Time, bool)
 method (ViewContext) Done() <-chan struct{}
 method (ViewContext) Err() error
 method (ViewContext) Value(any) any
+struct-comparable Prepared false
+struct-comparable Program false
+struct-comparable ReduceContext true
+struct-comparable SessionOptions false
+struct-comparable ViewContext false
 type Prepared[M any] struct { Session *github.com/ben-ranford/stave/session.Session[M]; Actions *github.com/ben-ranford/stave/action.Registry; Capabilities github.com/ben-ranford/stave/capability.Manifest; Theme github.com/ben-ranford/stave/theme.Resolved; Config github.com/ben-ranford/stave/config.Config }
 type Program[M any] struct { Initial M; Reduce Reducer[M]; View View[M]; Actions *github.com/ben-ranford/stave/action.Registry; Theme github.com/ben-ranford/stave/theme.Theme; Config github.com/ben-ranford/stave/config.Config; Capabilities github.com/ben-ranford/stave/capability.Policy; Effects github.com/ben-ranford/stave/effect.Options; Observer github.com/ben-ranford/stave/observer.Observer; ModelPolicy github.com/ben-ranford/stave/state.ModelPolicy[M] }
 type ReduceContext struct { Context context.Context; SessionID string; Sequence uint64; Revision uint64 }
@@ -58,6 +63,14 @@ method (*Registry) Register(Definition, Handler) error
 method (Definition) EffectiveIdempotency() Idempotency
 method (Definition) Validate() error
 method (Schema) Validate(encoding/json.RawMessage) (any, error)
+struct-comparable Call false
+struct-comparable Confirmation true
+struct-comparable ConfirmationPolicy true
+struct-comparable Definition false
+struct-comparable Error false
+struct-comparable Registry false
+struct-comparable Result false
+struct-comparable Schema false
 type Call struct { CallID string; ActionID ID; Target github.com/ben-ranford/stave/semantic.Target; Arguments encoding/json.RawMessage; Confirmation *Confirmation; Deadline time.Time; PolicyID string; PolicyEpoch uint64; SessionID string }
 type Code string
 type Confirmation struct { Token string `json:"token"`; SessionID string `json:"sessionId"`; ActionID ID `json:"actionId"`; Target github.com/ben-ranford/stave/semantic.Target `json:"target"`; ArgHash string `json:"argHash"`; ExpiresAt time.Time `json:"expiresAt"`; Used bool `json:"used"`; ActionVersion string `json:"actionVersion"`; RevisionMin uint64 `json:"revisionMin"`; RevisionMax uint64 `json:"revisionMax"`; Safety Safety `json:"safety"`; PolicyID string `json:"policyId"`; PolicyEpoch uint64 `json:"policyEpoch"` }
@@ -123,6 +136,14 @@ method (Negotiation) Resolve() (Manifest, []Diagnostic)
 method (UnicodeLevel) MarshalJSON() ([]byte, error)
 method (UnicodeLevel) String() string
 method (UnicodeLevel) Valid() bool
+struct-comparable Diagnostic true
+struct-comparable Limits true
+struct-comparable Manifest false
+struct-comparable Negotiation false
+struct-comparable Overrides true
+struct-comparable Policy true
+struct-comparable Probe false
+struct-comparable SecurityPolicy true
 type ColorLevel int
 type ColorPolicy string
 type Diagnostic struct { Code string; Field string; Message string }
@@ -156,6 +177,19 @@ func Parse([]byte) (Config, error)
 func ParseLayer([]byte) (Layer, error)
 func Validate(Config) error
 method (ValidationError) Error() string
+struct-comparable App true
+struct-comparable Capabilities true
+struct-comparable Config false
+struct-comparable Diagnostics true
+struct-comparable Keymap false
+struct-comparable Layer true
+struct-comparable Problem true
+struct-comparable Protocol true
+struct-comparable Runtime true
+struct-comparable Security true
+struct-comparable Theme true
+struct-comparable ValidationError false
+struct-comparable Viewport true
 type App struct { ID string `json:"id,omitempty"`; Version string `json:"version,omitempty"` }
 type Capabilities struct { Color string `json:"color,omitempty"`; Unicode string `json:"unicode,omitempty"`; Motion string `json:"motion,omitempty"`; Mouse string `json:"mouse,omitempty"`; AlternateScreen string `json:"alternateScreen,omitempty"` }
 type Config struct { SchemaVersion string `json:"schemaVersion"`; App App `json:"app"`; Theme Theme `json:"theme"`; Viewport Viewport `json:"viewport"`; Capabilities Capabilities `json:"capabilities"`; Keymap Keymap `json:"keymap"`; Runtime Runtime `json:"runtime"`; Protocol Protocol `json:"protocol"`; Security Security `json:"security"`; Diagnostics Diagnostics `json:"diagnostics"` }
@@ -176,6 +210,11 @@ func CheckClient(Client, []ClientFixture) ClientReport
 func ValidateTree(github.com/ben-ranford/stave/semantic.Node) []Failure
 func ValidateTreeWithManifest(github.com/ben-ranford/stave/semantic.Node, ActionManifest) []Failure
 method (Failure) Error() string
+struct-comparable ClientFixture false
+struct-comparable ClientReport false
+struct-comparable Failure true
+struct-comparable Mode true
+struct-comparable Report false
 type ActionManifest map[github.com/ben-ranford/stave/semantic.ActionID]string
 type Adapter interface { Name() string; Render(github.com/ben-ranford/stave/semantic.Node, Mode) (string, error) }
 type Client interface { ActionRegistry() *github.com/ben-ranford/stave/action.Registry; Adapter; Keymap() github.com/ben-ranford/stave/keymap.Map }
@@ -190,6 +229,7 @@ const ErrorSeverity Severity = "error"
 const Info Severity = "info"
 const Warning Severity = "warning"
 method (Diagnostic) MarshalJSON() ([]byte, error)
+struct-comparable Diagnostic false
 type Diagnostic struct { SchemaVersion string `json:"schemaVersion"`; ID string `json:"id"`; Sequence uint64 `json:"sequence,omitempty"`; Revision uint64 `json:"revision,omitempty"`; Time time.Time `json:"time,omitempty"`; Severity Severity `json:"severity"`; Category string `json:"category,omitempty"`; Code string `json:"code,omitempty"`; Message string `json:"message,omitempty"`; NodeID github.com/ben-ranford/stave/semantic.NodeID `json:"nodeId,omitempty"`; Attributes map[string]string `json:"attributes,omitempty"`; Retryable bool `json:"retryable,omitempty"`; Redacted bool `json:"redacted,omitempty"` }
 type Severity string
 
@@ -211,6 +251,12 @@ method (Outcome) Event() github.com/ben-ranford/stave/event.Event
 method (PortFunc) Run(context.Context, Call) (any, error)
 method (Request) Validate() error
 method (Spec) Validate() error
+struct-comparable Call true
+struct-comparable Executor false
+struct-comparable Options false
+struct-comparable Outcome true
+struct-comparable Request true
+struct-comparable Spec true
 type Call struct { ID string `json:"id"`; Sequence uint64 `json:"sequence"`; Revision uint64 `json:"revision"`; Ordinal uint32 `json:"ordinal"`; Spec Spec `json:"spec"`; Input any `json:"input,omitempty"` }
 type Delivery string
 type Executor struct {  }
@@ -255,6 +301,19 @@ method (Event) HashString() (string, error)
 method (Event) MarshalJSON() ([]byte, error)
 method (Event) Validate() error
 method (Event) WithAccepted(uint64, uint64) Event
+struct-comparable ActionInvokedPayload true
+struct-comparable DiagnosticPayload false
+struct-comparable EffectResultPayload true
+struct-comparable Event true
+struct-comparable KeyPayload false
+struct-comparable LogicalTime true
+struct-comparable Metadata true
+struct-comparable PointerPayload false
+struct-comparable Redaction true
+struct-comparable ResizePayload true
+struct-comparable SecureInputPayload true
+struct-comparable Target true
+struct-comparable TextPayload true
 type ActionInvokedPayload struct { CallID string `json:"callId"`; ActionID string `json:"actionId"`; Target *Target `json:"target,omitempty"`; Arguments any `json:"arguments,omitempty"`; Sensitive bool `json:"sensitive,omitempty"` }
 type DiagnosticPayload struct { Code string `json:"code"`; Message string `json:"message"`; SafeContext map[string]string `json:"safeContext,omitempty"` }
 type EffectResultPayload struct { CallID string `json:"callId"`; Ordinal uint32 `json:"ordinal"`; Lane string `json:"lane,omitempty"`; Status string `json:"status"`; Value any `json:"value,omitempty"`; Error string `json:"error,omitempty"`; Sensitive bool `json:"sensitive,omitempty"` }
@@ -286,6 +345,9 @@ method (Graph) RepairFrom(Graph, State) State
 method (Graph) Revision() uint64
 method (Graph) Root() github.com/ben-ranford/stave/semantic.NodeID
 method (Graph) Validate(State) error
+struct-comparable FocusState false
+struct-comparable Graph false
+struct-comparable State false
 type FocusState = State
 type Graph struct {  }
 type State struct { Active github.com/ben-ranford/stave/semantic.Target; Scope github.com/ben-ranford/stave/semantic.NodeID; Stack []github.com/ben-ranford/stave/semantic.Target }
@@ -326,6 +388,15 @@ func SecretInputEvent(SecretHandle) github.com/ben-ranford/stave/event.Event
 func SignalEvent(string) github.com/ben-ranford/stave/event.Event
 func TextEvent(Text) github.com/ben-ranford/stave/event.Event
 method (KeyChord) Normalize() KeyChord
+struct-comparable Diagnostic false
+struct-comparable EOF true
+struct-comparable KeyChord true
+struct-comparable MemorySecretStore false
+struct-comparable Resize true
+struct-comparable SecretHandle true
+struct-comparable SecretPrompt true
+struct-comparable Signal true
+struct-comparable Text true
 type Diagnostic struct { Code string `json:"code"`; Message string `json:"message"`; Fields map[string]string `json:"fields,omitempty"` }
 type EOF struct {  }
 type KeyChord struct { Code KeyCode `json:"code"`; Rune rune `json:"rune,omitempty"`; Mods Mod `json:"mods,omitempty"` }
@@ -369,6 +440,13 @@ method (Map) Bindings() []Mapping
 method (Map) Hints(CommandID) []string
 method (Map) Inventory() []BindingInventory
 method (Map) Profile() string
+struct-comparable Binding false
+struct-comparable BindingInventory false
+struct-comparable Dispatcher false
+struct-comparable Map false
+struct-comparable Mapping false
+struct-comparable Resolution false
+struct-comparable Route false
 type Binding struct { Sequence []github.com/ben-ranford/stave/input.KeyChord `json:"sequence"`; Command CommandID `json:"command"`; Scope github.com/ben-ranford/stave/semantic.NodeID `json:"scope,omitempty"`; Priority int `json:"priority,omitempty"` }
 type BindingInventory struct { Command CommandID; Sequence []github.com/ben-ranford/stave/input.KeyChord; Scope github.com/ben-ranford/stave/semantic.NodeID; Priority int; Hint string; RouteKind RouteKind; ActionID github.com/ben-ranford/stave/action.ID; EventKind github.com/ben-ranford/stave/event.Kind }
 type CommandID string
@@ -387,6 +465,15 @@ func MeasureText(string) int
 method (Box) GenerationCmp(Box) int
 method (DefaultEngine) Arrange(context.Context, github.com/ben-ranford/stave/semantic.Node, Rect) (Plan, error)
 method (DefaultEngine) Measure(context.Context, github.com/ben-ranford/stave/semantic.Node, Constraints) (Measurement, error)
+struct-comparable Box true
+struct-comparable Budgets true
+struct-comparable Constraints true
+struct-comparable DefaultEngine true
+struct-comparable Measurement true
+struct-comparable Options true
+struct-comparable Plan false
+struct-comparable Rect true
+struct-comparable Size true
 type Box struct { NodeID github.com/ben-ranford/stave/semantic.NodeID; Generation uint32; Rect Rect; Clip Rect; Z int }
 type Budgets struct { MaxNodes int; MaxDepth int; MaxWork int }
 type Constraints struct { MinWidth, MaxWidth int; MinHeight, MaxHeight int }
@@ -401,6 +488,8 @@ type Size struct { Width, Height int }
 [github.com/ben-ranford/stave/observer]
 method (Func) Observe(context.Context, Event)
 method (Nop) Observe(context.Context, Event)
+struct-comparable Event false
+struct-comparable Nop true
 type Event struct { Name string `json:"name"`; Time time.Time `json:"time"`; Attributes map[string]string `json:"attributes,omitempty"`; Redacted bool `json:"redacted,omitempty"` }
 type Func func(context.Context, Event)
 type Nop struct {  }
@@ -425,12 +514,20 @@ method (*measurementDriver) Events() <-chan github.com/ben-ranford/stave/event.E
 method (*measurementDriver) Open(context.Context, github.com/ben-ranford/stave/capability.Policy) (github.com/ben-ranford/stave/capability.Manifest, error)
 method (*measurementDriver) ReadSecret(context.Context, github.com/ben-ranford/stave/input.SecretPrompt) (github.com/ben-ranford/stave/secret.Handle, error)
 method (*measurementDriver) Restore(context.Context) error
+struct-comparable Attempt true
+struct-comparable Budget true
+struct-comparable Measurement false
+struct-comparable RatioMeasurement false
+struct-comparable Report false
+struct-comparable Reproducibility false
+struct-comparable measurementDriver false
 type Attempt struct { P50 time.Duration `json:"p50"`; P95 time.Duration `json:"p95"`; P99 time.Duration `json:"p99"` }
 type Budget struct { Name string `json:"name"`; Limit time.Duration `json:"limit"` }
 type Measurement struct { Name string `json:"name"`; Samples int `json:"samples"`; P50 time.Duration `json:"p50"`; P95 time.Duration `json:"p95"`; P99 time.Duration `json:"p99"`; AllWithinBudget bool `json:"allWithinBudget"`; Limit time.Duration `json:"limit"`; Disposition string `json:"disposition,omitempty"`; Attempts []Attempt `json:"attempts,omitempty"` }
 type RatioMeasurement struct { Name string `json:"name"`; Window time.Duration `json:"window"`; Value float64 `json:"value"`; Limit float64 `json:"limit"`; AllWithinBudget bool `json:"allWithinBudget"`; Disposition string `json:"disposition,omitempty"`; Attempts []float64 `json:"attempts,omitempty"` }
 type Report struct { GeneratedAt time.Time `json:"generatedAt"`; Host string `json:"host"`; GoVersion string `json:"goVersion"`; GOOS string `json:"goos"`; GOARCH string `json:"goarch"`; CPUs int `json:"cpus"`; Nodes int `json:"nodes"`; NodeShape string `json:"nodeDistribution"`; Renderer string `json:"renderer"`; Viewport github.com/ben-ranford/stave/layout.Size `json:"viewport"`; Capabilities github.com/ben-ranford/stave/capability.Manifest `json:"capabilities"`; Reproducibility Reproducibility `json:"reproducibility"`; AllocBytes uint64 `json:"allocBytes"`; AllocLimit uint64 `json:"allocLimitBytes"`; AllocWithin bool `json:"allocWithinBudget"`; IdleCPU RatioMeasurement `json:"idleCpu"`; Measurements []Measurement `json:"measurements"`; Invariants []string `json:"invariants"` }
 type Reproducibility struct { Invocation []string `json:"invocation"`; SampleCount int `json:"sampleCount"`; Strict bool `json:"strict"`; GOMAXPROCS int `json:"gomaxprocs"`; VCSRevision string `json:"vcsRevision,omitempty"`; VCSModified bool `json:"vcsModified,omitempty"` }
+type measurementDriver struct {  }
 
 [github.com/ben-ranford/stave/primitive]
 const Grid Direction = "grid"
@@ -483,6 +580,19 @@ func Table(TableOptions) (github.com/ben-ranford/stave/semantic.Node, error)
 func Tabs(Options, ...Tab) (github.com/ben-ranford/stave/semantic.Node, error)
 func Text(Options, string) (github.com/ben-ranford/stave/semantic.Node, error)
 func Viewport(ViewportOptions) (github.com/ben-ranford/stave/semantic.Node, error)
+struct-comparable CheckboxOptions false
+struct-comparable Choice true
+struct-comparable Column true
+struct-comparable InputOptions false
+struct-comparable NumberOptions false
+struct-comparable Options false
+struct-comparable RadioGroupOptions false
+struct-comparable SecretHandle true
+struct-comparable SelectOptions false
+struct-comparable Tab true
+struct-comparable TableOptions false
+struct-comparable TableRow false
+struct-comparable ViewportOptions false
 type CheckboxOptions struct { Options; Checked bool; Required bool; Invalid bool; ErrorMessage string }
 type Choice struct { Key string; Name string; Description string; Selected bool; Disabled bool }
 type Column struct { Key, Name string; Width int; WidthPolicy string; Numeric, Sticky bool }
@@ -526,6 +636,21 @@ func DecodeLine([]byte, int) (Request, error)
 func Errorf(int, string, ...any) *Error
 func Marshal(any) ([]byte, error)
 method (ID) Valid() bool
+struct-comparable ActionErrorData true
+struct-comparable Application true
+struct-comparable ConfirmParams false
+struct-comparable ConfirmationPresentation true
+struct-comparable Error true
+struct-comparable InitializeParams false
+struct-comparable InitializeResult false
+struct-comparable InvokeParams false
+struct-comparable InvokeResult false
+struct-comparable Limits true
+struct-comparable Notification false
+struct-comparable Request false
+struct-comparable Response false
+struct-comparable SnapshotParams true
+struct-comparable SnapshotResult false
 type ActionErrorData struct { StaveCode github.com/ben-ranford/stave/action.Code `json:"staveCode"`; ActionID github.com/ben-ranford/stave/action.ID `json:"actionId,omitempty"`; NodeID github.com/ben-ranford/stave/semantic.NodeID `json:"nodeId,omitempty"`; Revision uint64 `json:"revision,omitempty"`; Retryable bool `json:"retryable"`; CauseClass string `json:"causeClass,omitempty"` }
 type Application struct { ID string `json:"id"`; Version string `json:"version"` }
 type ConfirmParams struct { CallID string `json:"callId"`; ActionID string `json:"actionId"`; Target encoding/json.RawMessage `json:"target,omitempty"`; Arguments encoding/json.RawMessage `json:"arguments,omitempty"`; SessionID string `json:"sessionId,omitempty"` }
@@ -548,6 +673,11 @@ var ErrBatch error
 func ANSI(string, github.com/ben-ranford/stave/capability.ColorLevel, string) string
 func Render(Request) (Result, error)
 method (Writer) Render(github.com/ben-ranford/stave/surface.Surface) (string, error)
+struct-comparable Budgets true
+struct-comparable EventContext true
+struct-comparable Request false
+struct-comparable Result false
+struct-comparable Writer false
 type Budgets struct { MaxBytes int; MaxCells int; MaxDepth int; MaxWork int }
 type EventContext struct { Reason string `json:"reason,omitempty"`; Focused github.com/ben-ranford/stave/semantic.NodeID `json:"focused,omitempty"`; Hovered github.com/ben-ranford/stave/semantic.NodeID `json:"hovered,omitempty"`; Revision uint64 `json:"revision,omitempty"` }
 type Request struct { Context context.Context; Tree github.com/ben-ranford/stave/semantic.Tree; Theme github.com/ben-ranford/stave/theme.Resolved; Capabilities github.com/ben-ranford/stave/capability.Manifest; Viewport github.com/ben-ranford/stave/layout.Size; Window github.com/ben-ranford/stave/layout.Rect; Previous *github.com/ben-ranford/stave/surface.Surface; Event EventContext; Budgets Budgets }
@@ -581,6 +711,11 @@ method (*Divergence) Error() string
 method (*Transcript) Append(Record)
 method (Transcript) CanonicalJSON() ([]byte, error)
 method (Transcript) Clone() (Transcript, error)
+struct-comparable Digest true
+struct-comparable Divergence true
+struct-comparable Record true
+struct-comparable RemapMetadata false
+struct-comparable Transcript false
 type ApplyFunc func(context.Context, github.com/ben-ranford/stave/state.Checkpoint, github.com/ben-ranford/stave/event.Event) (github.com/ben-ranford/stave/state.Checkpoint, error)
 type Digest struct { Sequence uint64 `json:"sequence"`; Revision uint64 `json:"revision"`; Hashes github.com/ben-ranford/stave/state.Hashes `json:"hashes"`; DiagnosticCount uint64 `json:"diagnosticCount,omitempty"` }
 type Divergence struct { Code DivergenceCode `json:"code"`; Index int `json:"index"`; Field string `json:"field"`; Expected any `json:"expected,omitempty"`; Actual any `json:"actual,omitempty"`; Remap *RemapMetadata `json:"remap,omitempty"` }
@@ -597,6 +732,9 @@ method (*Server) Close()
 method (*Server) Notifications() <-chan github.com/ben-ranford/stave/protocol.Notification
 method (*Server) Notify(github.com/ben-ranford/stave/protocol.Notification) error
 method (*Server) Serve(context.Context, io.ReadCloser, io.Writer) error
+struct-comparable Options false
+struct-comparable Server false
+struct-comparable SnapshotEnvelope false
 type AuthorizeCall func(context.Context, github.com/ben-ranford/stave/action.Call) *github.com/ben-ranford/stave/action.Error
 type AuthorizePreparedCall func(context.Context, github.com/ben-ranford/stave/action.Call) (github.com/ben-ranford/stave/action.Call, *github.com/ben-ranford/stave/action.Error)
 type CapabilityNegotiator func(context.Context, map[string]any) (github.com/ben-ranford/stave/capability.Manifest, error)
@@ -632,6 +770,10 @@ method (*Runtime) Profile() Profile
 method (*Runtime) ReadSecret(context.Context, github.com/ben-ranford/stave/input.SecretPrompt) (github.com/ben-ranford/stave/secret.Handle, error)
 method (*Runtime) Run(context.Context) error
 method (*Runtime) String() string
+struct-comparable LineDriver false
+struct-comparable LineDriverOptions false
+struct-comparable Options false
+struct-comparable Runtime false
 type Backend = Driver
 type Driver interface { Close() error; Draw(context.Context, github.com/ben-ranford/stave/surface.Surface, github.com/ben-ranford/stave/surface.Patch) error; Events() <-chan github.com/ben-ranford/stave/event.Event; Open(context.Context, github.com/ben-ranford/stave/capability.Policy) (github.com/ben-ranford/stave/capability.Manifest, error); ReadSecret(context.Context, github.com/ben-ranford/stave/input.SecretPrompt) (github.com/ben-ranford/stave/secret.Handle, error); Restore(context.Context) error }
 type EventSource interface { Events() <-chan github.com/ben-ranford/stave/event.Event }
@@ -668,6 +810,8 @@ func NewMemoryStore() *MemoryStore
 method (*MemoryStore) Destroy(Handle) error
 method (*MemoryStore) Put([]byte) (Handle, error)
 method (*MemoryStore) Use(Handle, func([]byte) error) error
+struct-comparable Handle true
+struct-comparable MemoryStore false
 type Handle struct { ID string `json:"id"` }
 type MemoryStore struct {  }
 type Store interface { Destroy(Handle) error; Put([]byte) (Handle, error); Use(Handle, func([]byte) error) error }
@@ -723,6 +867,21 @@ method (Tree) SchemaVersion() string
 method (Tree) Snapshot() Snapshot
 method (Tree) Validate() error
 method (Tree) WithRevision(uint64) (Tree, error)
+struct-comparable ActionRef true
+struct-comparable Flags true
+struct-comparable LayoutSpec true
+struct-comparable Node false
+struct-comparable NodeKey true
+struct-comparable NodeSpec false
+struct-comparable Patch false
+struct-comparable Relation true
+struct-comparable Snapshot false
+struct-comparable StyleIntent true
+struct-comparable Target true
+struct-comparable Tombstone true
+struct-comparable Tombstones false
+struct-comparable Tree false
+struct-comparable Value true
 type ActionID string
 type ActionRef struct { ID ActionID `json:"id"`; Label string `json:"label,omitempty"`; Default bool `json:"default,omitempty"` }
 type Flags struct { Visible bool `json:"visible"`; Focusable bool `json:"focusable"`; Disabled bool `json:"disabled"`; Sensitive bool `json:"sensitive"`; Offscreen bool `json:"offscreen"`; Live LiveMode `json:"live,omitempty"`; Stability Stability `json:"stability,omitempty"` }
@@ -761,6 +920,10 @@ method (*Session[M]) Send(github.com/ben-ranford/stave/event.Event) error
 method (*Session[M]) Snapshot() (github.com/ben-ranford/stave/state.State[M], error)
 method (*Session[M]) Transcript() (github.com/ben-ranford/stave/replay.Transcript, error)
 method (*Session[M]) Wait(context.Context, func(github.com/ben-ranford/stave/state.State[M]) bool) error
+struct-comparable Diagnostic false
+struct-comparable Options false
+struct-comparable Session false
+struct-comparable ViewResult false
 type Diagnostic struct { Code string; Message string; SafeContext map[string]string }
 type Lifecycle string
 type Options[M any] struct { SessionID string; Initial M; Reduce Reducer[M]; View View[M]; QueueCapacity int; ReduceTimeout time.Duration; ViewTimeout time.Duration; EffectParallelism int; EffectDelivery github.com/ben-ranford/stave/effect.Delivery; EffectPorts map[string]github.com/ben-ranford/stave/effect.Port; MaxActiveBatches int; ModelPolicy github.com/ben-ranford/stave/state.ModelPolicy[M]; Capabilities github.com/ben-ranford/stave/capability.Manifest; ConfigHash string; ThemeHash string; WidthPolicy string; Versions github.com/ben-ranford/stave/state.Versions }
@@ -785,6 +948,12 @@ method (Checkpoint) CanonicalJSON() ([]byte, error)
 method (Checkpoint) VerifyChecksum() error
 method (State[M]) Checkpoint(ModelPolicy[M]) (Checkpoint, error)
 method (State[M]) Clone(ModelPolicy[M]) (State[M], error)
+struct-comparable Checkpoint false
+struct-comparable Hashes true
+struct-comparable Meta false
+struct-comparable ModelPolicy false
+struct-comparable State false
+struct-comparable Versions true
 type Checkpoint struct { SchemaVersion string `json:"schemaVersion"`; SessionID string `json:"sessionId"`; Sequence uint64 `json:"sequence"`; Revision uint64 `json:"revision"`; Versions Versions `json:"versions"`; Hashes Hashes `json:"hashes"`; Capabilities github.com/ben-ranford/stave/capability.Manifest `json:"capabilities"`; Model any `json:"model,omitempty"`; Tree any `json:"tree,omitempty"`; DiagnosticCount uint64 `json:"diagnosticCount,omitempty"`; Checksum string `json:"checksum"` }
 type Hashes struct { Config string `json:"config,omitempty"`; Theme string `json:"theme,omitempty"`; Capability string `json:"capability,omitempty"`; Model string `json:"model,omitempty"`; Tree string `json:"tree,omitempty"`; Surface string `json:"surface,omitempty"`; EffectLedger string `json:"effectLedger,omitempty"`; Declarations string `json:"declarations,omitempty"` }
 type Meta struct { Sequence uint64; Revision uint64; Capabilities github.com/ben-ranford/stave/capability.Manifest; ConfigHash string; ThemeHash string; SurfaceHash string; WidthPolicy string; Versions Versions; DiagnosticCount uint64; EffectLedger string; Declarations string }
@@ -813,6 +982,13 @@ method (Surface) Styles() []ResolvedStyle
 method (Surface) WithCell(int, int, Cell) Surface
 method (Surface) WithStyledGrapheme(int, int, string, ResolvedStyle, string, github.com/ben-ranford/stave/semantic.NodeID, uint32, github.com/ben-ranford/stave/layout.Rect) (Surface, error)
 method (Surface) WithText(int, int, string, ResolvedStyle, string, github.com/ben-ranford/stave/semantic.NodeID, uint32, github.com/ben-ranford/stave/layout.Rect) (Surface, error)
+struct-comparable Builder false
+struct-comparable Cell true
+struct-comparable Patch false
+struct-comparable Region true
+struct-comparable ResolvedStyle true
+struct-comparable Run false
+struct-comparable Surface false
 type Builder struct {  }
 type Cell struct { Grapheme string `json:"grapheme,omitempty"`; Width uint8 `json:"width,omitempty"`; Continuation bool `json:"continuation,omitempty"`; Style StyleID `json:"style,omitempty"`; Link LinkID `json:"link,omitempty"`; NodeID github.com/ben-ranford/stave/semantic.NodeID `json:"nodeId,omitempty"`; Generation uint32 `json:"generation,omitempty"` }
 type LinkID uint32
@@ -867,6 +1043,13 @@ method (Theme) Resolve(Mode, Density, github.com/ben-ranford/stave/capability.Ma
 method (Theme) ToDTCG() ([]byte, error)
 method (Theme) ToJSON() ([]byte, error)
 method (Theme) Validate() error
+struct-comparable AssetRef true
+struct-comparable ContrastPair true
+struct-comparable Glyph true
+struct-comparable Resolved false
+struct-comparable ResolvedValue true
+struct-comparable Theme false
+struct-comparable Value true
 type AssetRef struct { ID string `json:"id,omitempty"`; Text string `json:"text,omitempty"` }
 type ContrastPair struct { Foreground TokenID; Background TokenID }
 type Density string

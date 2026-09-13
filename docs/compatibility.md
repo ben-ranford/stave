@@ -75,10 +75,10 @@ records the baseline tag, immutable commit, and both Go floors. A regenerated
 candidate inventory cannot waive a removed declaration, changed signature,
 interface method addition, or exported variable type change.
 
-Adding an exported function or a field while retaining existing keyed fields is
-accepted. Adding a field can still break consumers using unkeyed composite
-literals, so those consumers should use keyed literals and maintainers must
-call out that caveat during compatibility review.
+Adding an exported function or a field while retaining existing keyed fields
+and struct comparability is accepted. Adding a field can still break consumers
+using unkeyed composite literals, so those consumers should use keyed literals
+and maintainers must call out that caveat during compatibility review.
 
 There is currently no stable v1 tag. Until issue #2 provides one,
 `make release-baseline` fails deliberately and a GA release cannot pass it.

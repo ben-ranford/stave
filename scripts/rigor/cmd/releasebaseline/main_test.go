@@ -82,6 +82,23 @@ func TestCompareInventoriesRejectsStructFieldReordering(t *testing.T) {
 	}
 }
 
+func TestCompareInventoriesPreservesStructComparability(t *testing.T) {
+	baseline := "# Public API inventory\nmodule example.com/api\n\n[example.com/api]\ntype Key struct { ID int }\nstruct-comparable Key true\n"
+	withNonComparableField := "# Public API inventory\nmodule example.com/api\n\n[example.com/api]\ntype Key struct { ID int; Values []string }\nstruct-comparable Key false\n"
+	if err := compareInventories(baseline, withNonComparableField); err == nil {
+		t.Fatal("non-comparable additive field was accepted")
+	}
+	privateFieldChanged := "# Public API inventory\nmodule example.com/api\n\n[example.com/api]\ntype Key struct { ID int }\nstruct-comparable Key false\n"
+	if err := compareInventories(baseline, privateFieldChanged); err == nil {
+		t.Fatal("private-field comparability change was accepted")
+	}
+	becameComparable := "# Public API inventory\nmodule example.com/api\n\n[example.com/api]\ntype Key struct { ID int }\nstruct-comparable Key true\n"
+	wasNonComparable := "# Public API inventory\nmodule example.com/api\n\n[example.com/api]\ntype Key struct { ID int }\nstruct-comparable Key false\n"
+	if err := compareInventories(wasNonComparable, becameComparable); err != nil {
+		t.Fatalf("comparability strengthening was rejected: %v", err)
+	}
+}
+
 func TestCompareInventoriesRejectsNestedStructFieldChanges(t *testing.T) {
 	baseline := "# Public API inventory\nmodule example.com/api\n\n[example.com/api]\ntype Options struct { F struct { X int; Y int } }\n"
 	candidate := "# Public API inventory\nmodule example.com/api\n\n[example.com/api]\ntype Options struct { F struct { X int; Z bool; Y int } }\n"
@@ -161,6 +178,7 @@ func TestConsumerCompilerFixtures(t *testing.T) {
 	baseline := `package api
 
 type Contract interface { Keep() string }
+type Key struct { ID int }
 type Options struct { Name string }
 var Limit int
 func Keep(value string) string { return value }
@@ -176,6 +194,8 @@ func Keep(value string) string { return value }
 		{name: "interface method addition", api: strings.Replace(baseline, "type Contract interface { Keep() string }", "type Contract interface { Keep() string; Extra() }", 1), passes: false},
 		{name: "variable type change", api: strings.Replace(baseline, "var Limit int", "var Limit string", 1), passes: false},
 		{name: "additive function and keyed field", api: strings.Replace(strings.Replace(baseline, "type Options struct { Name string }", "type Options struct { Name string; Enabled bool }", 1), "func Keep(value string) string { return value }", "func Keep(value string) string { return value }\nfunc Extra() error { return nil }", 1), passes: true},
+		{name: "non-comparable additive field", api: strings.Replace(baseline, "type Key struct { ID int }", "type Key struct { ID int; Values []string }", 1), passes: false},
+		{name: "non-comparable private field", api: strings.Replace(baseline, "type Key struct { ID int }", "type Key struct { ID int; values []string }", 1), passes: false},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -210,6 +230,7 @@ func TestConsumerSurface(t *testing.T) {
 	var _ int = api.Limit
 	if api.Keep("ok") != "ok" { t.Fatal("unexpected result") }
 	_ = api.Options{Name: "keyed"}
+	_ = map[api.Key]struct{}{api.Key{ID: 1}: {}}
 }
 `,
 	} {

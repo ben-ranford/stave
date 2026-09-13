@@ -283,7 +283,7 @@ func compareInventories(baselineInventory, candidateInventory string) error {
 				failures = append(failures, pkg+": removed "+declaration)
 				continue
 			}
-			if declaration == current || compatibleStructFieldAddition(declaration, current) {
+			if declaration == current || compatibleStructFieldAddition(declaration, current) || compatibleStructComparabilityChange(declaration, current) {
 				continue
 			}
 			failures = append(failures, pkg+": changed "+declaration+" -> "+current)
@@ -294,6 +294,12 @@ func compareInventories(baselineInventory, candidateInventory string) error {
 	}
 	sort.Strings(failures)
 	return errors.New(strings.Join(failures, "\n"))
+}
+
+func compatibleStructComparabilityChange(baselineDeclaration, candidateDeclaration string) bool {
+	baseline := strings.Fields(baselineDeclaration)
+	candidate := strings.Fields(candidateDeclaration)
+	return len(baseline) == 3 && len(candidate) == 3 && baseline[0] == "struct-comparable" && candidate[0] == "struct-comparable" && baseline[1] == candidate[1] && baseline[2] == "false" && candidate[2] == "true"
 }
 
 func parseInventory(inventory string) map[string]map[string]string {
