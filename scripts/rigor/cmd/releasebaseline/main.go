@@ -359,49 +359,65 @@ func compatibleStructFieldAddition(baselineDeclaration, candidateDeclaration str
 
 func structFields(declaration string) []string {
 	body := strings.TrimSuffix(strings.SplitN(declaration, structMarker, 2)[1], " }")
-	fields := []string{}
 	if body == "" {
-		return fields
+		return []string{}
 	}
-	start, curly, square, paren := 0, 0, 0, 0
-	var quote rune
-	escaped := false
+	fields := []string{}
+	start := 0
+	tokenizer := structFieldTokenizer{}
 	for index, character := range body {
-		if quote != 0 {
-			if quote != '`' && character == '\\' && !escaped {
-				escaped = true
-				continue
-			}
-			if character == quote && !escaped {
-				quote = 0
-			}
-			escaped = false
+		if !tokenizer.separator(character) {
 			continue
 		}
-		switch character {
-		case '\'', '"', '`':
-			quote = character
-		case '{':
-			curly++
-		case '}':
-			curly--
-		case '[':
-			square++
-		case ']':
-			square--
-		case '(':
-			paren++
-		case ')':
-			paren--
-		case ';':
-			if curly == 0 && square == 0 && paren == 0 {
-				fields = append(fields, normalizedStructFieldDeclarations(strings.TrimSpace(body[start:index]))...)
-				start = index + 1
-			}
-		}
+		fields = append(fields, normalizedStructFieldDeclarations(strings.TrimSpace(body[start:index]))...)
+		start = index + 1
 	}
 	fields = append(fields, normalizedStructFieldDeclarations(strings.TrimSpace(body[start:]))...)
 	return fields
+}
+
+type structFieldTokenizer struct {
+	curly   int
+	square  int
+	paren   int
+	quote   rune
+	escaped bool
+}
+
+func (t *structFieldTokenizer) separator(character rune) bool {
+	if t.quote != 0 {
+		t.consumeQuoted(character)
+		return false
+	}
+	switch character {
+	case '\'', '"', '`':
+		t.quote = character
+		return false
+	case '{':
+		t.curly++
+	case '}':
+		t.curly--
+	case '[':
+		t.square++
+	case ']':
+		t.square--
+	case '(':
+		t.paren++
+	case ')':
+		t.paren--
+	}
+	return character == ';' && t.curly == 0 && t.square == 0 && t.paren == 0
+}
+
+func (t *structFieldTokenizer) consumeQuoted(character rune) {
+	if t.quote != '`' && character == '\\' && !t.escaped {
+		t.escaped = true
+		return
+	}
+	if character == t.quote && !t.escaped {
+		t.quote = 0
+	}
+	t.escaped = false
 }
 
 // normalizedStructFieldDeclarations expands only grouped named fields. This

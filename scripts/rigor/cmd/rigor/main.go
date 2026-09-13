@@ -253,114 +253,170 @@ func renderPublicAPI(modulePath string, pkgs []goListPackage) (string, error) {
 func renderPublicAPIForTarget(ctx context.Context, modulePath string, pkgs []goListPackage, goos, goarch string) (string, error) {
 	exported := make(map[string][]string)
 	fset := token.NewFileSet()
+	importer := newSourceImporter(ctx, fset, pkgs, goos, goarch)
+
+	for _, pkg := range pkgs {
+		if !publicAPIPackage(modulePath, pkg.ImportPath) {
+			continue
+		}
+		entries, err := publicAPIEntries(fset, pkg, importer)
+		if err != nil {
+			return "", err
+		}
+		exported[pkg.ImportPath] = entries
+	}
+	return formatPublicAPI(modulePath, exported), nil
+}
+
+func newSourceImporter(ctx context.Context, fset *token.FileSet, pkgs []goListPackage, goos, goarch string) *sourceImporter {
 	packageIndex := make(map[string]goListPackage, len(pkgs))
 	for _, pkg := range pkgs {
 		packageIndex[pkg.ImportPath] = pkg
 	}
-	importer := &sourceImporter{
+	return &sourceImporter{
 		fset:     fset,
 		packages: packageIndex,
 		checked:  make(map[string]*types.Package),
 		standard: targetPackageImporter(ctx, fset, packageDirectory(pkgs), rigorGoBinary(), goos, goarch),
 		sizes:    targetSizes(goarch),
 	}
+}
 
-	for _, pkg := range pkgs {
-		if pkg.ImportPath == "" || !strings.HasPrefix(pkg.ImportPath, modulePath) {
-			continue
-		}
-		if strings.Contains(pkg.ImportPath, "/internal/") || strings.Contains(pkg.ImportPath, "/cmd/") || strings.Contains(pkg.ImportPath, "/scripts/") {
-			continue
-		}
+func publicAPIPackage(modulePath, path string) bool {
+	return path != "" && strings.HasPrefix(path, modulePath) &&
+		!strings.Contains(path, "/internal/") && !strings.Contains(path, "/cmd/") && !strings.Contains(path, "/scripts/")
+}
 
-		filePaths := make([]string, 0, len(pkg.GoFiles))
-		for _, file := range pkg.GoFiles {
-			filePaths = append(filePaths, filepath.Join(pkg.Dir, file))
-		}
-		parsed, err := parser.ParseDir(fset, pkg.Dir, func(info os.FileInfo) bool {
-			name := info.Name()
-			if strings.HasSuffix(name, "_test.go") {
-				return false
-			}
-			for _, path := range filePaths {
-				if filepath.Base(path) == name {
-					return true
-				}
-			}
-			return false
-		}, parser.SkipObjectResolution)
-		if err != nil {
-			return "", err
-		}
-
-		entries := []string{}
-		for _, parsedPkg := range parsed {
-			typeInfo := types.Info{
-				Defs:  make(map[*ast.Ident]types.Object),
-				Types: make(map[ast.Expr]types.TypeAndValue),
-			}
-			config := types.Config{Importer: importer, Sizes: importer.sizes}
-			files := make([]*ast.File, 0, len(parsedPkg.Files))
-			for _, file := range parsedPkg.Files {
-				files = append(files, file)
-			}
-			checkedPkg, err := config.Check(pkg.ImportPath, fset, files, &typeInfo)
-			if err != nil {
-				return "", err
-			}
-			qualifier := packagePathQualifier(checkedPkg)
-			for _, file := range parsedPkg.Files {
-				for _, decl := range file.Decls {
-					switch d := decl.(type) {
-					case *ast.GenDecl:
-						switch d.Tok {
-						case token.CONST, token.VAR:
-							label := "var"
-							if d.Tok == token.CONST {
-								label = "const"
-							}
-							for _, spec := range d.Specs {
-								valueSpec, ok := spec.(*ast.ValueSpec)
-								if !ok {
-									continue
-								}
-								for _, name := range valueSpec.Names {
-									if ast.IsExported(name.Name) {
-										entry, err := publicValueDeclaration(label, name.Name, typeInfo.Defs[name], qualifier)
-										if err != nil {
-											return "", err
-										}
-										entries = append(entries, entry)
-									}
-								}
-							}
-						case token.TYPE:
-							for _, spec := range d.Specs {
-								typeSpec, ok := spec.(*ast.TypeSpec)
-								if ok && ast.IsExported(typeSpec.Name.Name) {
-									entries = append(entries, typeDeclaration(fset, typeSpec, &typeInfo, qualifier))
-								}
-							}
-						}
-					case *ast.FuncDecl:
-						if d.Name == nil || !ast.IsExported(d.Name.Name) {
-							continue
-						}
-						signature := typedFuncSignature(typeInfo.Defs[d.Name], d.Type, fset, qualifier)
-						if d.Recv == nil || len(d.Recv.List) == 0 {
-							entries = append(entries, fmt.Sprintf("func %s%s", d.Name.Name, signature))
-							continue
-						}
-						receiver := exprString(fset, d.Recv.List[0].Type)
-						entries = append(entries, fmt.Sprintf("method (%s) %s%s", receiver, d.Name.Name, signature))
-					}
-				}
-			}
-		}
-
-		sort.Strings(entries)
-		exported[pkg.ImportPath] = entries
+func publicAPIEntries(fset *token.FileSet, pkg goListPackage, importer *sourceImporter) ([]string, error) {
+	parsed, err := parsePublicAPIPackage(fset, pkg)
+	if err != nil {
+		return nil, err
 	}
+	entries := []string{}
+	for _, files := range parsed {
+		current, err := publicAPIEntriesForFiles(fset, pkg.ImportPath, files, importer)
+		if err != nil {
+			return nil, err
+		}
+		entries = append(entries, current...)
+	}
+	sort.Strings(entries)
+	return entries, nil
+}
+
+func parsePublicAPIPackage(fset *token.FileSet, pkg goListPackage) ([][]*ast.File, error) {
+	filePaths := make(map[string]bool, len(pkg.GoFiles))
+	for _, file := range pkg.GoFiles {
+		filePaths[file] = true
+	}
+	parsed, err := parser.ParseDir(fset, pkg.Dir, func(info os.FileInfo) bool {
+		return !strings.HasSuffix(info.Name(), "_test.go") && filePaths[info.Name()]
+	}, parser.SkipObjectResolution)
+	if err != nil {
+		return nil, err
+	}
+	packages := make([][]*ast.File, 0, len(parsed))
+	for _, parsedPkg := range parsed {
+		files := make([]*ast.File, 0, len(parsedPkg.Files))
+		for _, file := range parsedPkg.Files {
+			files = append(files, file)
+		}
+		packages = append(packages, files)
+	}
+	return packages, nil
+}
+
+func publicAPIEntriesForFiles(fset *token.FileSet, importPath string, files []*ast.File, importer *sourceImporter) ([]string, error) {
+	typeInfo := types.Info{Defs: make(map[*ast.Ident]types.Object), Types: make(map[ast.Expr]types.TypeAndValue)}
+	checkedPkg, err := (&types.Config{Importer: importer, Sizes: importer.sizes}).Check(importPath, fset, files, &typeInfo)
+	if err != nil {
+		return nil, err
+	}
+	qualifier := packagePathQualifier(checkedPkg)
+	entries := []string{}
+	for _, file := range files {
+		for _, declaration := range file.Decls {
+			current, err := publicAPIEntriesForDeclaration(fset, declaration, &typeInfo, qualifier)
+			if err != nil {
+				return nil, err
+			}
+			entries = append(entries, current...)
+		}
+	}
+	return entries, nil
+}
+
+func publicAPIEntriesForDeclaration(fset *token.FileSet, declaration ast.Decl, typeInfo *types.Info, qualifier types.Qualifier) ([]string, error) {
+	switch declaration := declaration.(type) {
+	case *ast.GenDecl:
+		return publicAPIGeneralDeclarationEntries(fset, declaration, typeInfo, qualifier)
+	case *ast.FuncDecl:
+		return publicAPIFunctionDeclarationEntry(fset, declaration, typeInfo, qualifier), nil
+	default:
+		return nil, nil
+	}
+}
+
+func publicAPIGeneralDeclarationEntries(fset *token.FileSet, declaration *ast.GenDecl, typeInfo *types.Info, qualifier types.Qualifier) ([]string, error) {
+	switch declaration.Tok {
+	case token.CONST, token.VAR:
+		return publicAPIValueDeclarationEntries(declaration, typeInfo, qualifier)
+	case token.TYPE:
+		return publicAPITypeDeclarationEntries(fset, declaration, typeInfo, qualifier), nil
+	default:
+		return nil, nil
+	}
+}
+
+func publicAPIValueDeclarationEntries(declaration *ast.GenDecl, typeInfo *types.Info, qualifier types.Qualifier) ([]string, error) {
+	label := "var"
+	if declaration.Tok == token.CONST {
+		label = "const"
+	}
+	entries := []string{}
+	for _, spec := range declaration.Specs {
+		valueSpec, ok := spec.(*ast.ValueSpec)
+		if !ok {
+			continue
+		}
+		for _, name := range valueSpec.Names {
+			if !ast.IsExported(name.Name) {
+				continue
+			}
+			entry, err := publicValueDeclaration(label, name.Name, typeInfo.Defs[name], qualifier)
+			if err != nil {
+				return nil, err
+			}
+			entries = append(entries, entry)
+		}
+	}
+	return entries, nil
+}
+
+func publicAPITypeDeclarationEntries(fset *token.FileSet, declaration *ast.GenDecl, typeInfo *types.Info, qualifier types.Qualifier) []string {
+	entries := []string{}
+	for _, spec := range declaration.Specs {
+		typeSpec, ok := spec.(*ast.TypeSpec)
+		if ok && ast.IsExported(typeSpec.Name.Name) {
+			entries = append(entries, typeDeclaration(fset, typeSpec, typeInfo, qualifier))
+		}
+	}
+	return entries
+}
+
+func publicAPIFunctionDeclarationEntry(fset *token.FileSet, declaration *ast.FuncDecl, typeInfo *types.Info, qualifier types.Qualifier) []string {
+	if declaration.Name == nil || !ast.IsExported(declaration.Name.Name) {
+		return nil
+	}
+	signature := typedFuncSignature(typeInfo.Defs[declaration.Name], declaration.Type, fset, qualifier)
+	if declaration.Recv == nil || len(declaration.Recv.List) == 0 {
+		return []string{fmt.Sprintf("func %s%s", declaration.Name.Name, signature)}
+	}
+	receiver := exprString(fset, declaration.Recv.List[0].Type)
+	return []string{fmt.Sprintf("method (%s) %s%s", receiver, declaration.Name.Name, signature)}
+}
+
+func formatPublicAPI(modulePath string, exported map[string][]string) string {
 
 	paths := make([]string, 0, len(exported))
 	for path := range exported {
@@ -379,7 +435,7 @@ func renderPublicAPIForTarget(ctx context.Context, modulePath string, pkgs []goL
 		}
 		out.WriteByte('\n')
 	}
-	return strings.TrimRight(out.String(), "\n") + "\n", nil
+	return strings.TrimRight(out.String(), "\n") + "\n"
 }
 
 func targetSizes(goarch string) types.Sizes {
@@ -879,56 +935,71 @@ func typeTuple(values *types.Tuple, variadic bool, qualifier types.Qualifier) st
 }
 
 func canonicalTypeString(typ types.Type, qualifier types.Qualifier) string {
-	switch typ := typ.(type) {
-	case *types.Signature:
-		return "func" + typeSignature(typ, qualifier)
-	case *types.Pointer:
-		return "*" + canonicalTypeString(typ.Elem(), qualifier)
-	case *types.Slice:
-		return "[]" + canonicalTypeString(typ.Elem(), qualifier)
-	case *types.Array:
-		return fmt.Sprintf("[%d]%s", typ.Len(), canonicalTypeString(typ.Elem(), qualifier))
-	case *types.Map:
-		return "map[" + canonicalTypeString(typ.Key(), qualifier) + "]" + canonicalTypeString(typ.Elem(), qualifier)
-	case *types.Chan:
-		prefix := "chan "
-		switch typ.Dir() {
-		case types.SendOnly:
-			prefix = "chan<- "
-		case types.RecvOnly:
-			prefix = "<-chan "
-		}
-		element := canonicalTypeString(typ.Elem(), qualifier)
-		if typ.Dir() == types.SendRecv {
-			if channel, ok := typ.Elem().(*types.Chan); ok && channel.Dir() == types.RecvOnly {
-				element = "(" + element + ")"
-			}
-		}
-		return prefix + element
-	case *types.Struct:
-		return canonicalStructType(typ, qualifier)
-	case *types.Interface:
-		return canonicalInterfaceType(typ, qualifier)
-	case *types.Union:
-		return canonicalUnionType(typ, qualifier)
-	case *types.Named:
-		arguments := typ.TypeArgs()
-		if arguments.Len() == 0 {
-			break
-		}
-		values := make([]string, 0, arguments.Len())
-		for index := 0; index < arguments.Len(); index++ {
-			values = append(values, canonicalTypeString(arguments.At(index), qualifier))
-		}
-		name := typ.Obj().Name()
-		if pkg := typ.Obj().Pkg(); pkg != nil {
-			if prefix := qualifier(pkg); prefix != "" {
-				name = prefix + "." + name
-			}
-		}
-		return name + "[" + strings.Join(values, ", ") + "]"
+	if declaration, ok := structuredCanonicalTypeString(typ, qualifier); ok {
+		return declaration
 	}
 	return types.TypeString(typ, qualifier)
+}
+
+func structuredCanonicalTypeString(typ types.Type, qualifier types.Qualifier) (string, bool) {
+	switch typ := typ.(type) {
+	case *types.Signature:
+		return "func" + typeSignature(typ, qualifier), true
+	case *types.Pointer:
+		return "*" + canonicalTypeString(typ.Elem(), qualifier), true
+	case *types.Slice:
+		return "[]" + canonicalTypeString(typ.Elem(), qualifier), true
+	case *types.Array:
+		return fmt.Sprintf("[%d]%s", typ.Len(), canonicalTypeString(typ.Elem(), qualifier)), true
+	case *types.Map:
+		return "map[" + canonicalTypeString(typ.Key(), qualifier) + "]" + canonicalTypeString(typ.Elem(), qualifier), true
+	case *types.Chan:
+		return canonicalChannelType(typ, qualifier), true
+	case *types.Struct:
+		return canonicalStructType(typ, qualifier), true
+	case *types.Interface:
+		return canonicalInterfaceType(typ, qualifier), true
+	case *types.Union:
+		return canonicalUnionType(typ, qualifier), true
+	case *types.Named:
+		return canonicalNamedType(typ, qualifier)
+	}
+	return "", false
+}
+
+func canonicalChannelType(typ *types.Chan, qualifier types.Qualifier) string {
+	prefix := "chan "
+	switch typ.Dir() {
+	case types.SendOnly:
+		prefix = "chan<- "
+	case types.RecvOnly:
+		prefix = "<-chan "
+	}
+	element := canonicalTypeString(typ.Elem(), qualifier)
+	if typ.Dir() == types.SendRecv {
+		if channel, ok := typ.Elem().(*types.Chan); ok && channel.Dir() == types.RecvOnly {
+			element = "(" + element + ")"
+		}
+	}
+	return prefix + element
+}
+
+func canonicalNamedType(typ *types.Named, qualifier types.Qualifier) (string, bool) {
+	arguments := typ.TypeArgs()
+	if arguments.Len() == 0 {
+		return "", false
+	}
+	values := make([]string, 0, arguments.Len())
+	for index := 0; index < arguments.Len(); index++ {
+		values = append(values, canonicalTypeString(arguments.At(index), qualifier))
+	}
+	name := typ.Obj().Name()
+	if pkg := typ.Obj().Pkg(); pkg != nil {
+		if prefix := qualifier(pkg); prefix != "" {
+			name = prefix + "." + name
+		}
+	}
+	return name + "[" + strings.Join(values, ", ") + "]", true
 }
 
 func canonicalStructType(typ *types.Struct, qualifier types.Qualifier) string {
