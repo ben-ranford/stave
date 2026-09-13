@@ -60,30 +60,44 @@ func TestSnapshotSubscriptionSchemaIsSeparateAndValid(t *testing.T) {
 	}
 }
 
+type subscriptionDiagnosticSchema struct {
+	Items subscriptionDiagnosticItems `json:"items"`
+}
+
+type subscriptionDiagnosticItems struct {
+	Required   []string                         `json:"required"`
+	Properties subscriptionDiagnosticProperties `json:"properties"`
+}
+
+type subscriptionDiagnosticProperties struct {
+	Redacted   subscriptionDiagnosticBool   `json:"redacted"`
+	Message    subscriptionDiagnosticString `json:"message"`
+	Attributes *bool                        `json:"attributes"`
+}
+
+type subscriptionDiagnosticBool struct {
+	Const bool `json:"const"`
+}
+
+type subscriptionDiagnosticString struct {
+	Const string `json:"const"`
+}
+
+type subscriptionFullSnapshotDefinition struct {
+	AllOf []subscriptionFullSnapshotClause `json:"allOf"`
+}
+
+type subscriptionFullSnapshotClause struct {
+	Properties map[string]json.RawMessage `json:"properties"`
+}
+
 func assertSubscriptionDiagnosticContract(t *testing.T, fullSnapshot json.RawMessage) {
 	t.Helper()
-	var definition struct {
-		AllOf []struct {
-			Properties map[string]json.RawMessage `json:"properties"`
-		} `json:"allOf"`
-	}
+	var definition subscriptionFullSnapshotDefinition
 	if err := json.Unmarshal(fullSnapshot, &definition); err != nil {
 		t.Fatal(err)
 	}
-	var diagnostics struct {
-		Items struct {
-			Required   []string `json:"required"`
-			Properties struct {
-				Redacted struct {
-					Const bool `json:"const"`
-				} `json:"redacted"`
-				Message struct {
-					Const string `json:"const"`
-				} `json:"message"`
-				Attributes *bool `json:"attributes"`
-			} `json:"properties"`
-		} `json:"items"`
-	}
+	var diagnostics subscriptionDiagnosticSchema
 	if err := json.Unmarshal(definition.AllOf[1].Properties["diagnostics"], &diagnostics); err != nil {
 		t.Fatal(err)
 	}
