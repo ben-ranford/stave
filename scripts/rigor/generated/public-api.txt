@@ -272,6 +272,9 @@ type TextPayload struct { Text string `json:"text"`; Committed bool `json:"commi
 
 [github.com/ben-ranford/stave/focus]
 func NewGraph(tree semantic.Tree) Graph
+func NewModalLifecycle(state State) ModalLifecycle
+method (*ModalLifecycle) Close(previous, current Graph, scope semantic.NodeID) bool
+method (*ModalLifecycle) Open(g Graph, scope semantic.NodeID) bool
 method (Graph) Contains(target semantic.Target) bool
 method (Graph) First(scope semantic.NodeID) (semantic.Target, bool)
 method (Graph) Focusable() []semantic.Target
@@ -288,6 +291,7 @@ method (Graph) Root() semantic.NodeID
 method (Graph) Validate(state State) error
 type FocusState = State
 type Graph struct {  }
+type ModalLifecycle struct { State State }
 type State struct { Active semantic.Target; Scope semantic.NodeID; Stack []semantic.Target }
 
 [github.com/ben-ranford/stave/input]
