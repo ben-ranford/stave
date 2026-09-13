@@ -2,11 +2,42 @@ package replay
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/ben-ranford/stave/event"
 )
+
+func TestValidateTranscriptRejectsLogicalTimeMismatch(t *testing.T) {
+	for _, tick := range []uint64{0, 1, 3} {
+		transcript := mustTranscript(t)
+		transcript.Records[0].Event.Timestamp.Tick = tick
+		var divergence *Divergence
+		if err := ValidateTranscript(transcript); !errors.As(err, &divergence) || divergence.Field != "event.timestamp.tick" {
+			t.Fatalf("timestamp %d: got %v, want logical-time divergence", tick, err)
+		}
+	}
+}
+
+func TestValidateTranscriptRequiresMonotonicDiagnosticCount(t *testing.T) {
+	for _, count := range []uint64{0, 1, 2} {
+		transcript := mustTranscript(t)
+		transcript.Initial.DiagnosticCount = 1
+		refreshInspectorCheckpointChecksum(t, &transcript.Initial)
+		transcript.Records[0].Prior.DiagnosticCount = 1
+		transcript.Records[0].Result.DiagnosticCount = count
+		err := ValidateTranscript(transcript)
+		if count == 0 {
+			var divergence *Divergence
+			if !errors.As(err, &divergence) || divergence.Field != "result.diagnosticCount" {
+				t.Fatalf("decreasing count: got %v, want diagnostic-count divergence", err)
+			}
+		} else if err != nil {
+			t.Fatalf("monotonic count %d rejected: %v", count, err)
+		}
+	}
+}
 
 func TestValidateTranscriptRejectsTypedSensitivePlaintext(t *testing.T) {
 	for _, kind := range []event.Kind{event.ActionInvoked, event.EffectResult} {

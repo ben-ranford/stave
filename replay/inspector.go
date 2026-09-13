@@ -445,6 +445,9 @@ func validateInspectorRecord(index int, record Record) error {
 	if err := record.Event.Validate(); err != nil {
 		return fmt.Errorf("replay record %d: %w", index, err)
 	}
+	if record.Event.Timestamp.Tick != record.Event.Sequence {
+		return &Divergence{Code: DivergenceSequence, Index: index, Field: "event.timestamp.tick", Expected: record.Event.Sequence, Actual: record.Event.Timestamp.Tick}
+	}
 	if err := validateSensitiveTypedPayload(index, record.Event); err != nil {
 		return err
 	}
@@ -456,6 +459,9 @@ func validateInspectorRecord(index int, record Record) error {
 	}
 	if record.Result.Revision < record.Prior.Revision || record.Result.Revision-record.Prior.Revision > 1 {
 		return &Divergence{Code: DivergenceRevision, Index: index, Field: "result.revision", Expected: "prior revision or one greater", Actual: record.Result.Revision}
+	}
+	if record.Result.DiagnosticCount < record.Prior.DiagnosticCount {
+		return &Divergence{Code: DivergenceCheckpoint, Index: index, Field: "result.diagnosticCount", Expected: "at least the prior diagnostic count", Actual: record.Result.DiagnosticCount}
 	}
 	return nil
 }
