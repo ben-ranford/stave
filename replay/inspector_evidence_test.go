@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/ben-ranford/stave/event"
+	"github.com/ben-ranford/stave/state"
 )
 
 func TestDecodeTranscriptRejectsOmittedEventSchemaVersion(t *testing.T) {
@@ -22,6 +23,14 @@ func TestDecodeTranscriptRejectsOmittedEventSchemaVersion(t *testing.T) {
 	}
 	if _, err := DecodeTranscript(omitted); err == nil {
 		t.Fatal("DecodeTranscript() accepted an event without schemaVersion")
+	}
+}
+
+func TestValidateTranscriptRejectsTypedEventWithoutSchemaVersion(t *testing.T) {
+	transcript := mustTranscript(t)
+	transcript.Records[0].Event.SchemaVersion = ""
+	if err := ValidateTranscript(transcript); err == nil {
+		t.Fatal("ValidateTranscript() accepted a typed event without schemaVersion")
 	}
 }
 
@@ -113,6 +122,9 @@ func TestValidateTranscriptDeliveryEvidence(t *testing.T) {
 			record.Delivery = tc.delivery
 			record.CompletionIndex = tc.recordIndex
 			record.Event.Meta.CompletionIndex = tc.eventIndex
+			if tc.kind == event.EffectResult {
+				record.Result.Hashes.EffectLedger = sessionEffectLedger(t, record.Prior.Hashes.EffectLedger, record.Event)
+			}
 			err := ValidateTranscript(transcript)
 			if (err == nil) != tc.valid {
 				t.Fatalf("ValidateTranscript() = %v, want valid=%v", err, tc.valid)
@@ -170,12 +182,14 @@ func TestValidateTranscriptRequiresStableEffectDelivery(t *testing.T) {
 	first.Event.Kind = event.EffectResult
 	first.Event.Payload = event.EffectResultPayload{CallID: "first", Status: "ok"}
 	first.Delivery = "declaration_order"
+	first.Result.Hashes.EffectLedger = sessionEffectLedger(t, first.Prior.Hashes.EffectLedger, first.Event)
 	second := *first
 	second.Prior = first.Result
 	second.Event.Sequence = first.Result.Sequence + 1
 	second.Event.Timestamp.Tick = second.Event.Sequence
 	second.Result.Sequence = second.Event.Sequence
 	second.Event.Payload = event.EffectResultPayload{CallID: "second", Status: "ok"}
+	second.Result.Hashes.EffectLedger = sessionEffectLedger(t, second.Prior.Hashes.EffectLedger, second.Event)
 	transcript.Records = append(transcript.Records, second)
 	if err := ValidateTranscript(transcript); err != nil {
 		t.Fatalf("ValidateTranscript() rejected consistent effect delivery: %v", err)
@@ -196,9 +210,94 @@ func TestValidateTranscriptKeepsNonEffectLedgerStable(t *testing.T) {
 	transcript.Records[0].Event.Kind = event.EffectResult
 	transcript.Records[0].Event.Payload = event.EffectResultPayload{CallID: "effect", Status: "ok"}
 	transcript.Records[0].Delivery = "declaration_order"
+	transcript.Records[0].Result.Hashes.EffectLedger = sessionEffectLedger(t, transcript.Records[0].Prior.Hashes.EffectLedger, transcript.Records[0].Event)
 	if err := ValidateTranscript(transcript); err != nil {
 		t.Fatalf("effect-result ledger change rejected: %v", err)
 	}
+}
+
+func TestValidateTranscriptRequiresSessionEffectLedger(t *testing.T) {
+	transcript := mustTranscript(t)
+	record := &transcript.Records[0]
+	record.Event.Kind = event.EffectResult
+	record.Event.Payload = event.EffectResultPayload{CallID: "effect", Status: "ok"}
+	record.Delivery = "declaration_order"
+	record.Result.Hashes.EffectLedger = record.Prior.Hashes.EffectLedger
+	record.Result.DiagnosticCount = record.Prior.DiagnosticCount + 1
+	if err := ValidateTranscript(transcript); err != nil {
+		t.Fatalf("ValidateTranscript() rejected an effect result with the rejected-event ledger: %v", err)
+	}
+
+	for _, mutate := range []struct {
+		name  string
+		apply func(*Record)
+	}{
+		{"without diagnostic", func(record *Record) { record.Result.DiagnosticCount = record.Prior.DiagnosticCount }},
+		{"with changed model", func(record *Record) {
+			record.Result.Hashes.Model += "-changed"
+			record.Result.Revision++
+			record.Event.Revision = record.Result.Revision
+		}},
+	} {
+		t.Run(mutate.name, func(t *testing.T) {
+			candidate := mustTranscript(t)
+			record := &candidate.Records[0]
+			record.Event.Kind = event.EffectResult
+			record.Event.Payload = event.EffectResultPayload{CallID: "effect", Status: "ok"}
+			record.Delivery = "declaration_order"
+			record.Result.Hashes.EffectLedger = record.Prior.Hashes.EffectLedger
+			record.Result.DiagnosticCount = record.Prior.DiagnosticCount + 1
+			mutate.apply(record)
+			if err := ValidateTranscript(candidate); err == nil {
+				t.Fatal("ValidateTranscript() accepted a retained ledger outside the rejected-event shape")
+			}
+		})
+	}
+
+	record.Result.Hashes.EffectLedger = "changed"
+	if err := ValidateTranscript(transcript); err == nil {
+		t.Fatal("ValidateTranscript() accepted an arbitrary effect ledger")
+	}
+
+	record.Result.Hashes.EffectLedger = sessionEffectLedger(t, record.Prior.Hashes.EffectLedger, record.Event)
+	if err := ValidateTranscript(transcript); err != nil {
+		t.Fatalf("ValidateTranscript() rejected the session effect ledger: %v", err)
+	}
+}
+
+func TestValidateTranscriptAcceptsSensitiveEffectLedgerAfterCanonicalRoundTrip(t *testing.T) {
+	transcript := mustTranscript(t)
+	record := &transcript.Records[0]
+	record.Event.Kind = event.EffectResult
+	record.Event.Payload = event.EffectResultPayload{CallID: "effect", Status: "ok", Sensitive: true, Value: "private-canary"}
+	record.Delivery = "declaration_order"
+	record.Result.Hashes.EffectLedger = sessionEffectLedger(t, record.Prior.Hashes.EffectLedger, record.Event)
+	data, err := transcript.CanonicalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(data, []byte("private-canary")) {
+		t.Fatal("canonical transcript exposed sensitive effect value")
+	}
+	decoded, err := DecodeTranscript(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateTranscript(decoded); err != nil {
+		t.Fatalf("ValidateTranscript() rejected canonical sensitive effect ledger: %v", err)
+	}
+}
+
+func sessionEffectLedger(t *testing.T, prior string, accepted event.Event) string {
+	t.Helper()
+	ledger, err := state.HashString(struct {
+		Prior string      `json:"prior,omitempty"`
+		Event event.Event `json:"event"`
+	}{prior, accepted})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ledger
 }
 
 func TestValidateTranscriptBindsInitialCapabilityHash(t *testing.T) {

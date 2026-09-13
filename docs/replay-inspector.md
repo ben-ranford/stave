@@ -28,6 +28,7 @@ version explicitly. A revision advances exactly when the model, tree, or
 surface hash changes; configuration, theme, and capability hashes stay fixed
 for the session. The initial capability hash must match the saved manifest.
 Non-effect records retain the effect ledger; effect-result records use the
-session's single delivery mode.
+session's single delivery mode and either retain the prior ledger for a
+rejected event or derive it from the prior ledger and canonical event.
 
 If the command cannot write its report, it exits `1` and emits a bounded diagnostic on standard error. A successful validation or comparison requires successful report output.

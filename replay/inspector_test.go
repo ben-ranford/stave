@@ -243,6 +243,7 @@ func TestDecodeTranscriptAcceptsAlreadyRedactedSensitivePayload(t *testing.T) {
 		},
 	}
 	transcript.Records[0].Delivery = "declaration_order"
+	transcript.Records[0].Result.Hashes.EffectLedger = sessionEffectLedger(t, transcript.Records[0].Prior.Hashes.EffectLedger, transcript.Records[0].Event)
 	data, err := transcript.CanonicalJSON()
 	if err != nil {
 		t.Fatal(err)
