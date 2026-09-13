@@ -25,6 +25,7 @@
           "not": {"anyOf": [{"required": ["actions"]}, {"required": ["patch"]}]},
           "properties": {
             "mode": {"const": "full"},
+            "snapshot": {"type": "object"},
             "sequence": {"type": "integer", "minimum": 1},
             "revision": {"type": "integer", "minimum": 1},
             "diagnostics": {

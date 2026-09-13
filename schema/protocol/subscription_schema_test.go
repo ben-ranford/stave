@@ -38,6 +38,7 @@ func TestSnapshotSubscriptionSchemaIsSeparateAndValid(t *testing.T) {
 		`"$ref": "../protocol.json#/$defs/snapshotResult"`,
 		`"required": ["snapshot"]`,
 		`"not": {"anyOf": [{"required": ["actions"]}, {"required": ["patch"]}]}`, `"minimum": 1`)
+	assertSubscriptionFullSnapshotObjectContract(t, schema.Defs["fullSnapshot"])
 	assertSubscriptionDiagnosticContract(t, schema.Defs["fullSnapshot"])
 	for name, method := range map[string]string{
 		"subscribeRequest":   "stave.snapshot.subscribe",
@@ -89,6 +90,27 @@ type subscriptionFullSnapshotDefinition struct {
 
 type subscriptionFullSnapshotClause struct {
 	Properties map[string]json.RawMessage `json:"properties"`
+}
+
+func assertSubscriptionFullSnapshotObjectContract(t *testing.T, fullSnapshot json.RawMessage) {
+	t.Helper()
+	var definition subscriptionFullSnapshotDefinition
+	if err := json.Unmarshal(fullSnapshot, &definition); err != nil {
+		t.Fatal(err)
+	}
+	snapshotRaw, ok := definition.AllOf[1].Properties["snapshot"]
+	if !ok {
+		t.Fatal("full snapshot does not constrain snapshot")
+	}
+	var snapshot struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(snapshotRaw, &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.Type != "object" {
+		t.Fatalf("full snapshot type = %q, want object", snapshot.Type)
+	}
 }
 
 func assertSubscriptionDiagnosticContract(t *testing.T, fullSnapshot json.RawMessage) {
