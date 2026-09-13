@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"sync"
 	"unicode/utf8"
 )
 
@@ -197,12 +198,12 @@ func compatibleEnvironment(baseline, candidate Report, candidateMeasurements map
 	if baseline.Reproducibility.SampleCount != candidate.Reproducibility.SampleCount || baseline.Reproducibility.Strict != candidate.Reproducibility.Strict || baseline.Reproducibility.GOMAXPROCS != candidate.Reproducibility.GOMAXPROCS || !reflect.DeepEqual(comparableInvocation(baseline.Reproducibility.Invocation), comparableInvocation(candidate.Reproducibility.Invocation)) {
 		return errors.New("performance reports use incompatible reproducibility parameters")
 	}
-	if baseline.AllocLimit != candidate.AllocLimit || baseline.IdleCPU.Limit != candidate.IdleCPU.Limit || baseline.IdleCPU.Name != candidate.IdleCPU.Name || len(baseline.Measurements) != len(candidate.Measurements) {
+	if baseline.AllocLimit != candidate.AllocLimit || baseline.IdleCPU.Limit != candidate.IdleCPU.Limit || baseline.IdleCPU.Name != candidate.IdleCPU.Name || len(baseline.IdleCPU.Attempts) != len(candidate.IdleCPU.Attempts) || len(baseline.Measurements) != len(candidate.Measurements) {
 		return errors.New("performance reports use incompatible absolute budget schema")
 	}
 	for _, measurement := range baseline.Measurements {
 		candidateMetric := candidateMeasurements[measurement.Name]
-		if candidateMetric.Name == "" || candidateMetric.Limit != measurement.Limit || candidateMetric.Samples != measurement.Samples {
+		if candidateMetric.Name == "" || candidateMetric.Limit != measurement.Limit || candidateMetric.Samples != measurement.Samples || len(candidateMetric.Attempts) != len(measurement.Attempts) {
 			return fmt.Errorf("performance reports use incompatible metric schema for %q", measurement.Name)
 		}
 	}
@@ -332,9 +333,16 @@ func indirectJSONType(typ reflect.Type) reflect.Type {
 	return typ
 }
 
+// jsonStructFieldCache stores immutable field maps keyed by the framework type.
+// Typed array entries reuse their schema without allocating a map per object.
+var jsonStructFieldCache sync.Map // map[reflect.Type]map[string]reflect.Type
+
 func jsonStructFields(typ reflect.Type) map[string]reflect.Type {
 	if typ == nil || typ.Kind() != reflect.Struct {
 		return nil
+	}
+	if cached, ok := jsonStructFieldCache.Load(typ); ok {
+		return cached.(map[string]reflect.Type)
 	}
 	fields := make(map[string]reflect.Type)
 	for i := 0; i < typ.NumField(); i++ {
@@ -351,7 +359,8 @@ func jsonStructFields(typ reflect.Type) map[string]reflect.Type {
 		}
 		fields[name] = field.Type
 	}
-	return fields
+	actual, _ := jsonStructFieldCache.LoadOrStore(typ, fields)
+	return actual.(map[string]reflect.Type)
 }
 
 func validateJSONObjectKey(decoder *json.Decoder, seen map[string]struct{}) (string, error) {

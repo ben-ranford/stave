@@ -112,6 +112,46 @@ func TestCompareRejectsRegressionEnvironmentAndBudgetChanges(t *testing.T) {
 	}
 }
 
+func TestCompareRequiresEqualAttemptCounts(t *testing.T) {
+	baseline, candidate := comparisonFixture(), comparisonFixture()
+	baseline.Measurements[0].Attempts = []Attempt{
+		{P50: time.Nanosecond, P95: 2 * time.Nanosecond, P99: 3 * time.Nanosecond},
+		{P50: 4 * time.Nanosecond, P95: 5 * time.Nanosecond, P99: 6 * time.Nanosecond},
+	}
+	candidate.Measurements[0].Attempts = []Attempt{
+		{P50: 7 * time.Nanosecond, P95: 8 * time.Nanosecond, P99: 9 * time.Nanosecond},
+		{P50: 10 * time.Nanosecond, P95: 11 * time.Nanosecond, P99: 12 * time.Nanosecond},
+	}
+	baseline.IdleCPU.Attempts = []float64{0.01, 0.02}
+	candidate.IdleCPU.Attempts = []float64{0.03, 0.04}
+	if _, err := Compare(baseline, candidate); err != nil {
+		t.Fatalf("Compare() rejected equal attempt counts with different timings: %v", err)
+	}
+
+	for _, mutate := range []struct {
+		name  string
+		apply func(*Report)
+	}{
+		{"measurement", func(report *Report) {
+			report.Measurements[0].Attempts = append(report.Measurements[0].Attempts, Attempt{})
+		}},
+		{"idle CPU", func(report *Report) {
+			report.IdleCPU.Attempts = append(report.IdleCPU.Attempts, 0.05)
+		}},
+	} {
+		t.Run(mutate.name, func(t *testing.T) {
+			mismatched := candidate
+			mismatched.Measurements = append([]Measurement(nil), candidate.Measurements...)
+			mismatched.Measurements[0].Attempts = append([]Attempt(nil), candidate.Measurements[0].Attempts...)
+			mismatched.IdleCPU.Attempts = append([]float64(nil), candidate.IdleCPU.Attempts...)
+			mutate.apply(&mismatched)
+			if _, err := Compare(baseline, mismatched); err == nil {
+				t.Fatal("Compare() accepted mismatched attempt counts")
+			}
+		})
+	}
+}
+
 func TestComparisonJSONDistinguishesDefinedAndUndefinedZeroPercentDelta(t *testing.T) {
 	baseline, candidate := comparisonFixture(), comparisonFixture()
 	comparison, err := Compare(baseline, candidate)
@@ -279,5 +319,27 @@ func TestReportJSONValidationRetainsNestedContracts(t *testing.T) {
 	}
 	if err := validateJSONKeys([]byte(strings.Repeat("[", 65)+`0`+strings.Repeat("]", 65)), 0); err != nil {
 		t.Fatalf("depth boundary rejected: %v", err)
+	}
+}
+
+func TestReportJSONValidationCachesTypedFieldMaps(t *testing.T) {
+	data := []byte(`{"measurements":[` + strings.Repeat(`{},`, 9_999) + `{}]}`)
+	if err := validateReportJSONKeys(data); err != nil {
+		t.Fatal(err)
+	}
+	measure := func(validate func([]byte) error) uint64 {
+		runtime.GC()
+		var before, after runtime.MemStats
+		runtime.ReadMemStats(&before)
+		if err := validate(data); err != nil {
+			t.Fatal(err)
+		}
+		runtime.ReadMemStats(&after)
+		return after.TotalAlloc - before.TotalAlloc
+	}
+	generic := measure(func(data []byte) error { return validateJSONKeys(data, 0) })
+	typed := measure(validateReportJSONKeys)
+	if typed > generic+uint64(4*len(data)) {
+		t.Fatalf("typed field schema validation allocated %d bytes versus generic %d for %d-byte input", typed, generic, len(data))
 	}
 }
