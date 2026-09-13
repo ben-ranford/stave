@@ -422,3 +422,24 @@ const Ready State = 7
 		}
 	}
 }
+
+func TestPublicAPIInventoryNormalizesExportedFunctionValueParameterNames(t *testing.T) {
+	dir := t.TempDir()
+	render := func(source string) string {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, "api.go"), []byte(source), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		inventory, err := renderPublicAPI("example.com/api", []goListPackage{{ImportPath: "example.com/api", Dir: dir, GoFiles: []string{"api.go"}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return inventory
+	}
+
+	before := render("package api\nvar Hook func(value string) func(result string) error\n")
+	after := render("package api\nvar Hook func(input string) func(output string) error\n")
+	if before != after {
+		t.Fatalf("exported function value parameter names changed inventory:\n%s\n%s", before, after)
+	}
+}

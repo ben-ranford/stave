@@ -9,6 +9,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"go/token"
 	"io"
 	"os"
 	"os/exec"
@@ -394,13 +395,49 @@ func structFields(declaration string) []string {
 			paren--
 		case ';':
 			if curly == 0 && square == 0 && paren == 0 {
-				fields = append(fields, strings.TrimSpace(body[start:index]))
+				fields = append(fields, normalizedStructFieldDeclarations(strings.TrimSpace(body[start:index]))...)
 				start = index + 1
 			}
 		}
 	}
-	fields = append(fields, strings.TrimSpace(body[start:]))
+	fields = append(fields, normalizedStructFieldDeclarations(strings.TrimSpace(body[start:]))...)
 	return fields
+}
+
+// normalizedStructFieldDeclarations expands only grouped named fields. This
+// keeps the inventory's existing type rendering while making `A, B T` and
+// `A T; B T` compare as the same ordered fields.
+func normalizedStructFieldDeclarations(declaration string) []string {
+	for index, character := range declaration {
+		if character != ' ' && character != '\t' {
+			continue
+		}
+		names := strings.TrimSpace(declaration[:index])
+		if names == "" || !groupedFieldNames(names) {
+			continue
+		}
+		typeDeclaration := declaration[index:]
+		fields := strings.Split(names, ",")
+		out := make([]string, 0, len(fields))
+		for _, name := range fields {
+			out = append(out, strings.TrimSpace(name)+typeDeclaration)
+		}
+		return out
+	}
+	return []string{declaration}
+}
+
+func groupedFieldNames(names string) bool {
+	fields := strings.Split(names, ",")
+	if len(fields) < 2 {
+		return false
+	}
+	for _, field := range fields {
+		if !token.IsIdentifier(strings.TrimSpace(field)) {
+			return false
+		}
+	}
+	return true
 }
 
 func git(ctx context.Context, args ...string) ([]byte, error) {

@@ -428,7 +428,7 @@ func publicValueDeclaration(label, name string, object types.Object, qualifier t
 		return "", fmt.Errorf("missing type information for exported %s %s", label, name)
 	}
 
-	typeName := types.TypeString(object.Type(), qualifier)
+	typeName := canonicalTypeString(object.Type(), qualifier)
 	switch object := object.(type) {
 	case *types.Var:
 		return fmt.Sprintf("var %s %s", name, typeName), nil
@@ -956,6 +956,11 @@ func canonicalStructType(typ *types.Struct, qualifier types.Qualifier) string {
 
 func canonicalInterfaceType(typ *types.Interface, qualifier types.Qualifier) string {
 	typ.Complete()
+	if typ.NumEmbeddeds() == 0 && typ.NumExplicitMethods() == 0 {
+		// Go 1.22 prints this type as interface{}, while newer toolchains may
+		// preserve the any alias. Keep the inventory independent of toolchain.
+		return "any"
+	}
 	elements := make([]string, 0, typ.NumEmbeddeds()+typ.NumExplicitMethods())
 	for index := 0; index < typ.NumEmbeddeds(); index++ {
 		elements = append(elements, canonicalTypeString(typ.EmbeddedType(index), qualifier))

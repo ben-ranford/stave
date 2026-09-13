@@ -76,6 +76,10 @@ func TestCompareInventoriesRejectsStructFieldReordering(t *testing.T) {
 	if err := compareInventories(baseline, withAddition); err != nil {
 		t.Fatalf("additive exported field was rejected: %v", err)
 	}
+	grouped := "# Public API inventory\nmodule example.com/api\n\n[example.com/api]\ntype Pair struct { Left, Right string }\n"
+	if err := compareInventories(grouped, baseline); err != nil {
+		t.Fatalf("grouped equivalent exported fields were rejected: %v", err)
+	}
 }
 
 func TestCompareInventoriesRejectsNestedStructFieldChanges(t *testing.T) {
