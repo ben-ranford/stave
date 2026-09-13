@@ -18,11 +18,13 @@ retry_seconds="${RELEASE_PROBE_RETRY_SECONDS:-5}"
 connect_timeout_seconds="${RELEASE_PROBE_CONNECT_TIMEOUT_SECONDS:-5}"
 request_timeout_seconds="${RELEASE_PROBE_REQUEST_TIMEOUT_SECONDS:-15}"
 go_timeout_seconds="${RELEASE_PROBE_GO_TIMEOUT_SECONDS:-60}"
+terminate_grace_seconds="${RELEASE_PROBE_TERMINATE_GRACE_SECONDS:-2}"
 [[ "${attempts}" =~ ^[1-9][0-9]*$ ]] || { printf 'RELEASE_PROBE_ATTEMPTS must be a positive integer\n' >&2; exit 2; }
 [[ "${retry_seconds}" =~ ^[0-9]+$ ]] || { printf 'RELEASE_PROBE_RETRY_SECONDS must be a non-negative integer\n' >&2; exit 2; }
 [[ "${connect_timeout_seconds}" =~ ^[1-9][0-9]*$ ]] || { printf 'RELEASE_PROBE_CONNECT_TIMEOUT_SECONDS must be a positive integer\n' >&2; exit 2; }
 [[ "${request_timeout_seconds}" =~ ^[1-9][0-9]*$ ]] || { printf 'RELEASE_PROBE_REQUEST_TIMEOUT_SECONDS must be a positive integer\n' >&2; exit 2; }
 [[ "${go_timeout_seconds}" =~ ^[1-9][0-9]*$ ]] || { printf 'RELEASE_PROBE_GO_TIMEOUT_SECONDS must be a positive integer\n' >&2; exit 2; }
+[[ "${terminate_grace_seconds}" =~ ^[1-9][0-9]*$ ]] || { printf 'RELEASE_PROBE_TERMINATE_GRACE_SECONDS must be a positive integer\n' >&2; exit 2; }
 
 for command in curl go jq mktemp; do
 	command -v "${command}" >/dev/null 2>&1 || { printf 'required command not found: %s\n' "${command}" >&2; exit 2; }
@@ -58,28 +60,72 @@ retry_command() {
 	done
 }
 
+descendant_pids() {
+	local parent_pid="$1" child_pid
+	while IFS= read -r child_pid; do
+		[[ -n "${child_pid}" ]] || continue
+		descendant_pids "${child_pid}"
+		printf '%s\n' "${child_pid}"
+	done < <(ps -eo pid=,ppid= | awk -v parent_pid="${parent_pid}" '$2 == parent_pid {print $1}')
+}
+
+terminate_processes() {
+	local signal="$1"
+	shift
+	local process_pid
+	for process_pid in "$@"; do
+		kill "-${signal}" "${process_pid}" 2>/dev/null || true
+	done
+}
+
+process_is_running() {
+	local process_pid="$1" process_state
+	process_state="$(ps -o stat= -p "${process_pid}" 2>/dev/null | tr -d '[:space:]')"
+	[[ -n "${process_state}" && "${process_state}" != Z* ]]
+}
+
 run_with_timeout() {
 	local description="$1"
 	shift
 	"$@" &
 	local command_pid=$!
-	(
-		sleep "${go_timeout_seconds}"
-		if kill -0 "${command_pid}" 2>/dev/null; then
-			printf 'release probe timed out after %ss while %s\n' "${go_timeout_seconds}" "${description}" >&2
-			kill "${command_pid}" 2>/dev/null || true
+	local timeout_deadline=$((SECONDS + go_timeout_seconds))
+	while process_is_running "${command_pid}"; do
+		if (( SECONDS >= timeout_deadline )); then
+			break
 		fi
-	) &
-	local watchdog_pid=$!
-	local command_status=0
-	if wait "${command_pid}"; then
-		command_status=0
-	else
-		command_status=$?
+		sleep 1
+	done
+	if ! process_is_running "${command_pid}"; then
+		if wait "${command_pid}"; then
+			return 0
+		else
+			return $?
+		fi
 	fi
-	kill "${watchdog_pid}" 2>/dev/null || true
-	wait "${watchdog_pid}" 2>/dev/null || true
-	return "${command_status}"
+
+	printf 'release probe timed out after %ss while %s\n' "${go_timeout_seconds}" "${description}" >&2
+	local -a process_pids=()
+	local process_pid
+	while IFS= read -r process_pid; do
+		[[ -n "${process_pid}" ]] && process_pids+=("${process_pid}")
+	done < <(descendant_pids "${command_pid}"; printf '%s\n' "${command_pid}")
+	terminate_processes TERM "${process_pids[@]}"
+	local grace_deadline=$((SECONDS + terminate_grace_seconds))
+	while (( SECONDS < grace_deadline )); do
+		local process_alive=false
+		for process_pid in "${process_pids[@]}"; do
+			if process_is_running "${process_pid}"; then
+				process_alive=true
+				break
+			fi
+		done
+		"${process_alive}" || break
+		sleep 1
+	done
+	terminate_processes KILL "${process_pids[@]}"
+	wait "${command_pid}" 2>/dev/null || true
+	return 124
 }
 
 api_base="https://api.github.com/repos/${repository}"
