@@ -33,7 +33,7 @@ func TestSnapshotSubscriptionUnsubscribeStopsDeliveryAndAllowsResubscribe(t *tes
 			Negotiate: func(context.Context, map[string]any) (capability.Manifest, error) {
 				return capability.Manifest{ProtocolVersions: []string{protocol.Version}, SnapshotModes: []string{"full"}, SnapshotSubscriptionVersions: []string{protocol.SnapshotSubscriptionVersion}}, nil
 			},
-			SnapshotEnvelope: func(context.Context, string, uint64) (SnapshotEnvelope, error) {
+			SubscriptionSnapshotEnvelope: func(context.Context, string, uint64) (SnapshotEnvelope, error) {
 				env := envelope
 				env.Sequence = sequence.Load()
 				return env, nil
@@ -85,8 +85,8 @@ func TestSnapshotSubscriptionRejectsMalformedParamsAndUnofferedExtension(t *test
 			// A host offer alone must not enable an extension the client declined.
 			return capability.Manifest{ProtocolVersions: []string{protocol.Version}, SnapshotModes: []string{"full"}, SnapshotSubscriptionVersions: []string{protocol.SnapshotSubscriptionVersion}}, nil
 		},
-		SnapshotEnvelope:          func(context.Context, string, uint64) (SnapshotEnvelope, error) { return envelope, nil },
-		SnapshotPublicationWaiter: func(ctx context.Context, _ uint64) error { <-ctx.Done(); return ctx.Err() },
+		SubscriptionSnapshotEnvelope: func(context.Context, string, uint64) (SnapshotEnvelope, error) { return envelope, nil },
+		SnapshotPublicationWaiter:    func(ctx context.Context, _ uint64) error { <-ctx.Done(); return ctx.Err() },
 	}
 	requests := strings.Join([]string{
 		`{"jsonrpc":"2.0","id":1,"method":"stave.initialize","params":{"protocolVersions":["1.0"]}}`,
@@ -160,7 +160,7 @@ func TestSnapshotSubscriptionIgnoresIDlessUnsubscribeNotification(t *testing.T) 
 	go func() {
 		done <- New(Options{
 			Negotiate: subscriptionNegotiator,
-			SnapshotEnvelope: func(context.Context, string, uint64) (SnapshotEnvelope, error) {
+			SubscriptionSnapshotEnvelope: func(context.Context, string, uint64) (SnapshotEnvelope, error) {
 				env := envelope
 				env.Sequence = sequence.Load()
 				return env, nil
@@ -205,7 +205,7 @@ func TestSnapshotSubscriptionBaselineOmitsActionsAndRedactsDiagnostics(t *testin
 	var authorized, confirmed atomic.Int32
 	options := Options{
 		Negotiate: subscriptionNegotiator,
-		SnapshotEnvelope: func(context.Context, string, uint64) (SnapshotEnvelope, error) {
+		SubscriptionSnapshotEnvelope: func(context.Context, string, uint64) (SnapshotEnvelope, error) {
 			return envelope, nil
 		},
 		SnapshotPublicationWaiter: func(ctx context.Context, _ uint64) error { <-ctx.Done(); return ctx.Err() },
@@ -312,7 +312,7 @@ func TestSnapshotSubscriptionProviderFailureEmitsOneTerminalAndStopsPump(t *test
 		Negotiate: func(context.Context, map[string]any) (capability.Manifest, error) {
 			return capability.Manifest{ProtocolVersions: []string{protocol.Version}, SnapshotModes: []string{"full"}, SnapshotSubscriptionVersions: []string{protocol.SnapshotSubscriptionVersion}}, nil
 		},
-		SnapshotEnvelope: func(context.Context, string, uint64) (SnapshotEnvelope, error) {
+		SubscriptionSnapshotEnvelope: func(context.Context, string, uint64) (SnapshotEnvelope, error) {
 			providerCalls++
 			if providerCalls > 1 {
 				return SnapshotEnvelope{}, errors.New("provider failure")
@@ -358,7 +358,7 @@ func TestSnapshotSubscriptionOversizeBaselineDoesNotArmWaiter(t *testing.T) {
 		Negotiate: func(context.Context, map[string]any) (capability.Manifest, error) {
 			return capability.Manifest{ProtocolVersions: []string{protocol.Version}, SnapshotModes: []string{"full"}, SnapshotSubscriptionVersions: []string{protocol.SnapshotSubscriptionVersion}}, nil
 		},
-		SnapshotEnvelope: func(context.Context, string, uint64) (SnapshotEnvelope, error) { return envelope, nil },
+		SubscriptionSnapshotEnvelope: func(context.Context, string, uint64) (SnapshotEnvelope, error) { return envelope, nil },
 		SnapshotPublicationWaiter: func(context.Context, uint64) error {
 			waiterCalls.Add(1)
 			return nil
@@ -388,7 +388,7 @@ func TestSnapshotSubscriptionSessionCloseEmitsOneTerminalAndStopsPump(t *testing
 		Negotiate: func(context.Context, map[string]any) (capability.Manifest, error) {
 			return capability.Manifest{ProtocolVersions: []string{protocol.Version}, SnapshotModes: []string{"full"}, SnapshotSubscriptionVersions: []string{protocol.SnapshotSubscriptionVersion}}, nil
 		},
-		SnapshotEnvelope: func(context.Context, string, uint64) (SnapshotEnvelope, error) { return envelope, nil },
+		SubscriptionSnapshotEnvelope: func(context.Context, string, uint64) (SnapshotEnvelope, error) { return envelope, nil },
 		SnapshotPublicationWaiter: func(context.Context, uint64) error {
 			<-closed
 			return errors.New("session closed")
@@ -420,7 +420,7 @@ func TestSnapshotSubscriptionOversizeUpdateEmitsOneTerminalAndStopsPump(t *testi
 	publication := make(chan struct{}, 1)
 	stopped := make(chan struct{})
 	var calls atomic.Int32
-	options := Options{MaxOutputBytes: 2048, Negotiate: subscriptionNegotiator, SnapshotEnvelope: func(context.Context, string, uint64) (SnapshotEnvelope, error) {
+	options := Options{MaxOutputBytes: 2048, Negotiate: subscriptionNegotiator, SubscriptionSnapshotEnvelope: func(context.Context, string, uint64) (SnapshotEnvelope, error) {
 		if calls.Add(1) == 1 {
 			return base, nil
 		}
@@ -459,7 +459,7 @@ func TestSnapshotSubscriptionNotificationWriteFailureStopsPump(t *testing.T) {
 	var calls atomic.Int32
 	want := errors.New("notification write failed")
 	output := &subscriptionNotificationFailWriter{err: want}
-	options := Options{Negotiate: subscriptionNegotiator, SnapshotEnvelope: func(context.Context, string, uint64) (SnapshotEnvelope, error) {
+	options := Options{Negotiate: subscriptionNegotiator, SubscriptionSnapshotEnvelope: func(context.Context, string, uint64) (SnapshotEnvelope, error) {
 		if calls.Add(1) == 1 {
 			return base, nil
 		}

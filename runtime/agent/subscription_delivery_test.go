@@ -59,7 +59,7 @@ func startSubscriptionClient(t *testing.T, s *session.Session[int], block bool) 
 	}
 	c := &subscriptionTestClient{t: t, ctx: ctx, in: input, out: w, seen: make(chan uint64, 32)}
 	opts, err := BindSession(s, Options{Negotiate: func(context.Context, map[string]any) (capability.Manifest, error) {
-		return capability.Manifest{ProtocolVersions: []string{protocol.Version}, SnapshotModes: []string{"full"}, SnapshotSubscriptionVersions: []string{protocol.SnapshotSubscriptionVersion}}, nil
+		return capability.Manifest{ProtocolVersions: []string{protocol.Version}, SnapshotModes: []string{"full", "patch"}, SnapshotSubscriptionVersions: []string{protocol.SnapshotSubscriptionVersion}}, nil
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -244,4 +244,29 @@ func TestSnapshotSubscriptionRejectsRegressingProvider(t *testing.T) {
 		}
 		s.close()
 	}
+}
+
+func TestSnapshotSubscriptionDoesNotAdvancePollingPatchBase(t *testing.T) {
+	s := bridgeSession(t, "stave-session")
+	defer s.Close()
+	c := startSubscriptionClient(t, s, false)
+	c.request(`{"jsonrpc":"2.0","id":20,"method":"stave.snapshot","params":{"mode":"full"}}`)
+	c.response(20)
+	if err := s.Send(bridgeEvent(t)); err != nil {
+		t.Fatal(err)
+	}
+	c.notification()
+	c.observed(2)
+	c.request(`{"jsonrpc":"2.0","id":21,"method":"stave.snapshot","params":{"mode":"patch","sinceRevision":1}}`)
+	line := c.line()
+	var response struct {
+		ID     int
+		Error  *protocol.Error
+		Result protocol.SnapshotResult
+	}
+	if err := json.Unmarshal(line, &response); err != nil || response.Error != nil || response.ID != 21 || response.Result.Mode != "patch" || response.Result.Patch == nil || response.Result.Patch.FromRevision != 1 || response.Result.Patch.ToRevision != 2 {
+		t.Fatalf("subscription changed polling patch history: %s (%v)", line, err)
+	}
+	c.request(`{"jsonrpc":"2.0","id":22,"method":"stave.snapshot.unsubscribe"}`)
+	c.response(22)
 }

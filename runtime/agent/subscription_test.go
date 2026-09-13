@@ -21,8 +21,8 @@ func TestSnapshotSubscriptionRequiresNegotiatedExtensionAndIsIdempotentlyRemoved
 		Negotiate: func(context.Context, map[string]any) (capability.Manifest, error) {
 			return capability.Manifest{ProtocolVersions: []string{protocol.Version}, SnapshotModes: []string{"full"}, SnapshotSubscriptionVersions: []string{protocol.SnapshotSubscriptionVersion}}, nil
 		},
-		SnapshotEnvelope:          func(context.Context, string, uint64) (SnapshotEnvelope, error) { return envelope, nil },
-		SnapshotPublicationWaiter: func(ctx context.Context, _ uint64) error { <-ctx.Done(); return ctx.Err() },
+		SubscriptionSnapshotEnvelope: func(context.Context, string, uint64) (SnapshotEnvelope, error) { return envelope, nil },
+		SnapshotPublicationWaiter:    func(ctx context.Context, _ uint64) error { <-ctx.Done(); return ctx.Err() },
 	}
 	requests := "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"stave.initialize\",\"params\":{\"protocolVersions\":[\"1.0\"],\"capabilities\":{\"snapshotSubscriptionVersions\":[\"stave.snapshot.subscribe/v1\"]}}}\n" +
 		"{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"stave.initialized\"}\n" +
@@ -47,7 +47,7 @@ func TestSnapshotSubscriptionBaselinePrecedesNotification(t *testing.T) {
 	sequence.Store(1)
 	options := Options{Negotiate: func(context.Context, map[string]any) (capability.Manifest, error) {
 		return capability.Manifest{ProtocolVersions: []string{protocol.Version}, SnapshotModes: []string{"full"}, SnapshotSubscriptionVersions: []string{protocol.SnapshotSubscriptionVersion}}, nil
-	}, SnapshotEnvelope: func(context.Context, string, uint64) (SnapshotEnvelope, error) {
+	}, SubscriptionSnapshotEnvelope: func(context.Context, string, uint64) (SnapshotEnvelope, error) {
 		env := base
 		env.Sequence = sequence.Load()
 		if env.Sequence == 2 {
@@ -152,10 +152,11 @@ func subscriptionEnvelope(t *testing.T) SnapshotEnvelope {
 func TestSnapshotSubscriptionRejectsLegacyAndCompatibilityMode(t *testing.T) {
 	envelope := subscriptionEnvelope(t)
 	for _, options := range []Options{
-		{CompatibilityMode: true, SnapshotEnvelope: func(context.Context, string, uint64) (SnapshotEnvelope, error) { return envelope, nil }, SnapshotPublicationWaiter: func(context.Context, uint64) error { return nil }},
+		{CompatibilityMode: true, SubscriptionSnapshotEnvelope: func(context.Context, string, uint64) (SnapshotEnvelope, error) { return envelope, nil }, SnapshotPublicationWaiter: func(context.Context, uint64) error { return nil }},
 		{Negotiate: func(context.Context, map[string]any) (capability.Manifest, error) {
 			return capability.Manifest{ProtocolVersions: []string{protocol.Version}, SnapshotModes: []string{"full"}}, nil
-		}, SnapshotEnvelope: func(context.Context, string, uint64) (SnapshotEnvelope, error) { return envelope, nil }, SnapshotPublicationWaiter: func(context.Context, uint64) error { return nil }},
+		}, SubscriptionSnapshotEnvelope: func(context.Context, string, uint64) (SnapshotEnvelope, error) { return envelope, nil }, SnapshotPublicationWaiter: func(context.Context, uint64) error { return nil }},
+		{Negotiate: subscriptionNegotiator, SnapshotEnvelope: func(context.Context, string, uint64) (SnapshotEnvelope, error) { return envelope, nil }, SnapshotPublicationWaiter: func(context.Context, uint64) error { return nil }},
 	} {
 		requests := "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"stave.initialize\",\"params\":{\"protocolVersions\":[\"1.0\"],\"capabilities\":{\"snapshotSubscriptionVersions\":[\"stave.snapshot.subscribe/v1\"]}}}\n{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"stave.initialized\"}\n{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"stave.snapshot.subscribe\"}\n"
 		var output bytes.Buffer

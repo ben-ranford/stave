@@ -31,6 +31,9 @@ func BindSession[M any](s *session.Session[M], options Options) (Options, error)
 	bridge := &sessionBridge[M]{session: s, actions: options.Actions}
 	options.SessionID = current.SessionID
 	options.SnapshotEnvelope = bridge.snapshot
+	options.SubscriptionSnapshotEnvelope = func(ctx context.Context, mode string, since uint64) (SnapshotEnvelope, error) {
+		return bridge.snapshotWithHistory(ctx, mode, since, false)
+	}
 	options.SnapshotPublicationWaiter = bridge.waitForPublication
 	options.CancelSession = bridge.cancel
 	return options, nil
@@ -57,7 +60,11 @@ func (b *sessionBridge[M]) cancel(context.Context) error {
 	return nil
 }
 
-func (b *sessionBridge[M]) snapshot(_ context.Context, mode string, since uint64) (SnapshotEnvelope, error) {
+func (b *sessionBridge[M]) snapshot(ctx context.Context, mode string, since uint64) (SnapshotEnvelope, error) {
+	return b.snapshotWithHistory(ctx, mode, since, true)
+}
+
+func (b *sessionBridge[M]) snapshotWithHistory(_ context.Context, mode string, since uint64, remember bool) (SnapshotEnvelope, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	current, err := b.session.Snapshot()
@@ -89,7 +96,9 @@ func (b *sessionBridge[M]) snapshot(_ context.Context, mode string, since uint64
 		snapshot := current.Tree.Snapshot()
 		envelope.Snapshot = &snapshot
 	}
-	b.previous, b.hasPrevious = current, true
+	if remember {
+		b.previous, b.hasPrevious = current, true
+	}
 	return envelope, nil
 }
 

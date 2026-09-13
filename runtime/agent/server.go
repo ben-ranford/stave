@@ -53,16 +53,19 @@ type AuthorizePreparedCall func(context.Context, action.Call) (action.Call, *act
 type ConfirmCall func(context.Context, action.Call) (action.Confirmation, error)
 type CapabilityNegotiator func(context.Context, map[string]any) (capability.Manifest, error)
 type Options struct {
-	MaxMessageBytes           int
-	MaxOutputBytes            int
-	MaxTreeNodes              int
-	MaxInFlight               int
-	Queue                     int
-	Snapshot                  SnapshotProvider
-	SnapshotPatch             SnapshotPatchProvider
-	SnapshotEnvelope          SnapshotEnvelopeProvider
-	SnapshotPublicationWaiter SnapshotPublicationWaiter
-	Actions                   *action.Registry
+	MaxMessageBytes  int
+	MaxOutputBytes   int
+	MaxTreeNodes     int
+	MaxInFlight      int
+	Queue            int
+	Snapshot         SnapshotProvider
+	SnapshotPatch    SnapshotPatchProvider
+	SnapshotEnvelope SnapshotEnvelopeProvider
+	// SubscriptionSnapshotEnvelope reads full snapshots without changing polling
+	// patch history. Required for subscriptions; BindSession supplies it.
+	SubscriptionSnapshotEnvelope SnapshotEnvelopeProvider
+	SnapshotPublicationWaiter    SnapshotPublicationWaiter
+	Actions                      *action.Registry
 	// Deprecated: custom invoke handlers are unsupported because they bypass
 	// registry validation. Use Actions as the execution authority.
 	Invoke            func(context.Context, action.Call) action.Result
@@ -506,7 +509,7 @@ func (s *Server) snapshotSubscriptionAllowed() bool {
 	s.mu.Lock()
 	resolved, ready := s.negotiated, s.ready && !s.closed && !s.cancelling
 	s.mu.Unlock()
-	if !ready || s.opt.SnapshotEnvelope == nil || s.opt.SnapshotPublicationWaiter == nil || !s.snapshotModeAllowed("full") {
+	if !ready || s.opt.SubscriptionSnapshotEnvelope == nil || s.opt.SnapshotPublicationWaiter == nil || !s.snapshotModeAllowed("full") {
 		return false
 	}
 	manifest, ok := resolved.(capability.Manifest)
@@ -522,7 +525,7 @@ func (s *Server) snapshotSubscriptionAllowed() bool {
 }
 
 func (s *Server) subscriptionSnapshot(ctx context.Context) (protocol.SnapshotResult, error) {
-	response := s.handleSafely(ctx, protocol.Request{JSONRPC: protocol.JSONRPC, Method: "stave.snapshot", Params: json.RawMessage(`{"mode":"full"}`)})
+	response := s.handleSafelyWithSnapshot(ctx, protocol.Request{JSONRPC: protocol.JSONRPC, Method: "stave.snapshot", Params: json.RawMessage(`{"mode":"full"}`)}, s.opt.SubscriptionSnapshotEnvelope)
 	if response.Error != nil {
 		return protocol.SnapshotResult{}, errors.New("snapshot subscription failed")
 	}
@@ -675,7 +678,7 @@ func (s *Server) finishCall(callID string) {
 	}
 }
 
-func (s *Server) handle(parent context.Context, r protocol.Request) protocol.Response {
+func (s *Server) handle(parent context.Context, r protocol.Request, snapshotProvider SnapshotEnvelopeProvider) protocol.Response {
 	resp := protocol.Response{JSONRPC: protocol.JSONRPC, ID: r.ID}
 	fail := func(code int, msg string) protocol.Response {
 		resp.Error = protocol.Errorf(code, "%s", msg)
@@ -770,7 +773,7 @@ func (s *Server) handle(parent context.Context, r protocol.Request) protocol.Res
 	}
 	switch r.Method {
 	case "stave.snapshot":
-		if s.opt.SnapshotEnvelope == nil {
+		if snapshotProvider == nil {
 			return fail(protocol.InternalError, "snapshot unavailable")
 		}
 		var p protocol.SnapshotParams
@@ -784,7 +787,7 @@ func (s *Server) handle(parent context.Context, r protocol.Request) protocol.Res
 		if !s.snapshotModeAllowed(p.Mode) {
 			return fail(protocol.CapabilityMismatch, "snapshot mode was not negotiated")
 		}
-		env, e := s.opt.SnapshotEnvelope(parent, p.Mode, p.SinceRevision)
+		env, e := snapshotProvider(parent, p.Mode, p.SinceRevision)
 		if e != nil {
 			s.observe(parent, "snapshot.failed", map[string]string{"cause": "provider"})
 			return fail(protocol.InternalError, "snapshot failed")
@@ -888,7 +891,11 @@ func (s *Server) handle(parent context.Context, r protocol.Request) protocol.Res
 	}
 }
 
-func (s *Server) handleSafely(parent context.Context, r protocol.Request) (resp protocol.Response) {
+func (s *Server) handleSafely(parent context.Context, r protocol.Request) protocol.Response {
+	return s.handleSafelyWithSnapshot(parent, r, s.opt.SnapshotEnvelope)
+}
+
+func (s *Server) handleSafelyWithSnapshot(parent context.Context, r protocol.Request, snapshotProvider SnapshotEnvelopeProvider) (resp protocol.Response) {
 	defer func() {
 		if recover() != nil {
 			s.observe(parent, "runtime.callback_panic", map[string]string{"method": safeIdentifier(r.Method)})
@@ -898,7 +905,7 @@ func (s *Server) handleSafely(parent context.Context, r protocol.Request) (resp 
 			}
 		}
 	}()
-	return s.handle(parent, r)
+	return s.handle(parent, r, snapshotProvider)
 }
 
 func (s *Server) confirm(ctx context.Context, r protocol.Request, resp protocol.Response, fail func(int, string) protocol.Response) protocol.Response {

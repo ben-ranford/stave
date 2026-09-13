@@ -108,3 +108,11 @@ do not include action definitions, invoke actions, change authorization or
 confirmation ownership, or grant new authority. Clients that do not offer and
 receive `stave.snapshot.subscribe/v1` continue to use `stave.snapshot` polling
 with unchanged v1 semantics.
+
+Hosts provide `Options.SubscriptionSnapshotEnvelope` and
+`Options.SnapshotPublicationWaiter` to enable the extension. The dedicated
+provider must read a full snapshot without advancing the polling provider's
+patch history. `BindSession` supplies both callbacks and keeps subscription
+reads separate from polling history. A custom host with a stateless provider
+may explicitly assign that callback to both options. Without the dedicated
+provider, subscription requests are rejected even when the version is offered.
