@@ -1,6 +1,7 @@
 package replay
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -8,6 +9,21 @@ import (
 
 	"github.com/ben-ranford/stave/event"
 )
+
+func TestDecodeTranscriptRejectsOmittedEventSchemaVersion(t *testing.T) {
+	transcript := mustTranscript(t)
+	data, err := transcript.CanonicalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	omitted := bytes.Replace(data, []byte(`"event":{"schemaVersion":"stave.event/v1",`), []byte(`"event":{`), 1)
+	if bytes.Equal(omitted, data) {
+		t.Fatal("canonical transcript did not contain an event schema version")
+	}
+	if _, err := DecodeTranscript(omitted); err == nil {
+		t.Fatal("DecodeTranscript() accepted an event without schemaVersion")
+	}
+}
 
 func TestValidateTranscriptRejectsLogicalTimeMismatch(t *testing.T) {
 	for _, tick := range []uint64{0, 1, 3} {
@@ -102,5 +118,70 @@ func TestValidateTranscriptDeliveryEvidence(t *testing.T) {
 				t.Fatalf("ValidateTranscript() = %v, want valid=%v", err, tc.valid)
 			}
 		})
+	}
+}
+
+func TestValidateTranscriptRequiresProducerStateTransitions(t *testing.T) {
+	for _, field := range []string{"model", "tree", "surface"} {
+		t.Run("changed "+field+" with revision", func(t *testing.T) {
+			valid := mustTranscript(t)
+			switch field {
+			case "model":
+				valid.Records[0].Result.Hashes.Model += "-changed"
+			case "tree":
+				valid.Records[0].Result.Hashes.Tree += "-changed"
+			case "surface":
+				valid.Records[0].Result.Hashes.Surface += "-changed"
+			}
+			valid.Records[0].Result.Revision++
+			valid.Records[0].Event.Revision = valid.Records[0].Result.Revision
+			if err := ValidateTranscript(valid); err != nil {
+				t.Fatalf("ValidateTranscript() rejected a changed %s hash with one revision step: %v", field, err)
+			}
+		})
+	}
+
+	for _, mutate := range []struct {
+		name  string
+		apply func(*Transcript)
+	}{
+		{"changed hash without revision", func(transcript *Transcript) { transcript.Records[0].Result.Hashes.Model += "-changed" }},
+		{"revision without changed hash", func(transcript *Transcript) {
+			transcript.Records[0].Result.Revision++
+			transcript.Records[0].Event.Revision = transcript.Records[0].Result.Revision
+		}},
+		{"config changed", func(transcript *Transcript) { transcript.Records[0].Result.Hashes.Config += "-changed" }},
+		{"theme changed", func(transcript *Transcript) { transcript.Records[0].Result.Hashes.Theme += "-changed" }},
+		{"capability changed", func(transcript *Transcript) { transcript.Records[0].Result.Hashes.Capability += "-changed" }},
+	} {
+		t.Run(mutate.name, func(t *testing.T) {
+			transcript := mustTranscript(t)
+			mutate.apply(&transcript)
+			if err := ValidateTranscript(transcript); err == nil {
+				t.Fatal("ValidateTranscript() accepted an impossible producer transition")
+			}
+		})
+	}
+}
+
+func TestValidateTranscriptRequiresStableEffectDelivery(t *testing.T) {
+	transcript := mustTranscript(t)
+	first := &transcript.Records[0]
+	first.Event.Kind = event.EffectResult
+	first.Event.Payload = event.EffectResultPayload{CallID: "first", Status: "ok"}
+	first.Delivery = "declaration_order"
+	second := *first
+	second.Prior = first.Result
+	second.Event.Sequence = first.Result.Sequence + 1
+	second.Event.Timestamp.Tick = second.Event.Sequence
+	second.Result.Sequence = second.Event.Sequence
+	second.Event.Payload = event.EffectResultPayload{CallID: "second", Status: "ok"}
+	transcript.Records = append(transcript.Records, second)
+	if err := ValidateTranscript(transcript); err != nil {
+		t.Fatalf("ValidateTranscript() rejected consistent effect delivery: %v", err)
+	}
+	transcript.Records[1].Delivery = "completion_order"
+	if err := ValidateTranscript(transcript); err == nil {
+		t.Fatal("ValidateTranscript() accepted mixed effect delivery")
 	}
 }

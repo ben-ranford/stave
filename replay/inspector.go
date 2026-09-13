@@ -207,11 +207,15 @@ func validateRawEventPayloads(data []byte) error {
 	}
 	for index, record := range wire.Records {
 		var eventWire struct {
-			Kind    event.Kind      `json:"kind"`
-			Payload json.RawMessage `json:"payload"`
+			SchemaVersion string          `json:"schemaVersion"`
+			Kind          event.Kind      `json:"kind"`
+			Payload       json.RawMessage `json:"payload"`
 		}
 		if err := json.Unmarshal(record.Event, &eventWire); err != nil {
 			return fmt.Errorf("replay record %d event: %w", index, err)
+		}
+		if eventWire.SchemaVersion != event.SchemaVersion {
+			return fmt.Errorf("replay record %d event has unsupported schemaVersion", index)
 		}
 		if payloadlessEvent(eventWire.Kind) && len(bytes.TrimSpace(eventWire.Payload)) > 0 && !bytes.Equal(bytes.TrimSpace(eventWire.Payload), []byte("null")) {
 			return fmt.Errorf("replay record %d event %q must not have a payload", index, eventWire.Kind)
@@ -430,12 +434,44 @@ func ValidateTranscript(transcript Transcript) error {
 	if err := compareVersions(-1, transcript.Versions, transcript.Initial.Versions); err != nil {
 		return err
 	}
+	delivery := ""
 	for i, record := range transcript.Records {
 		if err := validateInspectorRecord(i, record); err != nil {
 			return err
 		}
+		if err := validateProducerTransition(i, record.Prior, record.Result); err != nil {
+			return err
+		}
+		if record.Event.Kind == event.EffectResult {
+			if delivery != "" && record.Delivery != delivery {
+				return &Divergence{Code: DivergenceDelivery, Index: i, Field: "delivery", Expected: delivery, Actual: record.Delivery}
+			}
+			delivery = record.Delivery
+		}
 	}
 	return Validate(transcript, transcript)
+}
+
+func validateProducerTransition(index int, prior, result Digest) error {
+	changed := prior.Hashes.Model != result.Hashes.Model || prior.Hashes.Tree != result.Hashes.Tree || prior.Hashes.Surface != result.Hashes.Surface
+	if changed != (result.Revision == prior.Revision+1) {
+		return &Divergence{Code: DivergenceRevision, Index: index, Field: "result.revision", Expected: "change exactly with model, tree, or surface hash", Actual: result.Revision}
+	}
+	for _, hash := range []struct {
+		field  string
+		code   DivergenceCode
+		prior  string
+		result string
+	}{
+		{"config", DivergenceConfigHash, prior.Hashes.Config, result.Hashes.Config},
+		{"theme", DivergenceThemeHash, prior.Hashes.Theme, result.Hashes.Theme},
+		{"capability", DivergenceCapability, prior.Hashes.Capability, result.Hashes.Capability},
+	} {
+		if hash.prior != hash.result {
+			return &Divergence{Code: hash.code, Index: index, Field: "result.hashes." + hash.field, Expected: "unchanged", Actual: "changed"}
+		}
+	}
+	return nil
 }
 
 func validateInspectorRecord(index int, record Record) error {

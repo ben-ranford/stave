@@ -30,6 +30,11 @@ func TestRunReportsDistinctValidateCompareAndInvalidStatuses(t *testing.T) {
 		t.Fatalf("compare code=%d report=%+v", code, result)
 	}
 	transcript.Records[0].Result.Hashes.Model = "different"
+	transcript.Records[0].Result.Revision++
+	transcript.Records[0].Event.Revision = transcript.Records[0].Result.Revision
+	if err := replay.ValidateTranscript(transcript); err != nil {
+		t.Fatal(err)
+	}
 	writeTranscript(t, actualPath, transcript)
 	if code, result := runReport(t, "compare", "-expected", expectedPath, "-actual", actualPath); code != exitMismatch || result.Status != "mismatch" || result.Divergence == nil {
 		t.Fatalf("mismatch code=%d report=%+v", code, result)
@@ -58,6 +63,11 @@ func TestRunFailsWhenReportCannotBeWritten(t *testing.T) {
 	transcript := testTranscript(t)
 	writeTranscript(t, valid, transcript)
 	transcript.Records[0].Result.Hashes.Model = "different"
+	transcript.Records[0].Result.Revision++
+	transcript.Records[0].Event.Revision = transcript.Records[0].Result.Revision
+	if err := replay.ValidateTranscript(transcript); err != nil {
+		t.Fatal(err)
+	}
 	writeTranscript(t, different, transcript)
 	for _, args := range [][]string{
 		{"validate", "-input", valid},
