@@ -198,6 +198,45 @@ func TestModalLifecycleRestoresOuterScopeAfterNestedClose(t *testing.T) {
 	}
 }
 
+func TestModalLifecycleRestoresPreExistingScope(t *testing.T) {
+	inner := testNode(t, "inner", "dialog", "Inner", semantic.Flags{Visible: true}, []semantic.Node{
+		testNode(t, "inner.ok", "button", "OK", semantic.Flags{Visible: true, Focusable: true}, nil),
+	})
+	opener := testNode(t, "outer.open", "button", "Open", semantic.Flags{Visible: true, Focusable: true}, nil)
+	outer := testNode(t, "outer", "dialog", "Outer", semantic.Flags{Visible: true}, []semantic.Node{opener, inner})
+	background := testNode(t, "background", "button", "Background", semantic.Flags{Visible: true, Focusable: true}, nil)
+	g := NewGraph(testTree(t, testNode(t, "app", "application", "App", semantic.Flags{Visible: true}, []semantic.Node{background, outer})))
+	active, ok := g.First(outer.ID())
+	if !ok {
+		t.Fatal("outer scope has no focusable target")
+	}
+	initial := State{Active: active, Scope: outer.ID(), Stack: []semantic.Target{g.Focusable()[0]}}
+	for _, construct := range []struct {
+		name string
+		make func(State) ModalLifecycle
+	}{
+		{"constructor", NewModalLifecycle},
+		{"state literal", func(s State) ModalLifecycle { return ModalLifecycle{State: s} }},
+	} {
+		t.Run(construct.name, func(t *testing.T) {
+			m := construct.make(initial)
+			if !m.Open(g, inner.ID()) || !m.Close(g, g, inner.ID()) {
+				t.Fatal("inner modal lifecycle failed")
+			}
+			if m.State.Scope != outer.ID() || m.State.Active != active || len(m.State.Stack) != len(initial.Stack) {
+				t.Fatalf("enclosing scope or initiating focus lost: got %+v, want %+v", m.State, initial)
+			}
+			for range len(g.Focusable()) + 1 {
+				next, ok := g.Next(m.State)
+				if !ok || next.Active.NodeID == background.ID() {
+					t.Fatal("focus escaped enclosing scope after modal close")
+				}
+				m.State = next
+			}
+		})
+	}
+}
+
 func TestModalLifecycleRepairsDeletedReturnTarget(t *testing.T) {
 	dialog := testNode(t, "dialog", "dialog", "Dialog", semantic.Flags{Visible: true}, []semantic.Node{
 		testNode(t, "dialog.ok", "button", "OK", semantic.Flags{Visible: true, Focusable: true}, nil),
