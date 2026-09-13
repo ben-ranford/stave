@@ -1,0 +1,68 @@
+package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"os"
+	"os/exec"
+)
+
+var expected = map[string]bool{
+	"TestRuntimeRestoresOnEOFAndClosesOnce":                 true,
+	"TestLineDriverEmitsCanonicalTextAndShutdown":           true,
+	"TestLineDriverDrawUsesSafePlainWriter":                 true,
+	"TestLineDriverDoesNotInventUnsupportedTTYCapabilities": true,
+	"TestServeCancellationInterruptsBlockingReader":         true,
+	"TestCapabilityEnumsRejectInvalidWireValues":            true,
+	"TestDetectExplicitEnvironment":                         true,
+	"TestNonTTYMachineOutputIsNotReclassifiedAsPlain":       true,
+	"TestNonTTYAccessibleOutputIsNotReclassifiedAsPlain":    true,
+	"TestCrossPlatformTerminalColourDetection":              true,
+}
+
+const selectedTests = "^(TestRuntimeRestoresOnEOFAndClosesOnce|TestLineDriverEmitsCanonicalTextAndShutdown|TestLineDriverDrawUsesSafePlainWriter|TestLineDriverDoesNotInventUnsupportedTTYCapabilities|TestServeCancellationInterruptsBlockingReader|TestCapabilityEnumsRejectInvalidWireValues|TestDetectExplicitEnvironment|TestNonTTYMachineOutputIsNotReclassifiedAsPlain|TestNonTTYAccessibleOutputIsNotReclassifiedAsPlain|TestCrossPlatformTerminalColourDetection)$"
+
+type testEvent struct {
+	Action string
+	Test   string
+}
+
+func main() {
+	command := exec.Command("go", "test", "-json", "-count=1", "-run", selectedTests, "./runtime/human", "./runtime/agent", "./capability")
+	output, err := command.Output()
+	os.Stdout.Write(output)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "native smoke tests failed: %v\n", err)
+		os.Exit(1)
+	}
+	seen, err := selectedTestStarts(output)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	for name := range expected {
+		if !seen[name] {
+			fmt.Fprintf(os.Stderr, "native smoke selected zero instances of %s\n", name)
+			os.Exit(1)
+		}
+	}
+	fmt.Printf("native smoke selected and passed %d tests\n", len(expected))
+}
+
+func selectedTestStarts(output []byte) (map[string]bool, error) {
+	seen := make(map[string]bool, len(expected))
+	for _, line := range bytes.Split(output, []byte{'\n'}) {
+		if len(line) == 0 {
+			continue
+		}
+		var event testEvent
+		if err := json.Unmarshal(line, &event); err != nil {
+			return nil, fmt.Errorf("decode go test event: %w", err)
+		}
+		if event.Action == "run" && expected[event.Test] {
+			seen[event.Test] = true
+		}
+	}
+	return seen, nil
+}

@@ -11,6 +11,7 @@ same semantic interface for people and automation.
 - [Understand compatibility guarantees](compatibility.md)
 - [Apply the security contract](security.md)
 - [Publish a release candidate](releasing.md)
+- [Understand native hosted smoke checks](native-hosted-smokes.md)
 
 ## Maintainers
 

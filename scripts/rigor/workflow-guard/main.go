@@ -80,13 +80,24 @@ func checkJob(path, jobID string, job *actionlint.Job) error {
 
 func checkRunner(path, jobID string, runner *actionlint.Runner) error {
 	if runner == nil || runner.Group != nil || runner.LabelsExpr != nil || len(runner.Labels) != 1 {
-		return fmt.Errorf("%s job %q must use one literal ubuntu-24.04 runner label", path, jobID)
+		return fmt.Errorf("%s job %q must use one approved literal hosted runner label", path, jobID)
 	}
 	label := runner.Labels[0]
-	if label.Value != "ubuntu-24.04" || label.ContainsExpression() {
-		return fmt.Errorf("%s job %q must use one literal ubuntu-24.04 runner label", path, jobID)
+	if label.ContainsExpression() || !approvedRunner(path, jobID, label.Value) {
+		return fmt.Errorf("%s job %q must use one approved literal hosted runner label", path, jobID)
 	}
 	return nil
+}
+
+func approvedRunner(path, jobID, label string) bool {
+	if label == "ubuntu-24.04" {
+		return true
+	}
+	if filepath.Base(path) != "ci.yml" {
+		return false
+	}
+	return (jobID == "native-smoke-macos" && label == "macos-14") ||
+		(jobID == "native-smoke-windows" && label == "windows-2025")
 }
 
 func checkActionInputs(path, jobID string, action *actionlint.ExecAction) error {
