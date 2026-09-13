@@ -290,13 +290,7 @@ func (s *Session[M]) handleEvent(raw event.Event) {
 
 	reservationHeld := false
 	if len(requests) > 0 {
-		if err := s.effectAdmissions.reserve(); err != nil {
-			if errors.Is(err, ErrBackpressure) {
-				s.addTransientDiagnostic("EFFECT_ADMISSION_BACKPRESSURE", "pending effect admission queue saturated", nil)
-			}
-			if raw.Kind == event.Cancel || raw.Kind == event.Shutdown {
-				s.beginClose()
-			}
+		if !s.reserveEffectBatch(raw) {
 			return
 		}
 		reservationHeld = true
@@ -426,6 +420,20 @@ func (s *Session[M]) bindEffects(snapshot state.State[M], requests []effect.Requ
 		return nil, "", err
 	}
 	return calls, hash, nil
+}
+
+func (s *Session[M]) reserveEffectBatch(raw event.Event) bool {
+	err := s.effectAdmissions.reserve()
+	if err == nil {
+		return true
+	}
+	if errors.Is(err, ErrBackpressure) {
+		s.addTransientDiagnostic("EFFECT_ADMISSION_BACKPRESSURE", "pending effect admission queue saturated", nil)
+	}
+	if raw.Kind == event.Cancel || raw.Kind == event.Shutdown {
+		s.beginClose()
+	}
+	return false
 }
 
 // admitEffects owns the only pending admission retry loop. A published

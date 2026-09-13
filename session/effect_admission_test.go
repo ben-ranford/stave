@@ -202,35 +202,39 @@ func TestSessionSaturatedTerminalEventsCloseWithEffectRequests(t *testing.T) {
 	}
 }
 
+func effectAdmissionFailureOptions(stage string, started chan struct{}) Options[model] {
+	return Options[model]{
+		QueueCapacity: 1, MaxActiveBatches: 1,
+		EffectPorts: map[string]effect.Port{"hold": effect.PortFunc(func(ctx context.Context, _ effect.Call) (any, error) {
+			close(started)
+			<-ctx.Done()
+			return nil, ctx.Err()
+		})},
+		Reduce: func(_ context.Context, current model, ev event.Event) (model, []effect.Request, error) {
+			current.Count++
+			kind := "hold"
+			if ev.Payload.(event.KeyPayload).Key == "enter" {
+				current.EffectOrdinals = []int{1}
+				if stage == "bind" {
+					kind = ""
+				}
+			}
+			return current, []effect.Request{{Spec: effect.Spec{Kind: kind}}}, nil
+		},
+		View: func(ctx context.Context, current model) (ViewResult, error) {
+			if stage == "view" && len(current.EffectOrdinals) > 0 {
+				return ViewResult{}, errors.New("view rejected the proposal")
+			}
+			return testView(ctx, current)
+		},
+	}
+}
+
 func TestSessionEffectAdmissionReleasesReservationAfterFailure(t *testing.T) {
 	for _, failure := range []struct{ stage, diagnostic string }{{"view", "VIEW_FAILED"}, {"bind", "EFFECT_BIND_FAILED"}} {
 		t.Run(failure.stage, func(t *testing.T) {
 			started := make(chan struct{})
-			s := newSession(t, Options[model]{
-				QueueCapacity: 1, MaxActiveBatches: 1,
-				EffectPorts: map[string]effect.Port{"hold": effect.PortFunc(func(ctx context.Context, _ effect.Call) (any, error) {
-					close(started)
-					<-ctx.Done()
-					return nil, ctx.Err()
-				})},
-				Reduce: func(_ context.Context, current model, ev event.Event) (model, []effect.Request, error) {
-					current.Count++
-					kind := "hold"
-					if ev.Payload.(event.KeyPayload).Key == "enter" {
-						current.EffectOrdinals = []int{1}
-						if failure.stage == "bind" {
-							kind = ""
-						}
-					}
-					return current, []effect.Request{{Spec: effect.Spec{Kind: kind}}}, nil
-				},
-				View: func(ctx context.Context, current model) (ViewResult, error) {
-					if failure.stage == "view" && len(current.EffectOrdinals) > 0 {
-						return ViewResult{}, errors.New("view rejected the proposal")
-					}
-					return testView(ctx, current)
-				},
-			})
+			s := newSession(t, effectAdmissionFailureOptions(failure.stage, started))
 			defer s.Close()
 			if err := s.Send(mustEvent(t, event.Key, event.KeyPayload{Key: "enter"})); err != nil {
 				t.Fatal(err)
