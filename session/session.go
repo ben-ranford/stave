@@ -334,11 +334,14 @@ func (s *Session[M]) handleEvent(raw event.Event) {
 		rendered.Hashes.EffectLedger = current.Hashes.EffectLedger
 	}
 
-	if err := s.admitEffectCalls(calls); err != nil {
+	if err := s.reserveEffectCalls(calls); err != nil {
 		s.rejectEvent(current, accepted, "EFFECT_ADMISSION_BACKPRESSURE", "pending effect admission queue saturated", nil)
 		return
 	}
 	s.publish(current, rendered, accepted)
+	if len(calls) > 0 {
+		s.effectAdmissions.commit(calls)
+	}
 
 	if raw.Kind == event.Cancel || raw.Kind == event.Shutdown {
 		s.beginClose()
@@ -403,11 +406,11 @@ func (s *Session[M]) bindEffects(snapshot state.State[M], requests []effect.Requ
 	return calls, hash, nil
 }
 
-func (s *Session[M]) admitEffectCalls(calls []effect.Call) error {
+func (s *Session[M]) reserveEffectCalls(calls []effect.Call) error {
 	if len(calls) == 0 {
 		return nil
 	}
-	return s.effectAdmissions.push(calls)
+	return s.effectAdmissions.reserve()
 }
 
 // admitEffects owns the only pending admission retry loop. A published
@@ -415,14 +418,14 @@ func (s *Session[M]) admitEffectCalls(calls []effect.Call) error {
 // durable until admitted or session shutdown cancels the pending queue.
 func (s *Session[M]) admitEffects() {
 	for {
-		calls, ok := s.effectAdmissions.front(s.ctx)
+		calls, ok := s.effectAdmissions.next(s.ctx)
 		if !ok {
 			return
 		}
 		for {
 			err := s.effects.Deliver(s.ctx, calls, s.enqueueInternalEvent)
 			if err == nil {
-				s.effectAdmissions.shift()
+				s.effectAdmissions.release()
 				break
 			}
 			if errors.Is(err, effect.ErrBackpressure) {
@@ -436,7 +439,7 @@ func (s *Session[M]) admitEffects() {
 			if !errors.Is(err, effect.ErrClosed) || s.ctx.Err() == nil {
 				s.addTransientDiagnostic("EFFECT_DELIVER_FAILED", "effect delivery failed", nil)
 			}
-			s.effectAdmissions.shift()
+			s.effectAdmissions.release()
 			break
 		}
 	}
@@ -628,85 +631,86 @@ type eventQueue struct {
 	overflowing bool
 }
 
-// effectAdmissionQueue bounds batches that have been accepted by the session
-// but are waiting for executor capacity. A full queue rejects the producing
-// event before its declaration is published, preserving declaration durability.
+// effectAdmissionQueue reserves bounded capacity before publication and exposes
+// batches to the worker only after publication. Reservations include the batch
+// held by the worker while it retries executor admission.
 type effectAdmissionQueue struct {
-	mu       sync.Mutex
-	capacity int
-	items    [][]effect.Call
-	notify   chan struct{}
-	closed   bool
+	mu        sync.Mutex
+	committed chan []effect.Call
+	done      chan struct{}
+	reserved  int
+	closed    bool
 }
 
 func newEffectAdmissionQueue(capacity int) *effectAdmissionQueue {
 	return &effectAdmissionQueue{
-		capacity: capacity,
-		notify:   make(chan struct{}, 1),
+		committed: make(chan []effect.Call, capacity),
+		done:      make(chan struct{}),
 	}
 }
 
-func (q *effectAdmissionQueue) push(calls []effect.Call) error {
+func (q *effectAdmissionQueue) reserve() error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	if q.closed {
 		return ErrSessionClosed
 	}
-	if len(q.items) >= q.capacity {
+	if q.reserved >= cap(q.committed) {
 		return ErrBackpressure
 	}
-	q.items = append(q.items, calls)
-	q.signal()
+	q.reserved++
 	return nil
 }
 
-func (q *effectAdmissionQueue) front(ctx context.Context) ([]effect.Call, bool) {
-	for {
-		q.mu.Lock()
-		if len(q.items) > 0 {
-			calls := q.items[0]
-			q.mu.Unlock()
-			return calls, true
-		}
-		if q.closed {
-			q.mu.Unlock()
-			return nil, false
-		}
-		notify := q.notify
-		q.mu.Unlock()
-		select {
-		case <-ctx.Done():
-			return nil, false
-		case <-notify:
-		}
+func (q *effectAdmissionQueue) commit(calls []effect.Call) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if q.closed {
+		return
+	}
+	// Each batch has reserved a slot, including any batch held by the worker.
+	// The serialized producer commits each reservation exactly once.
+	select {
+	case q.committed <- calls:
+	default:
+		panic("effect admission committed without reserved capacity")
 	}
 }
 
-func (q *effectAdmissionQueue) shift() {
+func (q *effectAdmissionQueue) next(ctx context.Context) ([]effect.Call, bool) {
+	select {
+	case <-ctx.Done():
+		return nil, false
+	case <-q.done:
+		return nil, false
+	case calls := <-q.committed:
+		return calls, true
+	}
+}
+
+func (q *effectAdmissionQueue) release() {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	if len(q.items) == 0 {
-		return
+	if q.reserved > 0 {
+		q.reserved--
 	}
-	q.items[0] = nil
-	q.items = q.items[1:]
 }
 
 func (q *effectAdmissionQueue) close() {
 	q.mu.Lock()
+	defer q.mu.Unlock()
 	if q.closed {
-		q.mu.Unlock()
 		return
 	}
 	q.closed = true
-	q.items = nil
-	q.mu.Unlock()
-}
-
-func (q *effectAdmissionQueue) signal() {
-	select {
-	case q.notify <- struct{}{}:
-	default:
+	q.reserved = 0
+	close(q.done)
+	for {
+		select {
+		case <-q.committed:
+		default:
+			return
+		}
 	}
 }
 
