@@ -14,7 +14,7 @@ RIGOR := $(GO) run ./scripts/rigor/cmd/rigor
 	suppression-check \
 	api-refresh api-boundary traceability-refresh schema-freshness generated-refresh \
 	adapters conformance-check atlas-check workflow-validate hooks-install hooks-pre-commit-dry-run \
-	hooks-pre-push-dry-run fast verify ci release-contract release-ga-contract release-dry-run release-probe-test clean \
+	hooks-pre-push-dry-run fast verify ci release-contract release-ga-contract release-baseline release-baseline-development release-dry-run release-probe-test clean \
 	queue-me-check
 
 help:
@@ -23,6 +23,8 @@ help:
 		'  make fast                  # local fast gate (fmt, lint, vet, API/schema checks)' \
 		'  make verify                # full local verification suite' \
 		'  make ci                    # canonical local CI entrypoint' \
+		'  make release-baseline      # compare against the last stable v1 API tag (GA gate)' \
+		'  make release-baseline-development # explicitly compare with v1.0.0-rc.2 during development' \
 		'  make generated-refresh     # refresh tracked rigor inventories'
 
 tools:
@@ -144,7 +146,14 @@ release-contract:
 	STAVE_CANDIDATE_GATE=1 $(GO) test ./requirements -count=1
 
 release-ga-contract:
+	$(GO) run ./scripts/rigor/cmd/releasebaseline
 	STAVE_GA_RELEASE_GATE=1 $(GO) test ./requirements -count=1
+
+release-baseline:
+	$(GO) run ./scripts/rigor/cmd/releasebaseline
+
+release-baseline-development:
+	$(GO) run ./scripts/rigor/cmd/releasebaseline --development --baseline-tag v1.0.0-rc.2
 
 ci: verify release-probe-test govulncheck workflow-validate release-contract
 

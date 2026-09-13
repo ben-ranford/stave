@@ -157,10 +157,14 @@ func run(ctx context.Context, args []string) error {
 	case "public-api":
 		fs := flag.NewFlagSet("public-api", flag.ContinueOnError)
 		writePath := fs.String("write", "", "write output to path")
+		directory := fs.String("dir", "", "module directory to inventory")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
-		pkgs, err := listPackages(ctx, false)
+		if *directory == "" {
+			*directory = mustRepoRoot()
+		}
+		pkgs, err := listPackagesInDir(ctx, *directory, false)
 		if err != nil {
 			return err
 		}

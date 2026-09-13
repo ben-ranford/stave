@@ -62,6 +62,25 @@ The following are additive when existing meaning remains intact:
 - Optional adapters have their own versions; a root-module major version is
   required only when the Stave-facing adapter contract changes.
 
+## Minor-release baseline gate
+
+`make release-baseline` regenerates the candidate public API inventory from
+source and compares it with the newest annotated stable `v1.x.y` tag. It
+records the baseline tag, immutable commit, and both Go floors. A regenerated
+candidate inventory cannot waive a removed declaration, changed signature,
+interface method addition, or exported variable type change.
+
+Adding an exported function or a field while retaining existing keyed fields is
+accepted. Adding a field can still break consumers using unkeyed composite
+literals, so those consumers should use keyed literals and maintainers must
+call out that caveat during compatibility review.
+
+There is currently no stable v1 tag. Until issue #2 provides one,
+`make release-baseline` fails deliberately and a GA release cannot pass it.
+`make release-baseline-development` is an opt-in, explicitly labelled
+comparison with `v1.0.0-rc.2`; it is development evidence only and cannot
+serve as a GA baseline.
+
 ## Related guides
 
 - [Adopt Stave in an application](client-adoption.md)
