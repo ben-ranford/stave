@@ -1,10 +1,12 @@
 package conformance
 
 import (
+	"testing"
+
+	"github.com/ben-ranford/stave/focus"
 	"github.com/ben-ranford/stave/primitive"
 	"github.com/ben-ranford/stave/semantic"
 	"github.com/ben-ranford/stave/testfixture"
-	"testing"
 )
 
 func TestTwoBrandsShareSemanticContract(t *testing.T) {
@@ -44,5 +46,45 @@ func TestInteractivePrimitiveActionsHaveKeyboardBindings(t *testing.T) {
 	}
 	if failures := ValidateTreeWithManifest(root, manifest); len(failures) != 0 {
 		t.Fatal(failures)
+	}
+}
+
+func TestModalConformanceFixtureTrapsBackgroundAndRestoresOnCancel(t *testing.T) {
+	background := testfixture.Must(primitive.Button(primitive.Options{Namespace: "a", View: "v", Entity: "background", Name: "Background"}, "Background"))
+	content := testfixture.Must(primitive.Button(primitive.Options{Namespace: "a", View: "v", Entity: "modal-content", Name: "Modal content"}, "Modal content"))
+	modal := testfixture.Must(primitive.Modal(primitive.Options{Namespace: "a", View: "v", Entity: "modal", Name: "Modal"}, content))
+	root := testfixture.Must(primitive.Stack(primitive.Options{Namespace: "a", View: "v", Entity: "root", Name: "Root"}, background, modal))
+	if failures := ValidateTree(root); len(failures) != 0 {
+		t.Fatal(failures)
+	}
+	if !hasActionID(modal, semantic.ActionID("stave.primitive.core.cancel.v1")) {
+		t.Fatal("modal lacks cancel action")
+	}
+
+	tree, err := semantic.NewTree(1, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := focus.NewGraph(tree)
+	initial, ok := g.First("")
+	if !ok {
+		t.Fatal("background is not focusable")
+	}
+	m := focus.NewModalLifecycle(focus.State{Active: initial})
+	if !m.Open(g, modal.ID()) {
+		t.Fatal("modal scope did not open")
+	}
+	for range len(g.Focusable()) + 1 {
+		next, ok := g.Next(m.State)
+		if !ok || next.Active.NodeID == background.ID() {
+			t.Fatal("modal scope did not keep background inert")
+		}
+		m.State = next
+	}
+	if !m.Close(g, g, modal.ID()) {
+		t.Fatal("cancel did not close modal scope")
+	}
+	if m.State.Scope != "" || m.State.Active.NodeID != background.ID() {
+		t.Fatalf("cancel did not restore opener: %+v", m.State)
 	}
 }
