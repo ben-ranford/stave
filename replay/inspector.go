@@ -431,6 +431,13 @@ func ValidateTranscript(transcript Transcript) error {
 	if err := transcript.Initial.VerifyChecksum(); err != nil {
 		return &Divergence{Code: DivergenceCheckpoint, Index: -1, Field: "initial.checksum", Expected: "valid", Actual: err.Error()}
 	}
+	capabilityHash, err := state.HashString(transcript.Initial.Capabilities.Clone())
+	if err != nil {
+		return fmt.Errorf("initial capability manifest hash: %w", err)
+	}
+	if transcript.Initial.Hashes.Capability != capabilityHash {
+		return &Divergence{Code: DivergenceCapability, Index: -1, Field: "initial.hashes.capability", Expected: capabilityHash, Actual: transcript.Initial.Hashes.Capability}
+	}
 	if err := compareVersions(-1, transcript.Versions, transcript.Initial.Versions); err != nil {
 		return err
 	}
@@ -438,6 +445,9 @@ func ValidateTranscript(transcript Transcript) error {
 	for i, record := range transcript.Records {
 		if err := validateInspectorRecord(i, record); err != nil {
 			return err
+		}
+		if record.Event.Kind != event.EffectResult && record.Prior.Hashes.EffectLedger != record.Result.Hashes.EffectLedger {
+			return &Divergence{Code: DivergenceSchemaVersion, Index: i, Field: "result.hashes.effectLedger", Expected: "unchanged for non-effect event", Actual: "changed"}
 		}
 		if err := validateProducerTransition(i, record.Prior, record.Result); err != nil {
 			return err
