@@ -16,16 +16,39 @@ For a compiled first semantic tree, use the [root quick start](../README.md#quic
 ## Runnable dual-runtime local-checkout tutorial
 
 The unreleased `examples/dualruntime` package and `stave-dual-runtime` command
-show one application session used by both hosts. From a local checkout run the
-human line host with `printf 'inc\n' | go run ./cmd/stave-dual-runtime`, or the
-JSONL host with `printf '{"jsonrpc":"2.0","id":1,"method":"stave.initialize"}\n{"jsonrpc":"2.0","id":2,"method":"stave.initialized"}\n{"jsonrpc":"2.0","id":3,"method":"stave.action.invoke","params":{"callId":"inc","actionId":"example.increment.v1"}}\n' | go run ./cmd/stave-dual-runtime -agent`.
+are a [compiled source example](../examples/dualruntime/dualruntime.go) and
+[command](../cmd/stave-dual-runtime/main.go). The command selects one host and
+creates one session for its negotiated capabilities; run the human and JSONL
+commands as alternative processes. The tutorial test compares their semantic
+tree hashes after each invokes the same registered action.
 
-The tutorial owns its action registry and explicit authorization callback;
-`agent.BindSession` supplies only snapshots and once-only cancellation. Cancel
-the command context and close the application session on shutdown. Configure
-limits through `Program.NewSession`; see [configuration ownership](config-ownership.md)
-and the existing security and stale-target contract tests before adapting the
-example to production.
+From a local checkout run the human line host:
+
+```sh
+printf 'inc\n' | go run ./cmd/stave-dual-runtime
+# Count: count: 1
+```
+
+Or run the JSONL host:
+
+```sh
+printf '{"jsonrpc":"2.0","id":1,"method":"stave.initialize"}\n{"jsonrpc":"2.0","id":2,"method":"stave.initialized"}\n{"jsonrpc":"2.0","id":3,"method":"stave.action.invoke","params":{"callId":"inc","actionId":"example.increment.v1"}}\n' | go run ./cmd/stave-dual-runtime -agent
+```
+
+The JSONL response to the final line includes
+`"actionId":"example.increment.v1"` and `"status":"ok"`. Both hosts route
+`inc` through the tutorial application's typed registry and authorization
+policy; the action is deliberately non-idempotent, so callers must not retry a
+lost response as though the increment had not happened.
+
+The tutorial owns its action registry and authorization callback;
+`agent.BindSession` supplies snapshots and once-only cancellation. Cancel the
+command context and close the application session on shutdown. Set
+`Program.Config` before `Program.NewSession`, then project its validated
+`prepared.Config` with `agent.OptionsFromConfig` for agent message and tree
+limits; see [configuration ownership](config-ownership.md). Review the
+[security contract](security.md) and [stale-target validation tests](../runtime/agent/server_test.go)
+before adapting the example to production.
 
 ## Build an application
 

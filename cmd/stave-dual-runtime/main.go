@@ -6,10 +6,8 @@ import (
 	"flag"
 	"os"
 
-	"github.com/ben-ranford/stave/action"
 	"github.com/ben-ranford/stave/capability"
 	"github.com/ben-ranford/stave/examples/dualruntime"
-	"github.com/ben-ranford/stave/protocol"
 	"github.com/ben-ranford/stave/runtime/agent"
 	"github.com/ben-ranford/stave/runtime/human"
 )
@@ -19,15 +17,13 @@ func main() {
 	flag.Parse()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	app, err := dualruntime.New(ctx)
-	if err != nil {
-		panic(err)
-	}
-	defer app.Close()
 	if *agentMode {
-		opts, err := app.AgentOptions(agent.Options{Actions: app.Registry, CompatibilityMode: true, Authorize: func(context.Context, action.Call) *action.Error { return nil }, Negotiate: func(context.Context, map[string]any) (capability.Manifest, error) {
-			return capability.Manifest{ProtocolVersions: []string{protocol.Version}, OutputMode: capability.OutputMachineJSONL, SnapshotModes: []string{"full"}}, nil
-		}})
+		app, err := dualruntime.New(ctx, dualruntime.AgentManifest())
+		if err != nil {
+			panic(err)
+		}
+		defer app.Close()
+		opts, err := app.AgentOptions(agent.Options{CompatibilityMode: true})
 		if err != nil {
 			panic(err)
 		}
@@ -40,6 +36,15 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	manifest, err := driver.Open(ctx, capability.Policy{})
+	if err != nil {
+		panic(err)
+	}
+	app, err := dualruntime.New(ctx, manifest)
+	if err != nil {
+		panic(err)
+	}
+	defer app.Close()
 	runtime, err := human.New(app.HumanOptions(driver))
 	if err != nil {
 		panic(err)

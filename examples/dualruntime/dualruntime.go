@@ -4,6 +4,7 @@ package dualruntime
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -14,47 +15,74 @@ import (
 	"github.com/ben-ranford/stave/event"
 	"github.com/ben-ranford/stave/layout"
 	"github.com/ben-ranford/stave/primitive"
+	"github.com/ben-ranford/stave/protocol"
 	"github.com/ben-ranford/stave/render"
 	"github.com/ben-ranford/stave/runtime/agent"
 	"github.com/ben-ranford/stave/runtime/human"
 	"github.com/ben-ranford/stave/semantic"
+	"github.com/ben-ranford/stave/state"
 	"github.com/ben-ranford/stave/surface"
 	"github.com/ben-ranford/stave/theme"
 )
 
 type Model struct{ Count int }
 
+const IncrementActionID action.ID = "example.increment.v1"
+
+type incrementInput struct{}
+type incrementOutput struct{}
+
 type Application struct {
 	Prepared *stave.Prepared[Model]
 	Registry *action.Registry
 }
 
-func New(ctx context.Context) (*Application, error) {
+func New(ctx context.Context, runtimeDetected capability.Manifest) (*Application, error) {
 	registry := action.NewRegistry()
-	definition := action.Definition{ID: "example.increment.v1", Version: "1", Title: "Increment", InputSchema: action.Schema{ID: "empty", JSON: []byte(`{}`)}, OutputSchema: action.Schema{ID: "empty", JSON: []byte(`{}`)}, Safety: action.Reversible, Idempotency: action.Idempotent}
+	definition := action.Definition{
+		ID: IncrementActionID, Version: "1", Title: "Increment",
+		InputSchema: action.Schema{ID: "empty", JSON: []byte(`{}`)}, OutputSchema: action.Schema{ID: "empty", JSON: []byte(`{}`)},
+		Safety: action.Reversible, Idempotency: action.NonIdempotent,
+	}
 	var prepared *stave.Prepared[Model]
-	if err := registry.Register(definition, func(_ context.Context, call action.Call, _ any) (any, error) {
+	if err := action.Register(registry, definition, decodeIncrement, encodeIncrement, func(_ context.Context, call action.Call, _ incrementInput) (incrementOutput, error) {
 		ev, err := event.New(event.ActionInvoked, event.ActionInvokedPayload{CallID: call.CallID, ActionID: string(call.ActionID)})
 		if err != nil {
-			return nil, err
+			return incrementOutput{}, err
 		}
 		if err := prepared.Session.Send(ev); err != nil {
-			return nil, err
+			return incrementOutput{}, err
 		}
-		return map[string]any{}, nil
+		return incrementOutput{}, nil
 	}); err != nil {
 		return nil, err
 	}
 	program := stave.Program[Model]{Initial: Model{}, Actions: registry, Reduce: reduce, View: view, Theme: tutorialTheme()}
-	prepared, err := program.NewSession(ctx, stave.SessionOptions{SessionID: "dual-runtime", RuntimeDetected: capability.DetectEnv(map[string]string{"TERM": "dumb"}, false, 80, 24)})
+	prepared, err := program.NewSession(ctx, stave.SessionOptions{SessionID: "dual-runtime", RuntimeDetected: runtimeDetected})
 	if err != nil {
 		return nil, err
 	}
 	return &Application{Prepared: prepared, Registry: registry}, nil
 }
 
+func decodeIncrement(raw json.RawMessage) (incrementInput, error) {
+	var input incrementInput
+	return input, json.Unmarshal(raw, &input)
+}
+
+func encodeIncrement(output incrementOutput) (json.RawMessage, error) { return json.Marshal(output) }
+
+// AgentManifest is the complete capability profile selected by the JSONL host.
+func AgentManifest() capability.Manifest {
+	return capability.Manifest{ProtocolVersions: []string{protocol.Version}, OutputMode: capability.OutputMachineJSONL, SnapshotModes: []string{"full"}}
+}
+
 func reduce(_ stave.ReduceContext, model Model, ev event.Event) (Model, []effect.Request, error) {
-	if ev.Kind == event.ActionInvoked || (ev.Kind == event.Text && ev.Payload.(event.TextPayload).Text == "inc") {
+	if ev.Kind != event.ActionInvoked {
+		return model, nil, nil
+	}
+	payload, ok := ev.Payload.(event.ActionInvokedPayload)
+	if ok && payload.ActionID == string(IncrementActionID) {
 		model.Count++
 	}
 	return model, nil, nil
@@ -68,10 +96,13 @@ func view(ctx stave.ViewContext, model Model) (semantic.Tree, error) {
 	return semantic.NewTree(max(1, ctx.Revision), node)
 }
 
-// HumanOptions keeps application event routing explicit. Construct a
-// human.LineDriver with its own input/output ownership and pass it here.
+// HumanOptions keeps application event routing explicit. The inc command is
+// dispatched through the same registry and authorization policy as JSONL.
 func (a *Application) HumanOptions(driver human.Driver) human.Options {
-	return human.Options{Driver: driver, Handle: func(_ context.Context, ev event.Event) error { return a.Prepared.Session.Send(ev) }, Draw: func(ctx context.Context, _ event.Event) (surface.Surface, surface.Patch, error) {
+	return human.Options{Driver: driver, Handle: a.handleHumanEvent, Draw: func(ctx context.Context, ev event.Event) (surface.Surface, surface.Patch, error) {
+		if ev.Kind == event.Shutdown {
+			return surface.New(0, 0), surface.Patch{}, nil
+		}
 		snapshot, err := a.Prepared.Session.Snapshot()
 		if err != nil {
 			return surface.Surface{}, surface.Patch{}, err
@@ -81,9 +112,55 @@ func (a *Application) HumanOptions(driver human.Driver) human.Options {
 	}}
 }
 
-// AgentOptions binds only snapshot and cancellation plumbing. Callers must
-// still provide any authorization and confirmation callbacks they require.
+func (a *Application) handleHumanEvent(ctx context.Context, ev event.Event) error {
+	before, err := a.Prepared.Session.Snapshot()
+	if err != nil {
+		return err
+	}
+	if ev.Kind == event.Text {
+		if payload, ok := ev.Payload.(event.TextPayload); ok && payload.Text == "inc" {
+			if result := a.invoke(ctx, action.Call{CallID: fmt.Sprintf("human-%d", before.Sequence+1), ActionID: IncrementActionID, Arguments: json.RawMessage(`{}`), SessionID: before.SessionID}); result.Error != nil {
+				return result.Error
+			}
+		} else if err := a.Prepared.Session.Send(ev); err != nil {
+			return err
+		}
+	} else if err := a.Prepared.Session.Send(ev); err != nil {
+		return err
+	}
+	return a.Prepared.Session.Wait(ctx, func(current state.State[Model]) bool { return current.Sequence > before.Sequence })
+}
+
+func (a *Application) invoke(ctx context.Context, call action.Call) action.Result {
+	if err := a.Authorize(ctx, call); err != nil {
+		return action.Result{CallID: call.CallID, ActionID: call.ActionID, Status: action.ResultRejected, Error: err}
+	}
+	return a.Registry.Invoke(ctx, call)
+}
+
+// Authorize is the tutorial application's action policy shared by both hosts.
+func (a *Application) Authorize(_ context.Context, call action.Call) *action.Error {
+	if call.ActionID != IncrementActionID {
+		return &action.Error{Code: action.Forbidden, Message: "action is not allowed", ActionID: call.ActionID}
+	}
+	return nil
+}
+
+// AgentOptions binds the session while retaining the tutorial's registered
+// action and authorization policy. It projects validated agent limits and
+// returns the manifest already bound to the session.
 func (a *Application) AgentOptions(options agent.Options) (agent.Options, error) {
+	projected, err := agent.OptionsFromConfig(a.Prepared.Config)
+	if err != nil {
+		return agent.Options{}, err
+	}
+	options.MaxMessageBytes = projected.MaxMessageBytes
+	options.MaxTreeNodes = projected.MaxTreeNodes
+	options.Actions = a.Registry
+	options.Authorize = a.Authorize
+	options.Negotiate = func(context.Context, map[string]any) (capability.Manifest, error) {
+		return a.Prepared.Capabilities.Clone(), nil
+	}
 	return agent.BindSession(a.Prepared.Session, options)
 }
 

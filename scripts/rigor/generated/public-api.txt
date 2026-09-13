@@ -271,8 +271,11 @@ type Target struct { NodeID string `json:"nodeId,omitempty"`; Generation uint32 
 type TextPayload struct { Text string `json:"text"`; Committed bool `json:"committed,omitempty"` }
 
 [github.com/ben-ranford/stave/examples/dualruntime]
-func New(ctx context.Context) (*Application, error)
+const IncrementActionID
+func AgentManifest() capability.Manifest
+func New(ctx context.Context, runtimeDetected capability.Manifest) (*Application, error)
 method (*Application) AgentOptions(options agent.Options) (agent.Options, error)
+method (*Application) Authorize(_ context.Context, call action.Call) *action.Error
 method (*Application) Close()
 method (*Application) HumanOptions(driver human.Driver) human.Options
 type Application struct { Prepared *stave.Prepared[Model]; Registry *action.Registry }

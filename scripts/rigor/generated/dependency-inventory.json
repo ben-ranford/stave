@@ -142,10 +142,8 @@
       "imports": [
         "context",
         "flag",
-        "github.com/ben-ranford/stave/action",
         "github.com/ben-ranford/stave/capability",
         "github.com/ben-ranford/stave/examples/dualruntime",
-        "github.com/ben-ranford/stave/protocol",
         "github.com/ben-ranford/stave/runtime/agent",
         "github.com/ben-ranford/stave/runtime/human",
         "os"
@@ -250,6 +248,7 @@
       "dir": "examples/dualruntime",
       "imports": [
         "context",
+        "encoding/json",
         "fmt",
         "github.com/ben-ranford/stave",
         "github.com/ben-ranford/stave/action",
@@ -258,10 +257,12 @@
         "github.com/ben-ranford/stave/event",
         "github.com/ben-ranford/stave/layout",
         "github.com/ben-ranford/stave/primitive",
+        "github.com/ben-ranford/stave/protocol",
         "github.com/ben-ranford/stave/render",
         "github.com/ben-ranford/stave/runtime/agent",
         "github.com/ben-ranford/stave/runtime/human",
         "github.com/ben-ranford/stave/semantic",
+        "github.com/ben-ranford/stave/state",
         "github.com/ben-ranford/stave/surface",
         "github.com/ben-ranford/stave/theme",
         "strings"
