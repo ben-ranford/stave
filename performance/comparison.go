@@ -9,6 +9,7 @@ import (
 	"math"
 	"reflect"
 	"sort"
+	"strings"
 	"unicode/utf8"
 )
 
@@ -102,12 +103,13 @@ func CompareWithPolicy(baseline, candidate Report, policy ComparisonPolicy) (Com
 	if err := ValidateReport(candidate); err != nil {
 		return Comparison{}, fmt.Errorf("invalid candidate report: %w", err)
 	}
-	if err := compatibleEnvironment(baseline, candidate); err != nil {
+	candidateMeasurements := measurementIndex(candidate.Measurements)
+	if err := compatibleEnvironment(baseline, candidate, candidateMeasurements); err != nil {
 		return Comparison{}, err
 	}
 	deltas := make([]MetricDelta, 0, len(baseline.Measurements)+2)
 	for _, metric := range baseline.Measurements {
-		candidateMetric := measurementByName(candidate.Measurements, metric.Name)
+		candidateMetric := candidateMeasurements[metric.Name]
 		deltas = append(deltas, relativeDelta(metric.Name, "nanoseconds", float64(metric.P95), float64(candidateMetric.P95), policy.MeasurementTolerance))
 	}
 	deltas = append(deltas,
@@ -132,7 +134,7 @@ func validatePolicy(policy ComparisonPolicy) error {
 }
 
 func ValidateReport(report Report) error {
-	if report.Host == "" || report.GoVersion == "" || report.GOOS == "" || report.GOARCH == "" || report.CPUs < 1 || report.Nodes < 1 || report.NodeShape == "" || report.Renderer == "" || report.Viewport.Width < 1 || report.Viewport.Height < 1 {
+	if report.Host == "" || report.Host == "unknown" || report.GoVersion == "" || report.GOOS == "" || report.GOARCH == "" || report.CPUs < 1 || report.Nodes < 1 || report.NodeShape == "" || report.Renderer == "" || report.Viewport.Width < 1 || report.Viewport.Height < 1 {
 		return errors.New("performance report has incomplete environment metadata")
 	}
 	if report.Reproducibility.SampleCount < 1 || report.Reproducibility.GOMAXPROCS < 1 || len(report.Reproducibility.Invocation) == 0 {
@@ -141,15 +143,20 @@ func ValidateReport(report Report) error {
 	if report.AllocBytes > report.AllocLimit || !report.AllocWithin {
 		return errors.New("performance report fails its allocation budget")
 	}
-	if report.IdleCPU.Name != "idle_cpu.percent_one_core" || math.IsNaN(report.IdleCPU.Value) || math.IsInf(report.IdleCPU.Value, 0) || math.IsNaN(report.IdleCPU.Limit) || math.IsInf(report.IdleCPU.Limit, 0) || report.IdleCPU.Value < 0 || report.IdleCPU.Limit <= 0 || report.IdleCPU.Value >= report.IdleCPU.Limit || !report.IdleCPU.AllWithinBudget {
+	if report.IdleCPU.Name != "idle_cpu.percent_one_core" || report.IdleCPU.Window <= 0 || math.IsNaN(report.IdleCPU.Value) || math.IsInf(report.IdleCPU.Value, 0) || math.IsNaN(report.IdleCPU.Limit) || math.IsInf(report.IdleCPU.Limit, 0) || report.IdleCPU.Value < 0 || report.IdleCPU.Limit <= 0 || report.IdleCPU.Value >= report.IdleCPU.Limit || !report.IdleCPU.AllWithinBudget {
 		return errors.New("performance report fails its idle CPU budget")
+	}
+	for _, attempt := range report.IdleCPU.Attempts {
+		if math.IsNaN(attempt) || math.IsInf(attempt, 0) || attempt < 0 {
+			return errors.New("performance report has invalid idle CPU attempts")
+		}
 	}
 	if len(report.Measurements) == 0 {
 		return errors.New("performance report has no measurements")
 	}
 	seen := map[string]struct{}{}
 	for _, measurement := range report.Measurements {
-		if measurement.Name == "" || measurement.Samples < 1 || measurement.P50 < 0 || measurement.P95 < 0 || measurement.P99 < 0 || measurement.Limit <= 0 || measurement.P95 > measurement.Limit || !measurement.AllWithinBudget {
+		if measurement.Name == "" || measurement.Samples < 1 || measurement.P50 < 0 || measurement.P50 > measurement.P95 || measurement.P95 > measurement.P99 || measurement.P95 > measurement.Limit || measurement.Limit <= 0 || !measurement.AllWithinBudget {
 			return fmt.Errorf("performance report fails absolute budget for %q", measurement.Name)
 		}
 		if _, duplicate := seen[measurement.Name]; duplicate {
@@ -160,7 +167,7 @@ func ValidateReport(report Report) error {
 	return nil
 }
 
-func compatibleEnvironment(baseline, candidate Report) error {
+func compatibleEnvironment(baseline, candidate Report, candidateMeasurements map[string]Measurement) error {
 	if baseline.Host != candidate.Host || baseline.GoVersion != candidate.GoVersion || baseline.GOOS != candidate.GOOS || baseline.GOARCH != candidate.GOARCH || baseline.CPUs != candidate.CPUs || baseline.Nodes != candidate.Nodes || baseline.NodeShape != candidate.NodeShape || baseline.Renderer != candidate.Renderer || baseline.Viewport != candidate.Viewport || !reflect.DeepEqual(baseline.Capabilities, candidate.Capabilities) {
 		return errors.New("performance reports use incompatible environment or fixture schema")
 	}
@@ -171,7 +178,7 @@ func compatibleEnvironment(baseline, candidate Report) error {
 		return errors.New("performance reports use incompatible absolute budget schema")
 	}
 	for _, measurement := range baseline.Measurements {
-		candidateMetric := measurementByName(candidate.Measurements, measurement.Name)
+		candidateMetric := candidateMeasurements[measurement.Name]
 		if candidateMetric.Name == "" || candidateMetric.Limit != measurement.Limit || candidateMetric.Samples != measurement.Samples {
 			return fmt.Errorf("performance reports use incompatible metric schema for %q", measurement.Name)
 		}
@@ -185,11 +192,11 @@ func compatibleEnvironment(baseline, candidate Report) error {
 func comparableInvocation(invocation []string) []string {
 	result := make([]string, 0, len(invocation))
 	for i := 1; i < len(invocation); i++ {
-		if invocation[i] == "-out" {
+		if invocation[i] == "-out" || invocation[i] == "--out" {
 			i++
 			continue
 		}
-		if len(invocation[i]) > len("-out=") && invocation[i][:len("-out=")] == "-out=" {
+		if strings.HasPrefix(invocation[i], "-out=") || strings.HasPrefix(invocation[i], "--out=") {
 			continue
 		}
 		result = append(result, invocation[i])
@@ -197,13 +204,12 @@ func comparableInvocation(invocation []string) []string {
 	return result
 }
 
-func measurementByName(measurements []Measurement, name string) Measurement {
+func measurementIndex(measurements []Measurement) map[string]Measurement {
+	indexed := make(map[string]Measurement, len(measurements))
 	for _, measurement := range measurements {
-		if measurement.Name == name {
-			return measurement
-		}
+		indexed[measurement.Name] = measurement
 	}
-	return Measurement{}
+	return indexed
 }
 
 func relativeDelta(metric, unit string, baseline, candidate, tolerance float64) MetricDelta {
