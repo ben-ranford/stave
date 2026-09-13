@@ -26,7 +26,7 @@ func TestSnapshotSubscriptionUnsubscribeStopsDeliveryAndAllowsResubscribe(t *tes
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	reader, writer := io.Pipe()
-	out := &subscriptionTestWriter{ctx: ctx, lines: make(chan []byte, 16)}
+	out := &subscriptionTestWriter{done: ctx.Done(), err: ctx.Err, lines: make(chan []byte, 16)}
 	done := make(chan error, 1)
 	go func() {
 		done <- New(Options{
@@ -52,7 +52,7 @@ func TestSnapshotSubscriptionUnsubscribeStopsDeliveryAndAllowsResubscribe(t *tes
 			},
 		}).Serve(ctx, reader, out)
 	}()
-	c := &subscriptionTestClient{t: t, ctx: ctx, in: writer, out: out}
+	c := &subscriptionTestClient{t: t, done: ctx.Done(), in: writer, out: out}
 	c.request(`{"jsonrpc":"2.0","id":1,"method":"stave.initialize","params":{"protocolVersions":["1.0"],"capabilities":{"snapshotSubscriptionVersions":["stave.snapshot.subscribe/v1"]}}}`)
 	c.response(1)
 	c.request(`{"jsonrpc":"2.0","id":2,"method":"stave.initialized"}`)
@@ -155,7 +155,7 @@ func TestSnapshotSubscriptionIgnoresIDlessUnsubscribeNotification(t *testing.T) 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	reader, writer := io.Pipe()
-	out := &subscriptionTestWriter{ctx: ctx, lines: make(chan []byte, 16)}
+	out := &subscriptionTestWriter{done: ctx.Done(), err: ctx.Err, lines: make(chan []byte, 16)}
 	done := make(chan error, 1)
 	go func() {
 		done <- New(Options{
@@ -179,7 +179,7 @@ func TestSnapshotSubscriptionIgnoresIDlessUnsubscribeNotification(t *testing.T) 
 			},
 		}).Serve(ctx, reader, out)
 	}()
-	c := &subscriptionTestClient{t: t, ctx: ctx, in: writer, out: out}
+	c := &subscriptionTestClient{t: t, done: ctx.Done(), in: writer, out: out}
 	c.request(`{"jsonrpc":"2.0","id":1,"method":"stave.initialize","params":{"protocolVersions":["1.0"],"capabilities":{"snapshotSubscriptionVersions":["stave.snapshot.subscribe/v1"]}}}`)
 	c.response(1)
 	c.request(`{"jsonrpc":"2.0","id":2,"method":"stave.initialized"}`)

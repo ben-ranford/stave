@@ -75,8 +75,8 @@ func (s *snapshotSubscription) replace(result protocol.SnapshotResult) bool {
 	if !s.active || result.Sequence <= s.sequence || result.Revision < s.revision {
 		return false
 	}
-	copy := result
-	s.pending = &copy
+	pending := result
+	s.pending = &pending
 	s.sequence = result.Sequence
 	s.revision = result.Revision
 	select {

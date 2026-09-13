@@ -689,74 +689,9 @@ func (s *Server) handle(parent context.Context, r protocol.Request, snapshotProv
 	s.mu.Unlock()
 	switch r.Method {
 	case "stave.initialize", "initialize":
-		if init {
-			return fail(protocol.InvalidRequest, "session is already initialized")
-		}
-		var p protocol.InitializeParams
-		if len(r.Params) > 0 {
-			d := json.NewDecoder(bytesReader(r.Params))
-			d.DisallowUnknownFields()
-			if e := d.Decode(&p); e != nil || decoderTrailing(d) {
-				return fail(protocol.InvalidParams, "invalid initialize params")
-			}
-		}
-		if len(p.ProtocolVersions) == 0 && !s.opt.CompatibilityMode {
-			return fail(protocol.UnsupportedVersion, "protocol version offer is required")
-		}
-		if len(p.ProtocolVersions) > 0 {
-			ok := false
-			for _, v := range p.ProtocolVersions {
-				if v == protocol.Version {
-					ok = true
-				}
-			}
-			if !ok {
-				return fail(protocol.UnsupportedVersion, "no compatible protocol version")
-			}
-		}
-		if s.opt.Negotiate == nil && !s.opt.CompatibilityMode {
-			return fail(protocol.CapabilityMismatch, "capability negotiation is required")
-		}
-		var resolved any
-		if s.opt.Negotiate != nil {
-			m, e := s.opt.Negotiate(parent, p.Capabilities)
-			if e != nil {
-				return fail(protocol.CapabilityMismatch, "capability negotiation failed")
-			}
-			var subscriptionVersions []string
-			if offersSnapshotSubscription(p.Capabilities) {
-				for _, version := range m.SnapshotSubscriptionVersions {
-					if version == protocol.SnapshotSubscriptionVersion {
-						subscriptionVersions = []string{protocol.SnapshotSubscriptionVersion}
-						break
-					}
-				}
-			}
-			m.SnapshotSubscriptionVersions = subscriptionVersions
-			resolved = m.Clone()
-		} else {
-			resolved = cloneJSONValue(s.opt.Manifest)
-		}
-		limits, e := intersectLimits(s.limits, p.Limits)
-		if e != nil {
-			return fail(protocol.InvalidParams, "invalid client limits")
-		}
-		s.mu.Lock()
-		s.initialized = true
-		s.negotiated = resolved
-		s.limits = limits
-		s.mu.Unlock()
-		resp.Result = protocol.InitializeResult{ProtocolVersion: protocol.Version, SessionID: s.sessionID, Server: s.opt.ServerName, Application: s.opt.Application, Schemas: map[string]string{"semantic": "stave.semantic/v1", "actions": "stave.actions/v1", "protocol": "stave.protocol/v1"}, Capabilities: resolved, Limits: limits, ResolvedManifest: resolved}
-		return resp
+		return s.initialize(parent, r, resp, fail, init)
 	case "stave.initialized", "initialized":
-		if !init {
-			return fail(protocol.NotInitialized, "initialize required")
-		}
-		s.mu.Lock()
-		s.ready = true
-		s.mu.Unlock()
-		resp.Result = map[string]any{"ok": true, "sessionId": s.sessionID}
-		return resp
+		return s.markInitialized(resp, fail, init)
 	case "stave.ping":
 		resp.Result = map[string]any{"ok": true, "protocolVersion": protocol.Version}
 		return resp
@@ -773,67 +708,7 @@ func (s *Server) handle(parent context.Context, r protocol.Request, snapshotProv
 	}
 	switch r.Method {
 	case "stave.snapshot":
-		if snapshotProvider == nil {
-			return fail(protocol.InternalError, "snapshot unavailable")
-		}
-		var p protocol.SnapshotParams
-		if len(r.Params) > 0 {
-			d := json.NewDecoder(bytesReader(r.Params))
-			d.DisallowUnknownFields()
-			if e := d.Decode(&p); e != nil || decoderTrailing(d) {
-				return fail(protocol.InvalidParams, "invalid snapshot params")
-			}
-		}
-		if !s.snapshotModeAllowed(p.Mode) {
-			return fail(protocol.CapabilityMismatch, "snapshot mode was not negotiated")
-		}
-		env, e := snapshotProvider(parent, p.Mode, p.SinceRevision)
-		if e != nil {
-			s.observe(parent, "snapshot.failed", map[string]string{"cause": "provider"})
-			return fail(protocol.InternalError, "snapshot failed")
-		}
-		if env.Mode == "" {
-			env.Mode = p.Mode
-		}
-		if env.Mode == "" {
-			env.Mode = "full"
-		}
-		if env.Mode != "full" && env.Mode != "patch" {
-			return fail(protocol.InvalidParams, "unsupported snapshot mode")
-		}
-		if p.Mode != "" && p.Mode != env.Mode {
-			return fail(protocol.InvalidParams, "snapshot mode mismatch")
-		}
-		if env.SessionID != s.sessionID {
-			return fail(protocol.InternalError, "snapshot session mismatch")
-		}
-		if env.SessionID == "" || !validHash(env.TreeHash) || !validHash(env.CapabilityHash) || env.SemanticVersion == "" || !validHash(env.ConfigHash) || !validHash(env.ThemeHash) || env.WidthVersion == "" {
-			return fail(protocol.InternalError, "incomplete snapshot metadata")
-		}
-		if env.Revision == 0 || env.Sequence == 0 || (env.Mode == "full" && (env.Snapshot == nil || env.Patch != nil)) || (env.Mode == "patch" && (env.Patch == nil || env.Snapshot != nil || p.SinceRevision == 0)) {
-			return fail(protocol.InternalError, "invalid snapshot envelope")
-		}
-		if env.Snapshot != nil && (env.Snapshot.Validate() != nil || env.Snapshot.Revision != env.Revision || env.Snapshot.TreeHash != env.TreeHash || countSnapshotNodes(env.Snapshot.Root, s.limits.MaxTreeNodes) < 0) {
-			return fail(protocol.InternalError, "invalid full snapshot")
-		}
-		if env.Patch != nil && (env.Patch.Validate() != nil || env.Patch.FromRevision != p.SinceRevision || env.Patch.ToRevision != env.Revision) {
-			return fail(protocol.InternalError, "invalid snapshot patch")
-		}
-		for _, d := range env.Actions {
-			if err := d.Validate(); err != nil {
-				return fail(protocol.InternalError, "invalid snapshot action manifest")
-			}
-		}
-		actions := env.Actions
-		if !p.IncludeActions {
-			actions = nil
-		}
-		diagnostics := append([]diag.Diagnostic(nil), env.Diagnostics...)
-		for i := range diagnostics {
-			diagnostics[i].Redacted = true
-		}
-		resp.Result = protocol.SnapshotResult{SchemaVersion: "stave.semantic/v1", SessionID: env.SessionID, Sequence: env.Sequence, Mode: env.Mode, Snapshot: env.Snapshot, Patch: env.Patch, Revision: env.Revision, TreeHash: env.TreeHash, CapabilityHash: env.CapabilityHash, SemanticVersion: env.SemanticVersion, ConfigHash: env.ConfigHash, ThemeHash: env.ThemeHash, WidthVersion: env.WidthVersion, Actions: actions, Diagnostics: diagnostics}
-		return resp
+		return s.snapshot(parent, r, resp, fail, snapshotProvider)
 	case "stave.actions.list":
 		if s.opt.Actions == nil {
 			resp.Result = []action.Definition{}
@@ -846,49 +721,296 @@ func (s *Server) handle(parent context.Context, r protocol.Request, snapshotProv
 	case "stave.action.confirm":
 		return s.confirm(parent, r, resp, fail)
 	case "stave.action.cancel":
-		var p struct {
-			CallID string `json:"callId"`
-		}
-		if decodeStrict(r.Params, &p) != nil || p.CallID == "" {
-			return fail(protocol.InvalidParams, "invalid call id")
-		}
-		s.mu.Lock()
-		c, ok := s.calls[p.CallID]
-		s.mu.Unlock()
-		if !ok {
-			return fail(protocol.InvalidParams, "unknown call id")
-		}
-		c.cancel()
-		resp.Result = map[string]any{"callId": p.CallID, "cancelled": true}
-		return resp
+		return s.cancelAction(r, resp, fail)
 	case "stave.session.cancel":
-		if len(r.Params) > 0 && string(r.Params) != "null" && string(r.Params) != "{}" {
-			var empty struct{}
-			if decodeStrict(r.Params, &empty) != nil {
-				return fail(protocol.InvalidParams, "session cancel takes no parameters")
-			}
-		}
-		s.mu.Lock()
-		s.cancelling = true
-		calls := make([]context.CancelFunc, 0, len(s.calls))
-		for _, slot := range s.calls {
-			calls = append(calls, slot.cancel)
-		}
-		s.mu.Unlock()
-		for _, cancel := range calls {
-			cancel()
-		}
-		if s.opt.CancelSession != nil {
-			if err := s.opt.CancelSession(parent); err != nil {
-				s.observe(parent, "session.cancel_failed", map[string]string{"cause": "application"})
-				return fail(protocol.InternalError, "session cancellation failed")
-			}
-		}
-		resp.Result = map[string]any{"cancelled": true, "sessionId": s.sessionID}
-		return resp
+		return s.cancelSession(parent, r, resp, fail)
 	default:
 		return fail(protocol.MethodNotFound, "method not found")
 	}
+}
+
+func (s *Server) initialize(parent context.Context, r protocol.Request, resp protocol.Response, fail func(int, string) protocol.Response, initialized bool) protocol.Response {
+	if initialized {
+		return fail(protocol.InvalidRequest, "session is already initialized")
+	}
+	p, ok := decodeInitializeParams(r.Params)
+	if !ok {
+		return fail(protocol.InvalidParams, "invalid initialize params")
+	}
+	if err := s.validateInitialize(p); err != nil {
+		return fail(err.code, err.message)
+	}
+	resolved, failure := s.resolveCapabilities(parent, p.Capabilities)
+	if failure != nil {
+		return fail(failure.code, failure.message)
+	}
+	limits, err := intersectLimits(s.limits, p.Limits)
+	if err != nil {
+		return fail(protocol.InvalidParams, "invalid client limits")
+	}
+	s.mu.Lock()
+	s.initialized = true
+	s.negotiated = resolved
+	s.limits = limits
+	s.mu.Unlock()
+	resp.Result = protocol.InitializeResult{ProtocolVersion: protocol.Version, SessionID: s.sessionID, Server: s.opt.ServerName, Application: s.opt.Application, Schemas: map[string]string{"semantic": "stave.semantic/v1", "actions": "stave.actions/v1", "protocol": "stave.protocol/v1"}, Capabilities: resolved, Limits: limits, ResolvedManifest: resolved}
+	return resp
+}
+
+type handlerFailure struct {
+	code    int
+	message string
+}
+
+func decodeInitializeParams(raw json.RawMessage) (protocol.InitializeParams, bool) {
+	var params protocol.InitializeParams
+	if len(raw) == 0 {
+		return params, true
+	}
+	decoder := json.NewDecoder(bytesReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&params); err != nil || decoderTrailing(decoder) {
+		return protocol.InitializeParams{}, false
+	}
+	return params, true
+}
+
+func (s *Server) validateInitialize(params protocol.InitializeParams) *handlerFailure {
+	if len(params.ProtocolVersions) == 0 && !s.opt.CompatibilityMode {
+		return &handlerFailure{protocol.UnsupportedVersion, "protocol version offer is required"}
+	}
+	if len(params.ProtocolVersions) > 0 && !containsVersion(params.ProtocolVersions, protocol.Version) {
+		return &handlerFailure{protocol.UnsupportedVersion, "no compatible protocol version"}
+	}
+	if s.opt.Negotiate == nil && !s.opt.CompatibilityMode {
+		return &handlerFailure{protocol.CapabilityMismatch, "capability negotiation is required"}
+	}
+	return nil
+}
+
+func containsVersion(versions []string, wanted string) bool {
+	for _, version := range versions {
+		if version == wanted {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Server) resolveCapabilities(parent context.Context, capabilities map[string]any) (any, *handlerFailure) {
+	if s.opt.Negotiate == nil {
+		return cloneJSONValue(s.opt.Manifest), nil
+	}
+	manifest, err := s.opt.Negotiate(parent, capabilities)
+	if err != nil {
+		return nil, &handlerFailure{protocol.CapabilityMismatch, "capability negotiation failed"}
+	}
+	manifest.SnapshotSubscriptionVersions = negotiatedSubscriptionVersions(capabilities, manifest.SnapshotSubscriptionVersions)
+	return manifest.Clone(), nil
+}
+
+func negotiatedSubscriptionVersions(capabilities map[string]any, versions []string) []string {
+	if !offersSnapshotSubscription(capabilities) {
+		return nil
+	}
+	if containsVersion(versions, protocol.SnapshotSubscriptionVersion) {
+		return []string{protocol.SnapshotSubscriptionVersion}
+	}
+	return nil
+}
+
+func (s *Server) markInitialized(resp protocol.Response, fail func(int, string) protocol.Response, initialized bool) protocol.Response {
+	if !initialized {
+		return fail(protocol.NotInitialized, "initialize required")
+	}
+	s.mu.Lock()
+	s.ready = true
+	s.mu.Unlock()
+	resp.Result = map[string]any{"ok": true, "sessionId": s.sessionID}
+	return resp
+}
+
+func (s *Server) snapshot(parent context.Context, r protocol.Request, resp protocol.Response, fail func(int, string) protocol.Response, provider SnapshotEnvelopeProvider) protocol.Response {
+	if provider == nil {
+		return fail(protocol.InternalError, "snapshot unavailable")
+	}
+	params, ok := decodeSnapshotParams(r.Params)
+	if !ok {
+		return fail(protocol.InvalidParams, "invalid snapshot params")
+	}
+	if !s.snapshotModeAllowed(params.Mode) {
+		return fail(protocol.CapabilityMismatch, "snapshot mode was not negotiated")
+	}
+	envelope, err := provider(parent, params.Mode, params.SinceRevision)
+	if err != nil {
+		s.observe(parent, "snapshot.failed", map[string]string{"cause": "provider"})
+		return fail(protocol.InternalError, "snapshot failed")
+	}
+	if failure := s.validateSnapshotEnvelope(&envelope, params); failure != nil {
+		return fail(failure.code, failure.message)
+	}
+	resp.Result = snapshotResult(envelope, params.IncludeActions)
+	return resp
+}
+
+func decodeSnapshotParams(raw json.RawMessage) (protocol.SnapshotParams, bool) {
+	var params protocol.SnapshotParams
+	if len(raw) == 0 {
+		return params, true
+	}
+	decoder := json.NewDecoder(bytesReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&params); err != nil || decoderTrailing(decoder) {
+		return protocol.SnapshotParams{}, false
+	}
+	return params, true
+}
+
+func (s *Server) validateSnapshotEnvelope(envelope *SnapshotEnvelope, params protocol.SnapshotParams) *handlerFailure {
+	if failure := normalizeSnapshotMode(envelope, params); failure != nil {
+		return failure
+	}
+	if failure := s.validateSnapshotMetadata(*envelope); failure != nil {
+		return failure
+	}
+	if failure := s.validateSnapshotPayload(*envelope, params); failure != nil {
+		return failure
+	}
+	return nil
+}
+
+func normalizeSnapshotMode(envelope *SnapshotEnvelope, params protocol.SnapshotParams) *handlerFailure {
+	if envelope.Mode == "" {
+		envelope.Mode = params.Mode
+	}
+	if envelope.Mode == "" {
+		envelope.Mode = "full"
+	}
+	if envelope.Mode != "full" && envelope.Mode != "patch" {
+		return &handlerFailure{protocol.InvalidParams, "unsupported snapshot mode"}
+	}
+	if params.Mode != "" && params.Mode != envelope.Mode {
+		return &handlerFailure{protocol.InvalidParams, "snapshot mode mismatch"}
+	}
+	return nil
+}
+
+func (s *Server) validateSnapshotMetadata(envelope SnapshotEnvelope) *handlerFailure {
+	if envelope.SessionID != s.sessionID {
+		return &handlerFailure{protocol.InternalError, "snapshot session mismatch"}
+	}
+	if !completeSnapshotMetadata(envelope) {
+		return &handlerFailure{protocol.InternalError, "incomplete snapshot metadata"}
+	}
+	return nil
+}
+
+func completeSnapshotMetadata(envelope SnapshotEnvelope) bool {
+	return envelope.SessionID != "" && validHash(envelope.TreeHash) && validHash(envelope.CapabilityHash) && envelope.SemanticVersion != "" && validHash(envelope.ConfigHash) && validHash(envelope.ThemeHash) && envelope.WidthVersion != ""
+}
+
+func (s *Server) validateSnapshotPayload(envelope SnapshotEnvelope, params protocol.SnapshotParams) *handlerFailure {
+	if envelope.Revision == 0 || envelope.Sequence == 0 || invalidSnapshotShape(envelope, params) {
+		return &handlerFailure{protocol.InternalError, "invalid snapshot envelope"}
+	}
+	if !validFullSnapshot(envelope, s.limits.MaxTreeNodes) {
+		return &handlerFailure{protocol.InternalError, "invalid full snapshot"}
+	}
+	if !validSnapshotPatch(envelope, params.SinceRevision) {
+		return &handlerFailure{protocol.InternalError, "invalid snapshot patch"}
+	}
+	if !validSnapshotActions(envelope.Actions) {
+		return &handlerFailure{protocol.InternalError, "invalid snapshot action manifest"}
+	}
+	return nil
+}
+
+func invalidSnapshotShape(envelope SnapshotEnvelope, params protocol.SnapshotParams) bool {
+	return envelope.Mode == "full" && (envelope.Snapshot == nil || envelope.Patch != nil) || envelope.Mode == "patch" && (envelope.Patch == nil || envelope.Snapshot != nil || params.SinceRevision == 0)
+}
+
+func validFullSnapshot(envelope SnapshotEnvelope, maxNodes int) bool {
+	return envelope.Snapshot == nil || envelope.Snapshot.Validate() == nil && envelope.Snapshot.Revision == envelope.Revision && envelope.Snapshot.TreeHash == envelope.TreeHash && countSnapshotNodes(envelope.Snapshot.Root, maxNodes) >= 0
+}
+
+func validSnapshotPatch(envelope SnapshotEnvelope, sinceRevision uint64) bool {
+	return envelope.Patch == nil || envelope.Patch.Validate() == nil && envelope.Patch.FromRevision == sinceRevision && envelope.Patch.ToRevision == envelope.Revision
+}
+
+func validSnapshotActions(actions []action.Definition) bool {
+	for _, definition := range actions {
+		if definition.Validate() != nil {
+			return false
+		}
+	}
+	return true
+}
+
+func snapshotResult(envelope SnapshotEnvelope, includeActions bool) protocol.SnapshotResult {
+	actions := envelope.Actions
+	if !includeActions {
+		actions = nil
+	}
+	diagnostics := append([]diag.Diagnostic(nil), envelope.Diagnostics...)
+	for i := range diagnostics {
+		diagnostics[i].Redacted = true
+	}
+	return protocol.SnapshotResult{SchemaVersion: "stave.semantic/v1", SessionID: envelope.SessionID, Sequence: envelope.Sequence, Mode: envelope.Mode, Snapshot: envelope.Snapshot, Patch: envelope.Patch, Revision: envelope.Revision, TreeHash: envelope.TreeHash, CapabilityHash: envelope.CapabilityHash, SemanticVersion: envelope.SemanticVersion, ConfigHash: envelope.ConfigHash, ThemeHash: envelope.ThemeHash, WidthVersion: envelope.WidthVersion, Actions: actions, Diagnostics: diagnostics}
+}
+
+func (s *Server) cancelAction(r protocol.Request, resp protocol.Response, fail func(int, string) protocol.Response) protocol.Response {
+	var params struct {
+		CallID string `json:"callId"`
+	}
+	if decodeStrict(r.Params, &params) != nil || params.CallID == "" {
+		return fail(protocol.InvalidParams, "invalid call id")
+	}
+	s.mu.Lock()
+	call, ok := s.calls[params.CallID]
+	s.mu.Unlock()
+	if !ok {
+		return fail(protocol.InvalidParams, "unknown call id")
+	}
+	call.cancel()
+	resp.Result = map[string]any{"callId": params.CallID, "cancelled": true}
+	return resp
+}
+
+func (s *Server) cancelSession(parent context.Context, r protocol.Request, resp protocol.Response, fail func(int, string) protocol.Response) protocol.Response {
+	if !validSessionCancelParams(r.Params) {
+		return fail(protocol.InvalidParams, "session cancel takes no parameters")
+	}
+	calls := s.cancelCalls()
+	for _, cancel := range calls {
+		cancel()
+	}
+	if s.opt.CancelSession != nil {
+		if err := s.opt.CancelSession(parent); err != nil {
+			s.observe(parent, "session.cancel_failed", map[string]string{"cause": "application"})
+			return fail(protocol.InternalError, "session cancellation failed")
+		}
+	}
+	resp.Result = map[string]any{"cancelled": true, "sessionId": s.sessionID}
+	return resp
+}
+
+func validSessionCancelParams(raw json.RawMessage) bool {
+	if len(raw) == 0 || string(raw) == "null" || string(raw) == "{}" {
+		return true
+	}
+	var empty struct{}
+	return decodeStrict(raw, &empty) == nil
+}
+
+func (s *Server) cancelCalls() []context.CancelFunc {
+	s.mu.Lock()
+	s.cancelling = true
+	calls := make([]context.CancelFunc, 0, len(s.calls))
+	for _, slot := range s.calls {
+		calls = append(calls, slot.cancel)
+	}
+	s.mu.Unlock()
+	return calls
 }
 
 func (s *Server) handleSafely(parent context.Context, r protocol.Request) protocol.Response {

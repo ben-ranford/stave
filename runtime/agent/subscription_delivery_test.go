@@ -15,7 +15,8 @@ import (
 )
 
 type subscriptionTestWriter struct {
-	ctx     context.Context
+	done    <-chan struct{}
+	err     func() error
 	lines   chan []byte
 	gate    chan struct{}
 	blocked chan struct{}
@@ -27,21 +28,21 @@ func (w *subscriptionTestWriter) Write(p []byte) (int, error) {
 		w.once.Do(func() { close(w.blocked) })
 		select {
 		case <-w.gate:
-		case <-w.ctx.Done():
-			return 0, w.ctx.Err()
+		case <-w.done:
+			return 0, w.err()
 		}
 	}
 	select {
 	case w.lines <- append([]byte(nil), p...):
 		return len(p), nil
-	case <-w.ctx.Done():
-		return 0, w.ctx.Err()
+	case <-w.done:
+		return 0, w.err()
 	}
 }
 
 type subscriptionTestClient struct {
 	t            *testing.T
-	ctx          context.Context
+	done         <-chan struct{}
 	in           *io.PipeWriter
 	out          *subscriptionTestWriter
 	seen         chan uint64
@@ -51,13 +52,14 @@ type subscriptionTestClient struct {
 func startSubscriptionClient(t *testing.T, s *session.Session[int], block bool) *subscriptionTestClient {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	t.Cleanup(cancel)
 	in, input := io.Pipe()
-	w := &subscriptionTestWriter{ctx: ctx, lines: make(chan []byte, 32)}
+	w := &subscriptionTestWriter{done: ctx.Done(), err: ctx.Err, lines: make(chan []byte, 32)}
 	if block {
 		w.gate = make(chan struct{})
 		w.blocked = make(chan struct{})
 	}
-	c := &subscriptionTestClient{t: t, ctx: ctx, in: input, out: w, seen: make(chan uint64, 32)}
+	c := &subscriptionTestClient{t: t, done: ctx.Done(), in: input, out: w, seen: make(chan uint64, 32)}
 	opts, err := BindSession(s, Options{Negotiate: func(context.Context, map[string]any) (capability.Manifest, error) {
 		return capability.Manifest{ProtocolVersions: []string{protocol.Version}, SnapshotModes: []string{"full", "patch"}, SnapshotSubscriptionVersions: []string{protocol.SnapshotSubscriptionVersion}}, nil
 	}})
@@ -105,7 +107,7 @@ func (c *subscriptionTestClient) line() []byte {
 	select {
 	case b := <-c.out.lines:
 		return b
-	case <-c.ctx.Done():
+	case <-c.done:
 		c.t.Fatal("timed out waiting for subscription output")
 		return nil
 	}
@@ -121,6 +123,19 @@ func (c *subscriptionTestClient) response(id int) {
 		c.t.Fatalf("response %d: %s (%v)", id, b, err)
 	}
 }
+
+type subscriptionSnapshotWire struct {
+	Snapshot json.RawMessage
+}
+
+type subscriptionNotificationParamsWire struct {
+	Snapshot subscriptionSnapshotWire
+}
+
+type subscriptionNotificationWire struct {
+	Params subscriptionNotificationParamsWire
+}
+
 func (c *subscriptionTestClient) notification() protocol.SnapshotResult {
 	c.t.Helper()
 	b := c.line()
@@ -131,11 +146,7 @@ func (c *subscriptionTestClient) notification() protocol.SnapshotResult {
 	if err := json.Unmarshal(b, &n); err != nil || n.Method != "stave.snapshot.subscription" || n.Params.Snapshot.Mode != "full" {
 		c.t.Fatalf("full notification: %s (%v)", b, err)
 	}
-	var wire struct {
-		Params struct {
-			Snapshot struct{ Snapshot json.RawMessage }
-		}
-	}
+	var wire subscriptionNotificationWire
 	if err := json.Unmarshal(b, &wire); err != nil {
 		c.t.Fatal(err)
 	}
@@ -150,7 +161,7 @@ func (c *subscriptionTestClient) observed(sequence uint64) {
 			if n >= sequence {
 				return
 			}
-		case <-c.ctx.Done():
+		case <-c.done:
 			c.t.Fatal("producer blocked behind transport")
 			return
 		}
@@ -166,7 +177,7 @@ func TestSnapshotSubscriptionCoalescesFullSnapshots(t *testing.T) {
 	}
 	select {
 	case <-c.out.blocked:
-	case <-c.ctx.Done():
+	case <-c.done:
 		t.Fatal("notification writer did not block")
 	}
 	for seq := uint64(3); seq <= 6; seq++ {
@@ -199,7 +210,7 @@ func TestSnapshotSubscriptionIsolatesPhysicalClients(t *testing.T) {
 	}
 	select {
 	case <-slow.out.blocked:
-	case <-slow.ctx.Done():
+	case <-slow.done:
 		t.Fatal("slow writer did not block")
 	}
 	n := fast.notification()
