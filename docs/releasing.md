@@ -4,7 +4,7 @@ The root Go module is the only published Stave package. The nested SSH, Bubble
 Tea, and Lip Gloss modules remain internal until they receive independent
 versions and tags.
 
-## Publish the prepared release candidate
+## Publish the prepared release tag
 
 Read the candidate from `.release-please-manifest.json`; publish it from the
 hardened final `main` commit, never from an older release-please pull request
@@ -24,6 +24,7 @@ merge commit.
 2. On the final `main` commit, wait for a fresh successful required-check run.
    Record its commit SHA and confirm it contains the intended candidate
    manifest, changelog, and release workflow.
+   Before deriving a stable tag, complete the GA promotion gate below.
 3. Derive the release tag from the manifest and tag that exact SHA. Do not move
    or recreate the tag after it is pushed:
 
@@ -41,9 +42,11 @@ merge commit.
    ```
 
 4. The tag triggers [the release workflow](../.github/workflows/release.yml).
-   It validates the tag, runs `make ci` and `make release-contract`, then
-   publishes a prerelease with `CHANGELOG.md`, `LICENSE`, and the performance
-   evidence artifact. Wait for that workflow and verify all published assets.
+   It validates the tag and runs `make ci`. A prerelease tag then runs
+   `make release-contract` and publishes a prerelease; a stable tag runs
+   `make release-ga-contract` and publishes a non-prerelease release. Both
+   release paths attach `CHANGELOG.md`, `LICENSE`, and the performance evidence
+   artifact. Wait for that workflow and verify all published assets.
 5. Change repository visibility only after the scheduler-boundary proof in
    step 1 passes. Then run a controlled real public-fork pull request and
    prove it uses the hosted untrusted path before approving general outside
@@ -55,11 +58,11 @@ merge commit.
    go list -m -json "github.com/ben-ranford/stave@${release_tag}"
    ```
 
-7. After the tag, prerelease, assets, and public Go resolution are verified,
-   replace `autorelease: pending` with `autorelease: tagged` on the original
-   release-please pull request. `skip-github-release: true` delegates
-   publication to the tag workflow, so release-please does not make that label
-   transition itself.
+7. After the tag, its matching release channel, assets, and public Go
+   resolution are verified, replace `autorelease: pending` with
+   `autorelease: tagged` on the original release-please pull request.
+   `skip-github-release: true` delegates publication to the tag workflow, so
+   release-please does not make that label transition itself.
 
 Release Please updates the annotated candidate versions in `README.md` and
 `docs/client-adoption.md` for future release pull requests. Keep the
