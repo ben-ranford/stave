@@ -353,6 +353,9 @@ const CommandFocusPrevious
 const CommandPageDown
 const CommandPageUp
 const CommandShutdown
+const MaxBindingChords
+const MaxProfileBytes
+const MaxProfileMappings
 const RouteAction
 const RouteEvent
 const StatusMatch
