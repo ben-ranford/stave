@@ -148,3 +148,19 @@ func mustID(t *testing.T, entity string) semantic.NodeID {
 	}
 	return id
 }
+
+func TestModalLifecycleRestoresAndIsIdempotent(t *testing.T) {
+	dialog := testNode(t, "dialog", "dialog", "Dialog", semantic.Flags{Visible: true}, []semantic.Node{testNode(t, "ok", "button", "OK", semantic.Flags{Visible: true, Focusable: true}, nil)})
+	tree := testTree(t, testNode(t, "app", "application", "App", semantic.Flags{Visible: true}, []semantic.Node{testNode(t, "open", "button", "Open", semantic.Flags{Visible: true, Focusable: true}, nil), dialog}))
+	g := NewGraph(tree)
+	m := NewModalLifecycle(State{Active: g.Focusable()[0]})
+	if !m.Open(g, dialog.ID()) || m.State.Scope != dialog.ID() {
+		t.Fatal("open failed")
+	}
+	if !m.Close(g, g, dialog.ID()) || m.State.Active.NodeID != g.Focusable()[0].NodeID {
+		t.Fatal("restore failed")
+	}
+	if m.Close(g, g, dialog.ID()) {
+		t.Fatal("close was not idempotent")
+	}
+}
