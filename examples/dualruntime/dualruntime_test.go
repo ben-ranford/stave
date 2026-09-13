@@ -85,6 +85,29 @@ func TestHumanLineAndAgentJSONLShareActionTree(t *testing.T) {
 	}
 }
 
+func TestHumanDrawUsesPreparedViewport(t *testing.T) {
+	driver, err := human.NewLineDriver(human.LineDriverOptions{Input: strings.NewReader(""), Output: &bytes.Buffer{}, Width: 40, Height: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := driver.Open(context.Background(), capability.Policy{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	app, err := New(context.Background(), manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Close()
+	surface, _, err := app.HumanOptions(driver).Draw(context.Background(), event.Event{Kind: event.Text})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if surface.Width != manifest.Width || surface.Height != manifest.Height {
+		t.Fatalf("draw surface = %dx%d, want negotiated %dx%d", surface.Width, surface.Height, manifest.Width, manifest.Height)
+	}
+}
+
 func TestIncrementAcknowledgementWaitsForReusedCallIDMutation(t *testing.T) {
 	app, err := New(context.Background(), AgentManifest())
 	if err != nil {

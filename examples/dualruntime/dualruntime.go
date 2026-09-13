@@ -143,7 +143,7 @@ func (a *Application) HumanOptions(driver human.Driver) human.Options {
 		if err != nil {
 			return surface.Surface{}, surface.Patch{}, err
 		}
-		result, err := render.Render(render.Request{Context: ctx, Tree: snapshot.Tree, Theme: a.Prepared.Theme, Capabilities: a.Prepared.Capabilities, Viewport: layout.Size{Width: 80, Height: 24}})
+		result, err := render.Render(render.Request{Context: ctx, Tree: snapshot.Tree, Theme: a.Prepared.Theme, Capabilities: a.Prepared.Capabilities, Viewport: layout.Size{Width: a.Prepared.Capabilities.Width, Height: a.Prepared.Capabilities.Height}})
 		return result.Surface, result.Patch, err
 	}}
 }
