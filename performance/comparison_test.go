@@ -148,3 +148,12 @@ func TestComparePreservesP95AbsoluteBudget(t *testing.T) {
 		t.Fatalf("valid p95/retry report rejected: %v", err)
 	}
 }
+
+func TestCompareAllowsBuildProvenanceAndObservedIdleWindowChanges(t *testing.T) {
+	baseline, candidate := comparisonFixture(), comparisonFixture()
+	candidate.Reproducibility.VCSModified = !baseline.Reproducibility.VCSModified
+	candidate.IdleCPU.Window += time.Nanosecond
+	if _, err := Compare(baseline, candidate); err != nil {
+		t.Fatalf("source provenance or observed elapsed window rejected: %v", err)
+	}
+}

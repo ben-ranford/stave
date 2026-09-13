@@ -17,8 +17,10 @@ between runs or revisions, and the `-out`/`--out` destination is excluded becaus
 names the artifact rather than a measurement parameter. All remaining arguments
 and environment metadata are compared. The report does not contain a fixture
 content hash, so matching declared fixture metadata does not prove identical
-fixture source content. Source revisions are recorded and may
-differ. The comparator rejects reports that fail their existing absolute
+fixture source content. Source revisions and dirty-worktree flags are recorded provenance and may
+differ, including when writing the first report changes the next build’s dirty
+flag. The idle CPU window records actual elapsed time, so it is validated as
+positive but is not required to match exactly between runs. The comparator rejects reports that fail their existing absolute
 budgets, change their budget schema, or use incompatible environment or
 reproducibility metadata.
 
