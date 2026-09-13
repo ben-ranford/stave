@@ -9,7 +9,7 @@ GO_FILES := $(shell rg --files -g '*.go' .)
 RIGOR := $(GO) run ./scripts/rigor/cmd/rigor
 
 .PHONY: help tools fmt fmt-check lint vet test race coverage coverage-threshold \
-	fuzz-smoke benchmark-smoke verify-performance govulncheck dependency-inventory license-inventory \
+	fuzz-smoke fuzz-parser-long benchmark-smoke verify-performance govulncheck dependency-inventory license-inventory \
 	suppression-check \
 	api-refresh api-boundary traceability-refresh schema-freshness generated-refresh \
 	adapters conformance-check atlas-check workflow-validate hooks-install hooks-pre-commit-dry-run \
@@ -21,6 +21,7 @@ help:
 		'Available targets:' \
 		'  make fast                  # local fast gate (fmt, lint, vet, API/schema checks)' \
 		'  make verify                # full local verification suite' \
+		'  make fuzz-parser-long      # run bounded config and agent-protocol fuzz targets' \
 		'  make ci                    # canonical local CI entrypoint' \
 		'  make generated-refresh     # refresh tracked rigor inventories'
 
@@ -62,6 +63,9 @@ coverage-threshold: coverage
 
 fuzz-smoke:
 	./scripts/rigor/run-fuzz-smoke.sh
+
+fuzz-parser-long:
+	./scripts/rigor/run-parser-fuzz.sh
 
 benchmark-smoke:
 	$(GO) test -run '^$$' -bench . -benchtime=1x ./...

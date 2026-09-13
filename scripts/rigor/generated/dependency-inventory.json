@@ -426,6 +426,7 @@
         "github.com/ben-ranford/stave/diag",
         "github.com/ben-ranford/stave/semantic",
         "io",
+        "strings",
         "unicode/utf8"
       ]
     },

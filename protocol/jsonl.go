@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"unicode/utf8"
 )
 
@@ -37,6 +38,9 @@ func DecodeLine(line []byte, max int) (Request, error) {
 	dec.UseNumber()
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&r); err != nil {
+		if strings.HasPrefix(err.Error(), "json: unknown field ") {
+			return Request{}, errors.New("unknown JSON-RPC envelope field")
+		}
 		return Request{}, err
 	}
 	if err := ensureEOF(dec); err != nil {
@@ -85,7 +89,7 @@ func validateObject(b []byte, depth int) error {
 			return errors.New("invalid object key")
 		}
 		if _, exists := seen[key]; exists {
-			return fmt.Errorf("duplicate key %q", key)
+			return errors.New("duplicate object key")
 		}
 		seen[key] = struct{}{}
 		var raw json.RawMessage

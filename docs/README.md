@@ -8,6 +8,7 @@ same semantic interface for people and automation.
 - [Adopt Stave in an application](client-adoption.md)
 - [Use Stave UI primitives](primitives.md)
 - [Meet accessibility and agent-control expectations](accessibility-agent-parity.md)
+- [Run bounded parser fuzzing](fuzzing.md)
 - [Understand compatibility guarantees](compatibility.md)
 - [Apply the security contract](security.md)
 - [Publish a release candidate](releasing.md)
