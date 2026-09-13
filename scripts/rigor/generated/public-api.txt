@@ -171,8 +171,16 @@ type ValidationError struct { Problems []Problem `json:"problems"` }
 type Viewport struct { Width int `json:"width,omitempty"`; Height int `json:"height,omitempty"` }
 
 [github.com/ben-ranford/stave/conformance]
+const MaxReportBytes
+const MaxReportFailures
+const ReportSchemaVersion
 func CheckAdapter(a Adapter, tree semantic.Node, modes []Mode) Report
 func CheckClient(client Client, fixtures []ClientFixture) ClientReport
+func MarshalJSONReport(report JSONReport) ([]byte, error)
+func NewJSONReport(failures []Failure) (JSONReport, error)
+func ParseJSONReport(data []byte) (JSONReport, error)
+func ReadJSONReport(r io.Reader) (JSONReport, error)
+func RuleDocumentation(rule string) string
 func ValidateTree(root semantic.Node) []Failure
 func ValidateTreeWithManifest(root semantic.Node, manifest ActionManifest) []Failure
 method (Failure) Error() string
@@ -182,6 +190,8 @@ type Client interface { Adapter; ActionRegistry() *action.Registry; Keymap() key
 type ClientFixture struct { Name string; Tree semantic.Node; Modes []Mode }
 type ClientReport struct { Client string; Fixtures []Report; Failures []Failure }
 type Failure struct { Path, Rule, Detail string }
+type JSONFailure struct { Path string `json:"path"`; Rule string `json:"rule"`; Detail string `json:"detail"`; Documentation string `json:"documentation"` }
+type JSONReport struct { SchemaVersion string `json:"schemaVersion"`; Failures []JSONFailure `json:"failures"` }
 type Mode struct { Width, Height int; Color, Unicode, Interactive, TTY, ReducedMotion bool }
 type Report struct { Adapter string; Modes int; Failures []Failure }
 

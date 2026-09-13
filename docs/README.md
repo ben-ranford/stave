@@ -8,6 +8,7 @@ same semantic interface for people and automation.
 - [Adopt Stave in an application](client-adoption.md)
 - [Use Stave UI primitives](primitives.md)
 - [Meet accessibility and agent-control expectations](accessibility-agent-parity.md)
+- [Consume bounded conformance reports](conformance-reports.md)
 - [Understand compatibility guarantees](compatibility.md)
 - [Apply the security contract](security.md)
 - [Understand configuration ownership](config-ownership.md)

@@ -180,11 +180,16 @@
       "importPath": "github.com/ben-ranford/stave/conformance",
       "dir": "conformance",
       "imports": [
+        "bytes",
+        "encoding/json",
         "fmt",
         "github.com/ben-ranford/stave/action",
         "github.com/ben-ranford/stave/keymap",
         "github.com/ben-ranford/stave/semantic",
-        "strings"
+        "io",
+        "sort",
+        "strings",
+        "unicode/utf8"
       ]
     },
     {

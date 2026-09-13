@@ -141,6 +141,13 @@ func conformanceMode(name string) (conformance.Mode, error) {
 }
 
 func main() {
+	if len(os.Args) > 1 {
+		if err := runReportMode(os.Args[1:], os.Stdin, os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(2)
+		}
+		return
+	}
 	data, err := os.ReadFile(filepath.Join("testdata", "primitive-manifest.json"))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -215,6 +222,35 @@ func main() {
 		}
 	}
 	fmt.Println("stave primitive conformance: ok")
+}
+
+func runReportMode(args []string, stdin io.Reader, stdout io.Writer) error {
+	if len(args) != 2 || args[0] != "--report" {
+		return fmt.Errorf("usage: stave-conformance --report <path|->")
+	}
+	input := stdin
+	var closeInput func() error
+	if args[1] != "-" {
+		file, err := os.Open(args[1])
+		if err != nil {
+			return fmt.Errorf("open conformance report: %w", err)
+		}
+		input = file
+		closeInput = file.Close
+	}
+	if closeInput != nil {
+		defer func() { _ = closeInput() }()
+	}
+	report, err := conformance.ReadJSONReport(input)
+	if err != nil {
+		return err
+	}
+	data, err := conformance.MarshalJSONReport(report)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintln(stdout, string(data))
+	return err
 }
 
 type primitiveManifest struct {

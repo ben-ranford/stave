@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -109,6 +110,37 @@ func TestNormalizeRenderedMeaningIgnoresTerminalPadding(t *testing.T) {
 	right := "Title: ready\nStatus: ok"
 	if normalizeRenderedMeaning(left) != normalizeRenderedMeaning(right) {
 		t.Fatal("terminal padding changed semantic output")
+	}
+}
+
+func TestReportModeFormatsOnlyValidatedReportJSON(t *testing.T) {
+	input := `{"schemaVersion":"stave.conformance.report.v1","failures":[{"path":"/b","rule":"secret-redaction","detail":"redacted","documentation":"docs/accessibility-agent-parity.md#capability-policy"},{"path":"/a","rule":"accessible-name","detail":"missing","documentation":"docs/accessibility-agent-parity.md#parity-rules"}]}`
+	var output bytes.Buffer
+	if err := runReportMode([]string{"--report", "-"}, bytes.NewBufferString(input), &output); err != nil {
+		t.Fatal(err)
+	}
+	want := `{"schemaVersion":"stave.conformance.report.v1","failures":[{"path":"/a","rule":"accessible-name","detail":"missing","documentation":"docs/accessibility-agent-parity.md#parity-rules"},{"path":"/b","rule":"secret-redaction","detail":"redacted","documentation":"docs/accessibility-agent-parity.md#capability-policy"}]}` + "\n"
+	if output.String() != want {
+		t.Fatalf("output = %q", output.String())
+	}
+}
+
+func TestReportModeRejectsAnythingButBoundedReportJSON(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		args []string
+		data string
+	}{
+		{name: "missing mode", args: nil},
+		{name: "unknown option", args: []string{"--fixture", "x"}},
+		{name: "unsupported version", args: []string{"--report", "-"}, data: `{"schemaVersion":"other","failures":[]}`},
+		{name: "unknown field", args: []string{"--report", "-"}, data: `{"schemaVersion":"stave.conformance.report.v1","failures":[],"fixture":"x"}`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if err := runReportMode(test.args, bytes.NewBufferString(test.data), &bytes.Buffer{}); err == nil {
+				t.Fatal("invalid report mode was accepted")
+			}
+		})
 	}
 }
 
