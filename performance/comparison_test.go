@@ -1,6 +1,7 @@
 package performance
 
 import (
+	"bytes"
 	"encoding/json"
 	"math"
 	"runtime"
@@ -111,6 +112,80 @@ func TestCompareRejectsRegressionEnvironmentAndBudgetChanges(t *testing.T) {
 	}
 }
 
+func TestComparisonJSONDistinguishesDefinedAndUndefinedZeroPercentDelta(t *testing.T) {
+	baseline, candidate := comparisonFixture(), comparisonFixture()
+	comparison, err := Compare(baseline, candidate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if percent := percentDeltaForMetric(t, comparison, "alloc_bytes"); percent == nil || *percent != 0 {
+		t.Fatalf("defined zero percent delta = %v, want 0", percent)
+	}
+	if percentDeltaFieldCount(t, comparison, "alloc_bytes") != 1 {
+		t.Fatal("defined percent delta was emitted more than once")
+	}
+
+	baseline.AllocBytes, candidate.AllocBytes = 0, 0
+	comparison, err = Compare(baseline, candidate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if percentDeltaForMetric(t, comparison, "alloc_bytes") != nil {
+		t.Fatal("undefined zero-baseline percent delta was emitted")
+	}
+}
+
+func percentDeltaForMetric(t *testing.T, comparison Comparison, metric string) *float64 {
+	t.Helper()
+	data, err := json.Marshal(comparison)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wire struct {
+		Deltas []struct {
+			Metric       string   `json:"metric"`
+			PercentDelta *float64 `json:"percentDelta"`
+		} `json:"deltas"`
+	}
+	if err := json.Unmarshal(data, &wire); err != nil {
+		t.Fatal(err)
+	}
+	for _, delta := range wire.Deltas {
+		if delta.Metric == metric {
+			return delta.PercentDelta
+		}
+	}
+	t.Fatalf("comparison omitted metric %q", metric)
+	return nil
+}
+
+func percentDeltaFieldCount(t *testing.T, comparison Comparison, metric string) int {
+	t.Helper()
+	data, err := json.Marshal(comparison)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wire struct {
+		Deltas []json.RawMessage `json:"deltas"`
+	}
+	if err := json.Unmarshal(data, &wire); err != nil {
+		t.Fatal(err)
+	}
+	for _, delta := range wire.Deltas {
+		var header struct {
+			Metric string `json:"metric"`
+		}
+		if err := json.Unmarshal(delta, &header); err != nil {
+			t.Fatal(err)
+		}
+		if header.Metric == metric {
+			return bytes.Count(delta, []byte(`"percentDelta"`))
+		}
+	}
+	t.Fatalf("comparison omitted metric %q", metric)
+	return 0
+}
+
 func TestDecodeReportRejectsDuplicateAndUnknownFields(t *testing.T) {
 	report := comparisonFixture()
 	data, err := json.Marshal(report)
@@ -127,6 +202,27 @@ func TestDecodeReportRejectsDuplicateAndUnknownFields(t *testing.T) {
 	} {
 		if _, err := DecodeReport(invalid); err == nil {
 			t.Fatal("DecodeReport() accepted hostile artifact")
+		}
+	}
+}
+
+func TestDecodeReportRejectsCaseVariantTypedKeys(t *testing.T) {
+	data, err := json.Marshal(comparisonFixture())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, replacement := range []struct {
+		old, new []byte
+	}{
+		{[]byte(`"host":"host"`), []byte(`"host":"host","Host":"other"`)},
+		{[]byte(`"sampleCount":101`), []byte(`"sampleCount":101,"SampleCount":101`)},
+	} {
+		mutated := bytes.Replace(data, replacement.old, replacement.new, 1)
+		if bytes.Equal(mutated, data) {
+			t.Fatalf("fixture did not add case-variant key %s", replacement.new)
+		}
+		if _, err := DecodeReport(mutated); err == nil {
+			t.Fatalf("DecodeReport() accepted case-variant typed key %s", replacement.new)
 		}
 	}
 }
