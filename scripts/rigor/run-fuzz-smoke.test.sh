@@ -53,7 +53,7 @@ expect_failure() {
 
 expect_failure 'MOCK go list failed' env GO_STUB_MODE=list-fail
 expect_failure 'MOCK go test -list failed' env GO_STUB_MODE=target-fail
-expect_failure 'unexpected empty fuzz targets' env GO_STUB_MODE=empty
+expect_failure 'unexpected empty fuzz targets' env GO_STUB_MODE=empty STAVE_FUZZ_ALLOW_EMPTY=0
 
 empty_output="$(run_with_stub env GO_STUB_MODE=empty STAVE_FUZZ_ALLOW_EMPTY=1 2>&1)"
 [[ "${empty_output}" == *'no fuzz targets detected'* ]]
