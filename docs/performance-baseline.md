@@ -11,11 +11,14 @@ go run ./cmd/stave-performance-compare -baseline baseline.json -candidate candid
 ```
 
 Both reports must be from the same host, Go version, OS/architecture, CPU
-count, fixture, capabilities, and exact run parameters. The `-out` destination
-is excluded because it names the artifact rather than a measurement parameter.
-Source revisions are recorded and may differ. The comparator rejects reports
-that fail their existing absolute budgets, change their budget schema, or use
-incompatible environment or reproducibility metadata.
+count, fixture, capabilities, and exact run parameters. The executable path
+(`os.Args[0]`) is excluded because launch and build locations can differ
+between runs or revisions, and the `-out` destination is excluded because it
+names the artifact rather than a measurement parameter. All remaining arguments
+and environment metadata are compared. Source revisions are recorded and may
+differ. The comparator rejects reports that fail their existing absolute
+budgets, change their budget schema, or use incompatible environment or
+reproducibility metadata.
 
 It emits the versioned `stave.performance.comparison/v1` JSON envelope. Each
 metric has an explicit threshold: p95 measurements and allocation allow a 10%
