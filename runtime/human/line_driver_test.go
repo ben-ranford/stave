@@ -50,7 +50,12 @@ func TestLineDriverOpenHonorsCanceledContext(t *testing.T) {
 		if !manifest.Interactive {
 			t.Fatalf("Open() manifest = %+v, want interactive manifest", manifest)
 		}
+		events := 0
 		for range driver.Events() {
+			events++
+		}
+		if events == 0 {
+			t.Fatal("active driver produced no events")
 		}
 	})
 }
