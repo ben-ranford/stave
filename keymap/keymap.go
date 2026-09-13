@@ -227,7 +227,7 @@ func Decode(raw []byte, manifest []action.Definition) (Map, error) {
 	if err := decoder.Decode(&document); err != nil {
 		return Map{}, fmt.Errorf("decode keymap profile: %w", err)
 	}
-	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+	if decoder.Decode(&struct{}{}) != io.EOF {
 		return Map{}, errors.New("decode keymap profile: trailing data")
 	}
 	if document.Version != CodecVersion {
