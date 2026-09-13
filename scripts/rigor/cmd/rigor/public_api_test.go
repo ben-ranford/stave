@@ -292,7 +292,8 @@ func TestPublicAPIInventoryPreservesImportedTypePackageIdentity(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			one := render("example.com/model/one", "model", declaration)
-			if two := render("example.com/model/two", "model", declaration); one == two {
+			two := render("example.com/model/two", "model", declaration)
+			if one == two {
 				t.Fatalf("imported type package change did not alter inventory:\n%s", one)
 			}
 			if equivalent := render("example.com/model/one", "identity", declaration); one != equivalent {
