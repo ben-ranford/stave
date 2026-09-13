@@ -58,6 +58,18 @@ type Result struct {
 	Terminal     string
 }
 
+// Outputs selects optional render products. A zero value preserves Render's
+// compatibility behavior by producing every product.
+type Outputs uint8
+
+const (
+	OutputPatch Outputs = 1 << iota
+	OutputPlain
+	OutputMachine
+	OutputTerminal
+	OutputAll = OutputPatch | OutputPlain | OutputMachine | OutputTerminal
+)
+
 func ANSI(text string, level capability.ColorLevel, fg string) string {
 	w := Writer{Manifest: capability.Manifest{TTY: true, Color: level}}
 	out, _ := w.wrapText(iterminal.Sanitize(text), surface.ResolvedStyle{Foreground: fg})
@@ -65,6 +77,15 @@ func ANSI(text string, level capability.ColorLevel, fg string) string {
 }
 
 func Render(r Request) (Result, error) {
+	return RenderSelected(r, OutputAll)
+}
+
+// RenderSelected shares validation, layout, and surface construction while
+// materializing only the requested products.
+func RenderSelected(r Request, outputs Outputs) (Result, error) {
+	if outputs == 0 || outputs&^OutputAll != 0 {
+		return Result{}, fmt.Errorf("invalid render output selection")
+	}
 	ctx := r.Context
 	if ctx == nil {
 		ctx = context.Background()
@@ -112,19 +133,31 @@ func Render(r Request) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	patch := surface.Diff(zeroSurface(grid, r.Previous), grid)
-	plain := renderPlain(indexed, r.Capabilities)
-	if err := enforceByteBudget(plain, budgets.MaxBytes); err != nil {
-		return Result{}, err
+	var patch surface.Patch
+	if outputs&OutputPatch != 0 {
+		patch = surface.Diff(zeroSurface(grid, r.Previous), grid)
 	}
-	machine, err := renderMachine(r, plan, grid, plain, budgets.MaxBytes)
-	if err != nil {
-		return Result{}, err
+	plain := ""
+	if outputs&(OutputPlain|OutputMachine) != 0 {
+		plain = renderPlain(indexed, r.Capabilities)
+		if err := enforceByteBudget(plain, budgets.MaxBytes); err != nil {
+			return Result{}, err
+		}
 	}
-	writer := Writer{Manifest: r.Capabilities, ByteLimit: budgets.MaxBytes}
-	terminal, err := writer.Render(grid)
-	if err != nil {
-		return Result{}, err
+	machine := []byte(nil)
+	if outputs&OutputMachine != 0 {
+		machine, err = renderMachine(r, plan, grid, plain, budgets.MaxBytes)
+		if err != nil {
+			return Result{}, err
+		}
+	}
+	terminal := ""
+	if outputs&OutputTerminal != 0 {
+		writer := Writer{Manifest: r.Capabilities, ByteLimit: budgets.MaxBytes}
+		terminal, err = writer.Render(grid)
+		if err != nil {
+			return Result{}, err
+		}
 	}
 	return Result{
 		Viewport:     viewport,
