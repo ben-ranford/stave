@@ -13,6 +13,20 @@ dependencies. Pin this candidate after its release tag is published.
 
 For a compiled first semantic tree, use the [root quick start](../README.md#quick-start).
 
+## Runnable dual-runtime local-checkout tutorial
+
+The unreleased `examples/dualruntime` package and `stave-dual-runtime` command
+show one application session used by both hosts. From a local checkout run the
+human line host with `printf 'inc\n' | go run ./cmd/stave-dual-runtime`, or the
+JSONL host with `printf '{"jsonrpc":"2.0","id":1,"method":"stave.initialize"}\n{"jsonrpc":"2.0","id":2,"method":"stave.initialized"}\n{"jsonrpc":"2.0","id":3,"method":"stave.action.invoke","params":{"callId":"inc","actionId":"example.increment.v1"}}\n' | go run ./cmd/stave-dual-runtime -agent`.
+
+The tutorial owns its action registry and explicit authorization callback;
+`agent.BindSession` supplies only snapshots and once-only cancellation. Cancel
+the command context and close the application session on shutdown. Configure
+limits through `Program.NewSession`; see [configuration ownership](config-ownership.md)
+and the existing security and stale-target contract tests before adapting the
+example to production.
+
 ## Build an application
 
 Use the public contracts in this order:
