@@ -93,7 +93,10 @@ The only terminal reasons are `provider_failed`, `session_closed`, and
 `output_limit`. A terminal state removes the subscription. Input EOF,
 connection cancellation, server close, or writer failure also ends the
 subscription; a writer failure may prevent a terminal message from reaching
-that same client.
+that same client. If input EOF arrives while the initial baseline is still
+being generated, the subscribe request receives a typed cancellation response.
+Requests already accepted before EOF still drain through their normal response
+paths, including a queued shutdown acknowledgement.
 
 `Serve` serializes responses and notifications through the connection's single
 transport writer. Hosts must provide a writer with bounded, interruptible

@@ -192,11 +192,14 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	subscriptionContext, cancelSubscriptions := context.WithCancel(ctx)
+	inputEOF := make(chan struct{})
 	subscriptionWatcherDone := make(chan struct{})
 	go func() {
 		defer close(subscriptionWatcherDone)
 		select {
 		case <-s.serverDone:
+			cancelSubscriptions()
+		case <-inputEOF:
 			cancelSubscriptions()
 		case <-subscriptionContext.Done():
 		}
@@ -388,6 +391,91 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 			return false
 		}
 	}
+	type baselineResult struct {
+		response protocol.Response
+		baseline *protocol.SnapshotResult
+	}
+	type pendingBaseline struct {
+		request protocol.Request
+		cancel  context.CancelFunc
+		result  chan baselineResult
+		done    chan struct{}
+	}
+	cancelledBaseline := func(request protocol.Request) baselineResult {
+		return baselineResult{response: protocol.Response{
+			JSONRPC: protocol.JSONRPC,
+			ID:      request.ID,
+			Error:   protocol.Errorf(protocol.Cancelled, "subscription is closed"),
+		}}
+	}
+	baselineClosed := func() bool {
+		select {
+		case <-subscriptionContext.Done():
+			return true
+		case <-inputEOF:
+			return true
+		case <-s.serverDone:
+			return true
+		default:
+			return false
+		}
+	}
+	var pending *pendingBaseline
+	startBaseline := func(request protocol.Request) {
+		baselineContext, cancelBaseline := context.WithCancel(subscriptionContext)
+		pending = &pendingBaseline{request: request, cancel: cancelBaseline, result: make(chan baselineResult, 1), done: make(chan struct{})}
+		current := pending
+		go func() {
+			defer close(current.done)
+			response, baseline := s.snapshotSubscribe(baselineContext, current.request)
+			current.result <- baselineResult{response: response, baseline: baseline}
+		}()
+		select {
+		case <-inputEOF:
+			cancelBaseline()
+		default:
+		}
+	}
+	completeBaseline := func(current *pendingBaseline, result baselineResult, deliver bool) error {
+		<-current.done
+		current.cancel()
+		pending = nil
+		if !deliver {
+			return nil
+		}
+		if result.response.Error == nil && baselineClosed() {
+			result = cancelledBaseline(current.request)
+		}
+		if len(current.request.ID) > 0 {
+			if err := write(result.response); err != nil {
+				return err
+			}
+		}
+		if result.response.Error != nil || result.baseline == nil {
+			return nil
+		}
+		subscriptionMu.Lock()
+		currentSubscription := newSnapshotSubscription(subscriptionContext, *result.baseline, subscriptionWake, s.opt.SnapshotPublicationWaiter, func(waitCtx context.Context) (protocol.SnapshotResult, bool) {
+			result, err := s.subscriptionSnapshot(waitCtx)
+			return result, err == nil
+		})
+		subscription = currentSubscription
+		subscriptionMu.Unlock()
+		s.mu.Lock()
+		closed := s.closed
+		s.mu.Unlock()
+		if closed {
+			closeSubscription()
+		}
+		return nil
+	}
+	finishBaseline := func(deliver bool) error {
+		current := pending
+		if current == nil {
+			return nil
+		}
+		return completeBaseline(current, <-current.result, deliver)
+	}
 	type scannedLine struct {
 		line []byte
 		err  error
@@ -405,6 +493,7 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 				return
 			}
 		}
+		close(inputEOF)
 		select {
 		case scanned <- scannedLine{err: sc.Err(), eof: true}:
 		case <-ctx.Done():
@@ -418,16 +507,36 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 	reading := true
 	for reading {
 		var scannedResult scannedLine
+		var baselineResults <-chan baselineResult
+		if pending != nil {
+			baselineResults = pending.result
+		}
 		select {
 		case <-ctx.Done():
 			_ = in.Close()
+			if pending != nil {
+				pending.cancel()
+				_ = finishBaseline(false)
+			}
 			setWriteErr(ctx.Err())
 			reading = false
+			continue
+		case result := <-baselineResults:
+			if err := completeBaseline(pending, result, true); err != nil {
+				setWriteErr(err)
+				reading = false
+			}
 			continue
 		case scannedResult = <-scanned:
 			if scannedResult.eof {
 				if scannedResult.err != nil {
 					setWriteErr(scannedResult.err)
+				}
+				if pending != nil {
+					pending.cancel()
+					if err := finishBaseline(true); err != nil {
+						setWriteErr(err)
+					}
 				}
 				reading = false
 				continue
@@ -449,7 +558,7 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 				continue
 			}
 			subscriptionMu.Lock()
-			exists := subscription != nil
+			exists := subscription != nil || pending != nil
 			subscriptionMu.Unlock()
 			if exists {
 				if len(r.ID) > 0 {
@@ -460,28 +569,7 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 				}
 				continue
 			}
-			response, baseline := s.snapshotSubscribe(subscriptionContext, r)
-			if len(r.ID) > 0 {
-				if err := write(response); err != nil {
-					setWriteErr(err)
-					break
-				}
-			}
-			if response.Error == nil && baseline != nil {
-				subscriptionMu.Lock()
-				current := newSnapshotSubscription(subscriptionContext, *baseline, subscriptionWake, s.opt.SnapshotPublicationWaiter, func(waitCtx context.Context) (protocol.SnapshotResult, bool) {
-					result, err := s.subscriptionSnapshot(waitCtx)
-					return result, err == nil
-				})
-				subscription = current
-				subscriptionMu.Unlock()
-				s.mu.Lock()
-				closed := s.closed
-				s.mu.Unlock()
-				if closed {
-					closeSubscription()
-				}
-			}
+			startBaseline(r)
 			continue
 		}
 		if r.Method == "stave.snapshot.unsubscribe" {
@@ -498,6 +586,13 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 				}
 				continue
 			}
+			if pending != nil {
+				pending.cancel()
+				if err := finishBaseline(true); err != nil {
+					setWriteErr(err)
+					break
+				}
+			}
 			closeSubscription()
 			if len(r.ID) > 0 {
 				if err := write(protocol.Response{JSONRPC: protocol.JSONRPC, ID: r.ID, Result: map[string]any{"ok": true}}); err != nil {
@@ -508,6 +603,14 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 			continue
 		}
 		if control(r.Method) {
+			preemptsBaseline := r.Method == sessionShutdownMethod || r.Method == sessionCancelMethod && validSessionCancelParams(r.Params)
+			if preemptsBaseline && pending != nil {
+				pending.cancel()
+				if err := finishBaseline(true); err != nil {
+					setWriteErr(err)
+					break
+				}
+			}
 			resp := s.handleSafely(ctx, r)
 			if (r.Method == sessionCancelMethod || r.Method == sessionShutdownMethod) && resp.Error == nil {
 				closeSubscription()
@@ -555,6 +658,12 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 					continue
 				}
 			}
+		}
+	}
+	if pending != nil {
+		pending.cancel()
+		if err := finishBaseline(getWriteErr() == nil && ctx.Err() == nil); err != nil {
+			setWriteErr(err)
 		}
 	}
 	closeSubscription()
@@ -613,12 +722,12 @@ func (s *Server) snapshotSubscribe(ctx context.Context, request protocol.Request
 		return response, nil
 	}
 	result, err := s.subscriptionSnapshot(ctx)
-	if err != nil {
-		response.Error = protocol.Errorf(protocol.InternalError, "snapshot subscription unavailable")
-		return response, nil
-	}
 	if ctx.Err() != nil {
 		response.Error = protocol.Errorf(protocol.Cancelled, "subscription is closed")
+		return response, nil
+	}
+	if err != nil {
+		response.Error = protocol.Errorf(protocol.InternalError, "snapshot subscription unavailable")
 		return response, nil
 	}
 	response.Result = protocol.SnapshotSubscribeResult{Snapshot: result}

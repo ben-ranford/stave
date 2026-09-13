@@ -3,6 +3,7 @@ package agent
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"strings"
 	"sync"
@@ -17,24 +18,63 @@ import (
 
 func TestSnapshotSubscriptionRequiresNegotiatedExtensionAndIsIdempotentlyRemoved(t *testing.T) {
 	envelope := subscriptionEnvelope(t)
+	baselineContextCancelled := make(chan struct{})
 	options := Options{
 		Negotiate: func(context.Context, map[string]any) (capability.Manifest, error) {
 			return capability.Manifest{ProtocolVersions: []string{protocol.Version}, SnapshotModes: []string{"full"}, SnapshotSubscriptionVersions: []string{protocol.SnapshotSubscriptionVersion}}, nil
 		},
-		SubscriptionSnapshotEnvelope: func(context.Context, string, uint64) (SnapshotEnvelope, error) { return envelope, nil },
-		SnapshotPublicationWaiter:    func(ctx context.Context, _ uint64) error { <-ctx.Done(); return ctx.Err() },
+		SubscriptionSnapshotEnvelope: func(ctx context.Context, _ string, _ uint64) (SnapshotEnvelope, error) {
+			go func() {
+				<-ctx.Done()
+				close(baselineContextCancelled)
+			}()
+			return envelope, nil
+		},
+		SnapshotPublicationWaiter: func(ctx context.Context, _ uint64) error { <-ctx.Done(); return ctx.Err() },
 	}
-	requests := "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"stave.initialize\",\"params\":{\"protocolVersions\":[\"1.0\"],\"capabilities\":{\"snapshotSubscriptionVersions\":[\"stave.snapshot.subscribe/v1\"]}}}\n" +
-		"{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"stave.initialized\"}\n" +
-		"{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"stave.snapshot.subscribe\"}\n" +
-		"{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"stave.snapshot.unsubscribe\"}\n"
-	var output bytes.Buffer
-	if err := New(options).Serve(context.Background(), input(requests), &output); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	reader, writer := io.Pipe()
+	output := &subscriptionTestWriter{done: ctx.Done(), err: ctx.Err, lines: make(chan []byte, 8)}
+	done := make(chan error, 1)
+	go func() { done <- New(options).Serve(ctx, reader, output) }()
+	joined := false
+	t.Cleanup(func() {
+		_ = writer.Close()
+		if joined {
+			return
+		}
+		select {
+		case err := <-done:
+			if err != nil && !errors.Is(err, context.Canceled) {
+				t.Errorf("Serve cleanup error = %v", err)
+			}
+		case <-time.After(time.Second):
+			t.Error("Serve cleanup did not finish")
+		}
+	})
+	c := &subscriptionTestClient{t: t, done: ctx.Done(), in: writer, out: output}
+	c.request(`{"jsonrpc":"2.0","id":1,"method":"stave.initialize","params":{"protocolVersions":["1.0"],"capabilities":{"snapshotSubscriptionVersions":["stave.snapshot.subscribe/v1"]}}}`)
+	c.response(1)
+	c.request(`{"jsonrpc":"2.0","id":2,"method":"stave.initialized"}`)
+	c.response(2)
+	c.request(`{"jsonrpc":"2.0","id":3,"method":"stave.snapshot.subscribe"}`)
+	baseline := c.line()
+	if !bytes.Contains(baseline, []byte(`"snapshot":{"schemaVersion":"stave.semantic/v1"`)) {
+		t.Fatalf("subscription baseline = %s", baseline)
+	}
+	select {
+	case <-baselineContextCancelled:
+	case <-ctx.Done():
+		t.Fatal("completed baseline context was not released")
+	}
+	c.request(`{"jsonrpc":"2.0","id":4,"method":"stave.snapshot.unsubscribe"}`)
+	c.response(4)
+	_ = writer.Close()
+	if err := <-done; err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(output.String(), `"snapshot":{"schemaVersion":"stave.semantic/v1"`) || !strings.Contains(output.String(), `"id":4,"result":{"ok":true}`) {
-		t.Fatalf("subscription transcript = %s", output.String())
-	}
+	joined = true
 }
 
 func TestSnapshotSubscriptionBaselinePrecedesNotification(t *testing.T) {
