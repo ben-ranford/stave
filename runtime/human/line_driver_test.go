@@ -3,6 +3,8 @@ package human
 import (
 	"bytes"
 	"context"
+	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -12,6 +14,46 @@ import (
 	"github.com/ben-ranford/stave/semantic"
 	"github.com/ben-ranford/stave/surface"
 )
+
+func TestLineDriverOpenHonorsCanceledContext(t *testing.T) {
+	t.Run("already canceled", func(t *testing.T) {
+		driver, err := NewLineDriver(LineDriverOptions{Input: strings.NewReader("ignored\n"), Output: &bytes.Buffer{}, TTY: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		manifest, err := driver.Open(ctx, capability.Policy{})
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Open() error = %v, want context.Canceled", err)
+		}
+		if !reflect.DeepEqual(manifest, capability.Manifest{}) {
+			t.Fatalf("Open() manifest = %+v, want zero manifest", manifest)
+		}
+		driver.mu.Lock()
+		opened, scanCancel := driver.opened, driver.cancel
+		driver.mu.Unlock()
+		if opened || scanCancel != nil {
+			t.Fatalf("canceled Open changed driver state: opened=%t scanCancel=%t", opened, scanCancel != nil)
+		}
+	})
+
+	t.Run("active context", func(t *testing.T) {
+		driver, err := NewLineDriver(LineDriverOptions{Input: strings.NewReader("ready\n"), Output: &bytes.Buffer{}, TTY: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		manifest, err := driver.Open(context.Background(), capability.Policy{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !manifest.Interactive {
+			t.Fatalf("Open() manifest = %+v, want interactive manifest", manifest)
+		}
+		for range driver.Events() {
+		}
+	})
+}
 
 func TestLineDriverEmitsCanonicalTextAndShutdown(t *testing.T) {
 	var output bytes.Buffer
