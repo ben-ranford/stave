@@ -80,12 +80,23 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 }
 
 func latestStableV1Tag(ctx context.Context) (string, error) {
-	output, err := git(ctx, "tag", "--list", "v1.*", "--sort=-v:refname")
+	head, err := git(ctx, "rev-parse", "HEAD^{commit}")
+	if err != nil {
+		return "", err
+	}
+	output, err := git(ctx, "tag", "--list", "v1.*", "--merged", "HEAD", "--sort=-v:refname")
 	if err != nil {
 		return "", err
 	}
 	for _, tag := range strings.Fields(string(output)) {
-		if stableV1Tag.MatchString(tag) {
+		if !stableV1Tag.MatchString(tag) {
+			continue
+		}
+		commit, err := git(ctx, "rev-parse", tag+"^{commit}")
+		if err != nil {
+			return "", err
+		}
+		if strings.TrimSpace(string(commit)) != strings.TrimSpace(string(head)) {
 			return tag, nil
 		}
 	}
@@ -93,7 +104,7 @@ func latestStableV1Tag(ctx context.Context) (string, error) {
 	if available == "" {
 		available = "none"
 	}
-	return "", fmt.Errorf("no stable v1 tag is available for the minor-release compatibility gate; available v1 tags: %s; create the stable baseline through issue #2 before GA", available)
+	return "", fmt.Errorf("no earlier stable v1 tag is available for the minor-release compatibility gate; ancestor v1 tags: %s; create the stable baseline through issue #2 before GA", available)
 }
 
 func loadBaseline(ctx context.Context, tag string) (baseline, error) {

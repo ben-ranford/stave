@@ -65,7 +65,9 @@ The following are additive when existing meaning remains intact:
 ## Minor-release baseline gate
 
 `make release-baseline` regenerates the candidate public API inventory from
-source and compares it with the newest annotated stable `v1.x.y` tag. It
+source and compares it with the newest annotated stable `v1.x.y` tag on a strict
+ancestor of the candidate. Tags on the candidate itself or unrelated/future
+commits cannot serve as its baseline. It
 records the baseline tag, immutable commit, and both Go floors. A regenerated
 candidate inventory cannot waive a removed declaration, changed signature,
 interface method addition, or exported variable type change.

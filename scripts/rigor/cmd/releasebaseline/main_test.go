@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -129,4 +131,49 @@ func TestConsumerSurface(t *testing.T) {
 	command := exec.Command("go", "test", "./...")
 	command.Dir = consumerDirectory
 	return command.Run() == nil
+}
+
+func TestLatestStableV1TagExcludesCandidateAndFutureTags(t *testing.T) {
+	for _, prior := range []bool{true, false} {
+		t.Run(fmt.Sprint(prior), func(t *testing.T) {
+			directory := t.TempDir()
+			command := func(args ...string) string {
+				t.Helper()
+				c := exec.Command("git", append([]string{"-C", directory}, args...)...)
+				output, err := c.CombinedOutput()
+				if err != nil {
+					t.Fatalf("git %v: %v: %s", args, err, output)
+				}
+				return strings.TrimSpace(string(output))
+			}
+			command("init", "--quiet")
+			t.Setenv("GIT_DIR", filepath.Join(directory, ".git"))
+			t.Setenv("GIT_WORK_TREE", directory)
+			command("config", "user.name", "Ben Ranford")
+			command("config", "user.email", "84072202+ben-ranford@users.noreply.github.com")
+			command("-c", "commit.gpgsign=false", "commit", "--allow-empty", "-m", "baseline")
+			if prior {
+				command("tag", "-a", "v1.0.0", "-m", "prior stable")
+			}
+			command("-c", "commit.gpgsign=false", "commit", "--allow-empty", "-m", "candidate")
+			candidate := command("rev-parse", "HEAD")
+			command("tag", "-a", "v1.1.0", "-m", "candidate stable")
+			check := func() {
+				t.Helper()
+				got, err := latestStableV1Tag(context.Background())
+				if prior {
+					if err != nil || got != "v1.0.0" {
+						t.Fatalf("baseline=%q err=%v", got, err)
+					}
+				} else if err == nil {
+					t.Fatalf("candidate-only stable baseline accepted: %s", got)
+				}
+			}
+			check()
+			command("-c", "commit.gpgsign=false", "commit", "--allow-empty", "-m", "future")
+			command("tag", "-a", "v1.2.0", "-m", "future stable")
+			command("checkout", "--detach", candidate)
+			check()
+		})
+	}
 }
