@@ -28,3 +28,11 @@ change queue, output, concurrency, or Program runtime settings.
 
 When a Program has already prepared a session, use `prepared.Config` as that
 validated source before constructing the agent adapter.
+
+## Unreleased local-checkout session bridge
+
+`agent.BindSession` is an opt-in local-checkout API. It supplies a session's
+snapshot envelope and an idempotent cancellation callback, while the
+application continues to supply the action registry, authorization,
+confirmation, and policy callbacks in `agent.Options`. It does not select a
+transport or grant action authority.

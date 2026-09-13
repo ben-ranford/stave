@@ -592,6 +592,7 @@ type Transcript struct { SchemaVersion string `json:"schemaVersion"`; SessionID 
 [github.com/ben-ranford/stave/requirements]
 
 [github.com/ben-ranford/stave/runtime/agent]
+func BindSession[M any](s *session.Session[M], options Options) (Options, error)
 func New(opts Options) *Server
 func OptionsFromConfig(cfg config.Config) (Options, error)
 method (*Server) Close()

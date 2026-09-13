@@ -1,0 +1,102 @@
+package agent
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"sync/atomic"
+	"testing"
+
+	"github.com/ben-ranford/stave/action"
+	"github.com/ben-ranford/stave/effect"
+	"github.com/ben-ranford/stave/event"
+	"github.com/ben-ranford/stave/semantic"
+	"github.com/ben-ranford/stave/session"
+	"github.com/ben-ranford/stave/state"
+)
+
+func TestBindSessionServesValidatedFullAndPatchAndPreservesAuthority(t *testing.T) {
+	s := bridgeSession(t, "bound-session")
+	defer s.Close()
+	registry := action.NewRegistry()
+	var authorized atomic.Int32
+	bound, err := BindSession(s, Options{SessionID: "bound-session", Actions: registry, Authorize: func(context.Context, action.Call) *action.Error {
+		authorized.Add(1)
+		return nil
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bound.SessionID != "bound-session" || bound.Authorize == nil || bound.Actions != registry {
+		t.Fatalf("BindSession replaced caller authority: %#v", bound)
+	}
+	full, err := bound.SnapshotEnvelope(context.Background(), "full", 0)
+	if err != nil || full.Snapshot == nil || full.Patch != nil || full.Snapshot.Validate() != nil || full.Snapshot.TreeHash != full.TreeHash {
+		t.Fatalf("invalid full envelope: %#v, %v", full, err)
+	}
+	if err := s.Send(bridgeEvent(t)); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Wait(context.Background(), func(current state.State[int]) bool { return current.Revision > full.Revision }); err != nil {
+		t.Fatal(err)
+	}
+	patch, err := bound.SnapshotEnvelope(context.Background(), "patch", full.Revision)
+	if err != nil || patch.Patch == nil || patch.Snapshot != nil || patch.Patch.FromRevision != full.Revision || patch.Patch.ToRevision != patch.Revision {
+		t.Fatalf("invalid patch envelope: %#v, %v", patch, err)
+	}
+	if _, err := bound.SnapshotEnvelope(context.Background(), "patch", full.Revision); err == nil {
+		t.Fatal("stale patch revision accepted")
+	}
+	if _, err := BindSession(s, Options{SessionID: "other"}); err == nil {
+		t.Fatal("mismatched caller session id accepted")
+	}
+
+	bound.CompatibilityMode = true
+	server := New(bound)
+	var output bytes.Buffer
+	requests := "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"stave.initialize\"}\n{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"stave.initialized\"}\n{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"stave.session.cancel\"}\n{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"stave.session.cancel\"}\n"
+	if err := server.Serve(context.Background(), input(requests), &output); err != nil {
+		t.Fatal(err)
+	}
+	if s.Lifecycle() != session.LifecycleClosed {
+		t.Fatalf("cancel did not close bound session: %s", s.Lifecycle())
+	}
+	if authorized.Load() != 0 {
+		t.Fatal("session bridge invoked application authorization")
+	}
+}
+
+func bridgeSession(t *testing.T, sessionID string) *session.Session[int] {
+	t.Helper()
+	s, err := session.New(context.Background(), session.Options[int]{
+		SessionID: sessionID,
+		Reduce: func(_ context.Context, current int, _ event.Event) (int, []effect.Request, error) {
+			return current + 1, nil, nil
+		},
+		View: func(_ context.Context, current int) (session.ViewResult, error) {
+			id, err := semantic.NodeIDFor(semantic.NodeKey{AppNamespace: "test", View: "bridge", Kind: "root", Entity: fmt.Sprint(current), Slot: "main"})
+			if err != nil {
+				return session.ViewResult{}, err
+			}
+			node, err := semantic.NewNode(semantic.NodeSpec{ID: id, Generation: 1, Role: "application", Name: "bridge"})
+			if err != nil {
+				return session.ViewResult{}, err
+			}
+			tree, err := semantic.NewTree(uint64(current+1), node)
+			return session.ViewResult{Tree: tree, SurfaceHash: fmt.Sprintf("surface-%d", current)}, err
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+func bridgeEvent(t *testing.T) event.Event {
+	t.Helper()
+	ev, err := event.New(event.Key, event.KeyPayload{Key: "enter"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ev
+}
