@@ -115,6 +115,8 @@ type callSlot struct {
 
 const minimumOutputBytes = 128
 
+const sessionCancelMethod = "stave.session.cancel"
+
 var (
 	ErrBackpressure = errors.New("protocol request queue full")
 	ErrOutputLimit  = errors.New("protocol output exceeds limit")
@@ -354,7 +356,7 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 	}
 	control := func(method string) bool {
 		switch method {
-		case "stave.initialize", "initialize", "stave.initialized", "initialized", "stave.action.cancel", "stave.session.cancel", "stave.session.shutdown", "stave.ping":
+		case "stave.initialize", "initialize", "stave.initialized", "initialized", "stave.action.cancel", sessionCancelMethod, "stave.session.shutdown", "stave.ping":
 			return true
 		default:
 			return false
@@ -481,7 +483,7 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 		}
 		if control(r.Method) {
 			resp := s.handleSafely(ctx, r)
-			if r.Method == "stave.session.cancel" && resp.Error == nil {
+			if r.Method == sessionCancelMethod && resp.Error == nil {
 				closeSubscription()
 			}
 			if len(r.ID) > 0 {
@@ -759,7 +761,7 @@ func (s *Server) handle(parent context.Context, r protocol.Request, snapshotProv
 		return s.confirm(parent, r, resp, fail)
 	case "stave.action.cancel":
 		return s.cancelAction(r, resp, fail)
-	case "stave.session.cancel":
+	case sessionCancelMethod:
 		return s.cancelSession(parent, r, resp, fail)
 	default:
 		return fail(protocol.MethodNotFound, "method not found")
