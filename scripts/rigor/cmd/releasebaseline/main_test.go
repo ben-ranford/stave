@@ -66,6 +66,18 @@ type Options struct { Enabled bool; Name string }
 	}
 }
 
+func TestCompareInventoriesRejectsStructFieldReordering(t *testing.T) {
+	baseline := "# Public API inventory\nmodule example.com/api\n\n[example.com/api]\ntype Pair struct { Left string; Right string }\n"
+	reordered := "# Public API inventory\nmodule example.com/api\n\n[example.com/api]\ntype Pair struct { Right string; Left string }\n"
+	if err := compareInventories(baseline, reordered); err == nil {
+		t.Fatal("reordered exported fields were accepted")
+	}
+	withAddition := "# Public API inventory\nmodule example.com/api\n\n[example.com/api]\ntype Pair struct { Left string; Enabled bool; Right string }\n"
+	if err := compareInventories(baseline, withAddition); err != nil {
+		t.Fatalf("additive exported field was rejected: %v", err)
+	}
+}
+
 func TestCompareInventoriesRejectsDeletedEmptyPackageAndAllowsFirstField(t *testing.T) {
 	baseline := "# Public API inventory\nmodule example.com/api\n\n[example.com/api]\ntype Empty struct { }\n\n[example.com/api/empty]\n"
 	if err := compareInventories(baseline, "# Public API inventory\nmodule example.com/api\n\n[example.com/api]\ntype Empty struct { Enabled bool }\n"); err == nil {

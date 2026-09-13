@@ -98,6 +98,60 @@ func TestPublicAPIInventoryNormalizesParameterNamesAndInterfaceOrder(t *testing.
 	if nestedBefore != nestedAfter {
 		t.Fatalf("nested function parameter names changed inventory:\n%s\n%s", nestedBefore, nestedAfter)
 	}
+	nestedResultBefore := render("package api\nfunc Keep() func(value string) string { return nil }\n")
+	nestedResultAfter := render("package api\nfunc Keep() func(input string) string { return nil }\n")
+	if nestedResultBefore != nestedResultAfter {
+		t.Fatalf("nested function result parameter names changed inventory:\n%s\n%s", nestedResultBefore, nestedResultAfter)
+	}
+}
+
+func TestPublicAPIInventoryPreservesImportedTypePackageIdentity(t *testing.T) {
+	dir := t.TempDir()
+	write := func(relative, source string) {
+		t.Helper()
+		path := filepath.Join(dir, relative)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(source), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("one/model.go", "package model\ntype ID string\ntype Constraint interface { ~string }\n")
+	write("two/model.go", "package model\ntype ID string\ntype Constraint interface { ~string }\n")
+	apiDir := filepath.Join(dir, "api")
+	render := func(path, alias, declaration string) string {
+		t.Helper()
+		source := strings.ReplaceAll(declaration, "$ID", alias+".ID")
+		source = strings.ReplaceAll(source, "$Constraint", alias+".Constraint")
+		write("api/api.go", "package api\nimport "+alias+" \""+path+"\"\n"+source)
+		modelDir := filepath.Join(dir, map[string]string{"example.com/model/one": "one", "example.com/model/two": "two"}[path])
+		inventory, err := renderPublicAPI("example.com/api", []goListPackage{
+			{ImportPath: "example.com/api", Dir: apiDir, GoFiles: []string{"api.go"}},
+			{ImportPath: path, Dir: modelDir, GoFiles: []string{"model.go"}},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return inventory
+	}
+	for name, declaration := range map[string]string{
+		"function":   "func Keep(value $ID) $ID { return value }\n",
+		"interface":  "type Contract interface { Keep($ID) $ID }\n",
+		"struct":     "type Record struct { ID $ID }\n",
+		"variable":   "var Default $ID\n",
+		"constraint": "type Holder[T $Constraint] struct { Value T }\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			one := render("example.com/model/one", "model", declaration)
+			if two := render("example.com/model/two", "model", declaration); one == two {
+				t.Fatalf("imported type package change did not alter inventory:\n%s", one)
+			}
+			if equivalent := render("example.com/model/one", "identity", declaration); one != equivalent {
+				t.Fatalf("import alias changed inventory:\n%s\n%s", one, equivalent)
+			}
+		})
+	}
 }
 
 func TestPublicAPIInventoryIncludesExportedValueSemantics(t *testing.T) {

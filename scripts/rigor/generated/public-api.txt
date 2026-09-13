@@ -11,13 +11,13 @@ method (ViewContext) Deadline() (time.Time, bool)
 method (ViewContext) Done() <-chan struct{}
 method (ViewContext) Err() error
 method (ViewContext) Value(any) any
-type Prepared[M any] struct { Session *session.Session[M]; Actions *action.Registry; Capabilities capability.Manifest; Theme theme.Resolved; Config config.Config }
-type Program[M any] struct { Initial M; Reduce Reducer[M]; View View[M]; Actions *action.Registry; Theme theme.Theme; Config config.Config; Capabilities capability.Policy; Effects effect.Options; Observer observer.Observer; ModelPolicy state.ModelPolicy[M] }
+type Prepared[M any] struct { Session *github.com/ben-ranford/stave/session.Session[M]; Actions *github.com/ben-ranford/stave/action.Registry; Capabilities github.com/ben-ranford/stave/capability.Manifest; Theme github.com/ben-ranford/stave/theme.Resolved; Config github.com/ben-ranford/stave/config.Config }
+type Program[M any] struct { Initial M; Reduce Reducer[M]; View View[M]; Actions *github.com/ben-ranford/stave/action.Registry; Theme github.com/ben-ranford/stave/theme.Theme; Config github.com/ben-ranford/stave/config.Config; Capabilities github.com/ben-ranford/stave/capability.Policy; Effects github.com/ben-ranford/stave/effect.Options; Observer github.com/ben-ranford/stave/observer.Observer; ModelPolicy github.com/ben-ranford/stave/state.ModelPolicy[M] }
 type ReduceContext struct { Context context.Context; SessionID string; Sequence uint64; Revision uint64 }
-type Reducer[M any] func(ReduceContext, M, event.Event) (M, []effect.Request, error)
-type SessionOptions struct { SessionID string; RuntimeDetected capability.Manifest; ClientOffered capability.Manifest; ClientPresent bool; UserOverrides capability.Overrides; Security capability.SecurityPolicy; Viewport layout.Size }
-type ViewContext struct { Context context.Context; SessionID string; Revision uint64; Capabilities capability.Manifest; Theme theme.Resolved; Viewport layout.Size }
-type View[M any] func(ViewContext, M) (semantic.Tree, error)
+type Reducer[M any] func(ReduceContext, M, github.com/ben-ranford/stave/event.Event) (M, []github.com/ben-ranford/stave/effect.Request, error)
+type SessionOptions struct { SessionID string; RuntimeDetected github.com/ben-ranford/stave/capability.Manifest; ClientOffered github.com/ben-ranford/stave/capability.Manifest; ClientPresent bool; UserOverrides github.com/ben-ranford/stave/capability.Overrides; Security github.com/ben-ranford/stave/capability.SecurityPolicy; Viewport github.com/ben-ranford/stave/layout.Size }
+type ViewContext struct { Context context.Context; SessionID string; Revision uint64; Capabilities github.com/ben-ranford/stave/capability.Manifest; Theme github.com/ben-ranford/stave/theme.Resolved; Viewport github.com/ben-ranford/stave/layout.Size }
+type View[M any] func(ViewContext, M) (github.com/ben-ranford/stave/semantic.Tree, error)
 
 [github.com/ben-ranford/stave/action]
 const ActionNotFound Code = "ACTION_NOT_FOUND"
@@ -45,10 +45,10 @@ const ResultOK ResultStatus = "ok"
 const ResultRejected ResultStatus = "rejected"
 const Reversible Safety = "reversible"
 const StaleSnapshot Code = "STALE_SNAPSHOT"
-func NewConfirmation(string, Definition, semantic.Target, json.RawMessage, time.Time) (Confirmation, error)
-func NewConfirmationE(string, Definition, semantic.Target, json.RawMessage, time.Time) (Confirmation, error)
+func NewConfirmation(string, Definition, github.com/ben-ranford/stave/semantic.Target, encoding/json.RawMessage, time.Time) (Confirmation, error)
+func NewConfirmationE(string, Definition, github.com/ben-ranford/stave/semantic.Target, encoding/json.RawMessage, time.Time) (Confirmation, error)
 func NewRegistry() *Registry
-func Register[In, Out any](*Registry, Definition, func(json.RawMessage) (In, error), func(Out) (json.RawMessage, error), func(context.Context, Call, In) (Out, error)) error
+func Register[In any, Out any](*Registry, Definition, func(encoding/json.RawMessage) (In, error), func(Out) (encoding/json.RawMessage, error), func(context.Context, Call, In) (Out, error)) error
 method (*Error) Error() string
 method (*Registry) Definition(ID) (Definition, bool)
 method (*Registry) Invoke(context.Context, Call) Result
@@ -57,21 +57,21 @@ method (*Registry) Manifest() []Definition
 method (*Registry) Register(Definition, Handler) error
 method (Definition) EffectiveIdempotency() Idempotency
 method (Definition) Validate() error
-method (Schema) Validate(json.RawMessage) (any, error)
-type Call struct { CallID string; ActionID ID; Target semantic.Target; Arguments json.RawMessage; Confirmation *Confirmation; Deadline time.Time; PolicyID string; PolicyEpoch uint64; SessionID string }
+method (Schema) Validate(encoding/json.RawMessage) (any, error)
+type Call struct { CallID string; ActionID ID; Target github.com/ben-ranford/stave/semantic.Target; Arguments encoding/json.RawMessage; Confirmation *Confirmation; Deadline time.Time; PolicyID string; PolicyEpoch uint64; SessionID string }
 type Code string
-type Confirmation struct { Token string `json:"token"`; SessionID string `json:"sessionId"`; ActionID ID `json:"actionId"`; Target semantic.Target `json:"target"`; ArgHash string `json:"argHash"`; ExpiresAt time.Time `json:"expiresAt"`; Used bool `json:"used"`; ActionVersion string `json:"actionVersion"`; RevisionMin uint64 `json:"revisionMin"`; RevisionMax uint64 `json:"revisionMax"`; Safety Safety `json:"safety"`; PolicyID string `json:"policyId"`; PolicyEpoch uint64 `json:"policyEpoch"` }
+type Confirmation struct { Token string `json:"token"`; SessionID string `json:"sessionId"`; ActionID ID `json:"actionId"`; Target github.com/ben-ranford/stave/semantic.Target `json:"target"`; ArgHash string `json:"argHash"`; ExpiresAt time.Time `json:"expiresAt"`; Used bool `json:"used"`; ActionVersion string `json:"actionVersion"`; RevisionMin uint64 `json:"revisionMin"`; RevisionMax uint64 `json:"revisionMax"`; Safety Safety `json:"safety"`; PolicyID string `json:"policyId"`; PolicyEpoch uint64 `json:"policyEpoch"` }
 type ConfirmationPolicy struct { Required bool `json:"required"`; SingleUse bool `json:"singleUse"` }
-type Definition struct { ID ID `json:"id"`; Version string `json:"version"`; Title string `json:"title"`; Description string `json:"description,omitempty"`; InputSchema Schema `json:"inputSchema"`; OutputSchema Schema `json:"outputSchema"`; Safety Safety `json:"safety"`; Idempotency Idempotency `json:"idempotency"`; Cancellable bool `json:"cancellable,omitempty"`; TargetRoles []semantic.Role `json:"targetRoles,omitempty"`; RequiredCaps []string `json:"requiredCaps,omitempty"`; Confirmation ConfirmationPolicy `json:"confirmation,omitempty"`; Timeout time.Duration `json:"timeout,omitempty"` }
-type Error struct { Code Code `json:"code"`; Message string `json:"message"`; Retryable bool `json:"retryable"`; ActionID ID `json:"actionId,omitempty"`; NodeID semantic.NodeID `json:"nodeId,omitempty"`; Revision uint64 `json:"revision,omitempty"`; Details json.RawMessage `json:"details,omitempty"`; CauseClass string `json:"causeClass,omitempty"` }
+type Definition struct { ID ID `json:"id"`; Version string `json:"version"`; Title string `json:"title"`; Description string `json:"description,omitempty"`; InputSchema Schema `json:"inputSchema"`; OutputSchema Schema `json:"outputSchema"`; Safety Safety `json:"safety"`; Idempotency Idempotency `json:"idempotency"`; Cancellable bool `json:"cancellable,omitempty"`; TargetRoles []github.com/ben-ranford/stave/semantic.Role `json:"targetRoles,omitempty"`; RequiredCaps []string `json:"requiredCaps,omitempty"`; Confirmation ConfirmationPolicy `json:"confirmation,omitempty"`; Timeout time.Duration `json:"timeout,omitempty"` }
+type Error struct { Code Code `json:"code"`; Message string `json:"message"`; Retryable bool `json:"retryable"`; ActionID ID `json:"actionId,omitempty"`; NodeID github.com/ben-ranford/stave/semantic.NodeID `json:"nodeId,omitempty"`; Revision uint64 `json:"revision,omitempty"`; Details encoding/json.RawMessage `json:"details,omitempty"`; CauseClass string `json:"causeClass,omitempty"` }
 type Handler func(context.Context, Call, any) (any, error)
 type ID string
 type Idempotency string
 type Registry struct {  }
-type Result struct { CallID string; ActionID ID; Target semantic.Target; Status ResultStatus; Output json.RawMessage; Error *Error; Revision uint64; TreeHash string; Diagnostics []diag.Diagnostic }
+type Result struct { CallID string; ActionID ID; Target github.com/ben-ranford/stave/semantic.Target; Status ResultStatus; Output encoding/json.RawMessage; Error *Error; Revision uint64; TreeHash string; Diagnostics []github.com/ben-ranford/stave/diag.Diagnostic }
 type ResultStatus string
 type Safety string
-type Schema struct { ID string `json:"id"`; JSON json.RawMessage `json:"json"`; Decode func(json.RawMessage) (any, error) `json:"-"`; Encode func(any) (json.RawMessage, error) `json:"-"` }
+type Schema struct { ID string `json:"id"`; JSON encoding/json.RawMessage `json:"json"`; Decode func(encoding/json.RawMessage) (any, error) `json:"-"`; Encode func(any) (encoding/json.RawMessage, error) `json:"-"` }
 var ErrConfirmationLimit error
 var ErrNumericLimit error
 
@@ -171,15 +171,15 @@ type ValidationError struct { Problems []Problem `json:"problems"` }
 type Viewport struct { Width int `json:"width,omitempty"`; Height int `json:"height,omitempty"` }
 
 [github.com/ben-ranford/stave/conformance]
-func CheckAdapter(Adapter, semantic.Node, []Mode) Report
+func CheckAdapter(Adapter, github.com/ben-ranford/stave/semantic.Node, []Mode) Report
 func CheckClient(Client, []ClientFixture) ClientReport
-func ValidateTree(semantic.Node) []Failure
-func ValidateTreeWithManifest(semantic.Node, ActionManifest) []Failure
+func ValidateTree(github.com/ben-ranford/stave/semantic.Node) []Failure
+func ValidateTreeWithManifest(github.com/ben-ranford/stave/semantic.Node, ActionManifest) []Failure
 method (Failure) Error() string
-type ActionManifest map[semantic.ActionID]string
-type Adapter interface { Name() string; Render(semantic.Node, Mode) (string, error) }
-type Client interface { ActionRegistry() *action.Registry; Adapter; Keymap() keymap.Map }
-type ClientFixture struct { Name string; Tree semantic.Node; Modes []Mode }
+type ActionManifest map[github.com/ben-ranford/stave/semantic.ActionID]string
+type Adapter interface { Name() string; Render(github.com/ben-ranford/stave/semantic.Node, Mode) (string, error) }
+type Client interface { ActionRegistry() *github.com/ben-ranford/stave/action.Registry; Adapter; Keymap() github.com/ben-ranford/stave/keymap.Map }
+type ClientFixture struct { Name string; Tree github.com/ben-ranford/stave/semantic.Node; Modes []Mode }
 type ClientReport struct { Client string; Fixtures []Report; Failures []Failure }
 type Failure struct { Path, Rule, Detail string }
 type Mode struct { Width, Height int; Color, Unicode, Interactive, TTY, ReducedMotion bool }
@@ -190,7 +190,7 @@ const ErrorSeverity Severity = "error"
 const Info Severity = "info"
 const Warning Severity = "warning"
 method (Diagnostic) MarshalJSON() ([]byte, error)
-type Diagnostic struct { SchemaVersion string `json:"schemaVersion"`; ID string `json:"id"`; Sequence uint64 `json:"sequence,omitempty"`; Revision uint64 `json:"revision,omitempty"`; Time time.Time `json:"time,omitempty"`; Severity Severity `json:"severity"`; Category string `json:"category,omitempty"`; Code string `json:"code,omitempty"`; Message string `json:"message,omitempty"`; NodeID semantic.NodeID `json:"nodeId,omitempty"`; Attributes map[string]string `json:"attributes,omitempty"`; Retryable bool `json:"retryable,omitempty"`; Redacted bool `json:"redacted,omitempty"` }
+type Diagnostic struct { SchemaVersion string `json:"schemaVersion"`; ID string `json:"id"`; Sequence uint64 `json:"sequence,omitempty"`; Revision uint64 `json:"revision,omitempty"`; Time time.Time `json:"time,omitempty"`; Severity Severity `json:"severity"`; Category string `json:"category,omitempty"`; Code string `json:"code,omitempty"`; Message string `json:"message,omitempty"`; NodeID github.com/ben-ranford/stave/semantic.NodeID `json:"nodeId,omitempty"`; Attributes map[string]string `json:"attributes,omitempty"`; Retryable bool `json:"retryable,omitempty"`; Redacted bool `json:"redacted,omitempty"` }
 type Severity string
 
 [github.com/ben-ranford/stave/effect]
@@ -207,7 +207,7 @@ func ID(string, uint64, uint32, string) string
 func NewExecutor(Options) *Executor
 method (*Executor) Close()
 method (*Executor) Deliver(context.Context, []Call, Sink) error
-method (Outcome) Event() event.Event
+method (Outcome) Event() github.com/ben-ranford/stave/event.Event
 method (PortFunc) Run(context.Context, Call) (any, error)
 method (Request) Validate() error
 method (Spec) Validate() error
@@ -219,7 +219,7 @@ type Outcome struct { ID string `json:"id"`; Sequence uint64 `json:"sequence"`; 
 type Port interface { Run(context.Context, Call) (any, error) }
 type PortFunc func(context.Context, Call) (any, error)
 type Request struct { Spec Spec `json:"spec"`; Input any `json:"input,omitempty"` }
-type Sink func(event.Event) error
+type Sink func(github.com/ben-ranford/stave/event.Event) error
 type Spec struct { Kind string `json:"kind"`; Lane string `json:"lane,omitempty"`; Cancellable bool `json:"cancellable,omitempty"`; Sensitive bool `json:"sensitive,omitempty"`; Timeout time.Duration `json:"timeout,omitempty"` }
 type Status string
 var ErrBackpressure error
@@ -266,29 +266,29 @@ type Metadata struct { Source string `json:"source,omitempty"`; Coalesced bool `
 type PointerPayload struct { SourceID string `json:"sourceId"`; X int `json:"x"`; Y int `json:"y"`; Phase string `json:"phase,omitempty"`; Buttons []string `json:"buttons,omitempty"` }
 type Redaction struct { Redacted bool `json:"redacted"`; Reason string `json:"reason,omitempty"` }
 type ResizePayload struct { Width int `json:"width"`; Height int `json:"height"` }
-type SecureInputPayload struct { Handle secret.Handle `json:"handle"` }
+type SecureInputPayload struct { Handle github.com/ben-ranford/stave/secret.Handle `json:"handle"` }
 type Target struct { NodeID string `json:"nodeId,omitempty"`; Generation uint32 `json:"generation,omitempty"`; ObservedRevision uint64 `json:"observedRevision,omitempty"` }
 type TextPayload struct { Text string `json:"text"`; Committed bool `json:"committed,omitempty"` }
 
 [github.com/ben-ranford/stave/focus]
-func NewGraph(semantic.Tree) Graph
-method (Graph) Contains(semantic.Target) bool
-method (Graph) First(semantic.NodeID) (semantic.Target, bool)
-method (Graph) Focusable() []semantic.Target
-method (Graph) Initial(semantic.NodeID) (State, bool)
-method (Graph) Last(semantic.NodeID) (semantic.Target, bool)
+func NewGraph(github.com/ben-ranford/stave/semantic.Tree) Graph
+method (Graph) Contains(github.com/ben-ranford/stave/semantic.Target) bool
+method (Graph) First(github.com/ben-ranford/stave/semantic.NodeID) (github.com/ben-ranford/stave/semantic.Target, bool)
+method (Graph) Focusable() []github.com/ben-ranford/stave/semantic.Target
+method (Graph) Initial(github.com/ben-ranford/stave/semantic.NodeID) (State, bool)
+method (Graph) Last(github.com/ben-ranford/stave/semantic.NodeID) (github.com/ben-ranford/stave/semantic.Target, bool)
 method (Graph) Next(State) (State, bool)
 method (Graph) PopScope(State) (State, bool)
 method (Graph) Previous(State) (State, bool)
-method (Graph) PushScope(State, semantic.NodeID) (State, bool)
+method (Graph) PushScope(State, github.com/ben-ranford/stave/semantic.NodeID) (State, bool)
 method (Graph) Repair(State) State
 method (Graph) RepairFrom(Graph, State) State
 method (Graph) Revision() uint64
-method (Graph) Root() semantic.NodeID
+method (Graph) Root() github.com/ben-ranford/stave/semantic.NodeID
 method (Graph) Validate(State) error
 type FocusState = State
 type Graph struct {  }
-type State struct { Active semantic.Target; Scope semantic.NodeID; Stack []semantic.Target }
+type State struct { Active github.com/ben-ranford/stave/semantic.Target; Scope github.com/ben-ranford/stave/semantic.NodeID; Stack []github.com/ben-ranford/stave/semantic.Target }
 
 [github.com/ben-ranford/stave/input]
 const DefaultMaxPasteBytes untyped int = 65536
@@ -315,27 +315,27 @@ const ModShift Mod = 1
 const SecretEventKind github.com/ben-ranford/stave/event.Kind = "secure_input"
 const SourcePaste TextSource = "paste"
 const SourceTyped TextSource = "typed"
-func EOFEvent() staveevent.Event
-func KeyEvent(KeyChord) staveevent.Event
+func EOFEvent() github.com/ben-ranford/stave/event.Event
+func KeyEvent(KeyChord) github.com/ben-ranford/stave/event.Event
 func NewMemorySecretStore() *MemorySecretStore
 func NormalizePaste([]byte, int) (Text, []Diagnostic, error)
 func NormalizeText(string, int) (Text, []Diagnostic, error)
 func ParseKey(string) (KeyChord, error)
-func ResizeEvent(int, int) staveevent.Event
-func SecretInputEvent(SecretHandle) staveevent.Event
-func SignalEvent(string) staveevent.Event
-func TextEvent(Text) staveevent.Event
+func ResizeEvent(int, int) github.com/ben-ranford/stave/event.Event
+func SecretInputEvent(SecretHandle) github.com/ben-ranford/stave/event.Event
+func SignalEvent(string) github.com/ben-ranford/stave/event.Event
+func TextEvent(Text) github.com/ben-ranford/stave/event.Event
 method (KeyChord) Normalize() KeyChord
 type Diagnostic struct { Code string `json:"code"`; Message string `json:"message"`; Fields map[string]string `json:"fields,omitempty"` }
 type EOF struct {  }
 type KeyChord struct { Code KeyCode `json:"code"`; Rune rune `json:"rune,omitempty"`; Mods Mod `json:"mods,omitempty"` }
 type KeyCode string
-type MemorySecretStore = coresecret.MemoryStore
+type MemorySecretStore = github.com/ben-ranford/stave/secret.MemoryStore
 type Mod uint8
 type Resize struct { Width int `json:"width"`; Height int `json:"height"` }
-type SecretHandle = coresecret.Handle
+type SecretHandle = github.com/ben-ranford/stave/secret.Handle
 type SecretPrompt struct { ID string `json:"id"`; Label string `json:"label"`; Description string `json:"description,omitempty"` }
-type SecretStore = coresecret.Store
+type SecretStore = github.com/ben-ranford/stave/secret.Store
 type SecureProvider interface { ReadSecret(context.Context, SecretPrompt) (SecretHandle, error) }
 type Signal struct { Name string `json:"name"` }
 type Text struct { Value string `json:"value"`; Source TextSource `json:"source"`; Truncated bool `json:"truncated,omitempty"` }
@@ -361,37 +361,37 @@ func Default() (Map, error)
 func New(string, []Mapping) (Map, error)
 func NewDispatcher(Map) *Dispatcher
 method (*Dispatcher) Expire(time.Time) bool
-method (*Dispatcher) Feed(input.KeyChord, semantic.NodeID, semantic.Target, time.Time) (Resolution, error)
+method (*Dispatcher) Feed(github.com/ben-ranford/stave/input.KeyChord, github.com/ben-ranford/stave/semantic.NodeID, github.com/ben-ranford/stave/semantic.Target, time.Time) (Resolution, error)
 method (*Dispatcher) Pending() bool
 method (*Dispatcher) Reset()
-method (Map) ActionIDs() []action.ID
+method (Map) ActionIDs() []github.com/ben-ranford/stave/action.ID
 method (Map) Bindings() []Mapping
 method (Map) Hints(CommandID) []string
 method (Map) Inventory() []BindingInventory
 method (Map) Profile() string
-type Binding struct { Sequence []input.KeyChord `json:"sequence"`; Command CommandID `json:"command"`; Scope semantic.NodeID `json:"scope,omitempty"`; Priority int `json:"priority,omitempty"` }
-type BindingInventory struct { Command CommandID; Sequence []input.KeyChord; Scope semantic.NodeID; Priority int; Hint string; RouteKind RouteKind; ActionID action.ID; EventKind staveevent.Kind }
+type Binding struct { Sequence []github.com/ben-ranford/stave/input.KeyChord `json:"sequence"`; Command CommandID `json:"command"`; Scope github.com/ben-ranford/stave/semantic.NodeID `json:"scope,omitempty"`; Priority int `json:"priority,omitempty"` }
+type BindingInventory struct { Command CommandID; Sequence []github.com/ben-ranford/stave/input.KeyChord; Scope github.com/ben-ranford/stave/semantic.NodeID; Priority int; Hint string; RouteKind RouteKind; ActionID github.com/ben-ranford/stave/action.ID; EventKind github.com/ben-ranford/stave/event.Kind }
 type CommandID string
 type Dispatcher struct {  }
 type Map struct {  }
 type Mapping struct { Binding Binding `json:"binding"`; Route Route `json:"route"`; Hint string `json:"hint,omitempty"` }
-type Resolution struct { Status ResolutionStatus `json:"status"`; Binding Binding `json:"binding,omitempty"`; Route Route `json:"route,omitempty"`; Hint string `json:"hint,omitempty"`; Call *action.Call `json:"-"`; Event *staveevent.Event `json:"-"` }
+type Resolution struct { Status ResolutionStatus `json:"status"`; Binding Binding `json:"binding,omitempty"`; Route Route `json:"route,omitempty"`; Hint string `json:"hint,omitempty"`; Call *github.com/ben-ranford/stave/action.Call `json:"-"`; Event *github.com/ben-ranford/stave/event.Event `json:"-"` }
 type ResolutionStatus string
-type Route struct { Kind RouteKind `json:"kind"`; ActionID action.ID `json:"actionId,omitempty"`; Arguments json.RawMessage `json:"arguments,omitempty"`; EventKind staveevent.Kind `json:"eventKind,omitempty"`; Payload map[string]string `json:"payload,omitempty"` }
+type Route struct { Kind RouteKind `json:"kind"`; ActionID github.com/ben-ranford/stave/action.ID `json:"actionId,omitempty"`; Arguments encoding/json.RawMessage `json:"arguments,omitempty"`; EventKind github.com/ben-ranford/stave/event.Kind `json:"eventKind,omitempty"`; Payload map[string]string `json:"payload,omitempty"` }
 type RouteKind string
 
 [github.com/ben-ranford/stave/layout]
-func Arrange(context.Context, semantic.Node, Size, int) (Plan, error)
+func Arrange(context.Context, github.com/ben-ranford/stave/semantic.Node, Size, int) (Plan, error)
 func DefaultOptions() Options
 func MeasureText(string) int
 method (Box) GenerationCmp(Box) int
-method (DefaultEngine) Arrange(context.Context, semantic.Node, Rect) (Plan, error)
-method (DefaultEngine) Measure(context.Context, semantic.Node, Constraints) (Measurement, error)
-type Box struct { NodeID semantic.NodeID; Generation uint32; Rect Rect; Clip Rect; Z int }
+method (DefaultEngine) Arrange(context.Context, github.com/ben-ranford/stave/semantic.Node, Rect) (Plan, error)
+method (DefaultEngine) Measure(context.Context, github.com/ben-ranford/stave/semantic.Node, Constraints) (Measurement, error)
+type Box struct { NodeID github.com/ben-ranford/stave/semantic.NodeID; Generation uint32; Rect Rect; Clip Rect; Z int }
 type Budgets struct { MaxNodes int; MaxDepth int; MaxWork int }
 type Constraints struct { MinWidth, MaxWidth int; MinHeight, MaxHeight int }
 type DefaultEngine struct { Options Options }
-type Engine interface { Arrange(context.Context, semantic.Node, Rect) (Plan, error); Measure(context.Context, semantic.Node, Constraints) (Measurement, error) }
+type Engine interface { Arrange(context.Context, github.com/ben-ranford/stave/semantic.Node, Rect) (Plan, error); Measure(context.Context, github.com/ben-ranford/stave/semantic.Node, Constraints) (Measurement, error) }
 type Measurement struct { Size Size; Content Size; Nodes int; Hash [32]byte }
 type Options struct { Budgets Budgets; Window Rect; TabWidth int }
 type Plan struct { Viewport Size; Window Rect; Content Size; Boxes []Box; Hash [32]byte }
@@ -410,93 +410,93 @@ type Observer interface { Observe(context.Context, Event) }
 const Samples untyped int = 101
 func ActionAckLine() ([]byte, error)
 func Context() context.Context
-func Fixture(int) (semantic.Tree, error)
+func Fixture(int) (github.com/ben-ranford/stave/semantic.Tree, error)
 func Measure(func()) time.Duration
 func MeasureIdleCPU(time.Duration) RatioMeasurement
-func OrdinaryEvent() event.Event
+func OrdinaryEvent() github.com/ben-ranford/stave/event.Event
 func Percentiles([]time.Duration) (time.Duration, time.Duration, time.Duration, error)
-func ReduceCounter(context.Context, int, event.Event) (int, []effect.Request, error)
+func ReduceCounter(context.Context, int, github.com/ben-ranford/stave/event.Event) (int, []github.com/ben-ranford/stave/effect.Request, error)
 func ResizeStormRecovery(int) error
-func SurfaceFixture(int, int) (surface.Surface, error)
+func SurfaceFixture(int, int) (github.com/ben-ranford/stave/surface.Surface, error)
 func TerminalRestoreAfterCancellation() error
 method (*measurementDriver) Close() error
-method (*measurementDriver) Draw(context.Context, surface.Surface, surface.Patch) error
-method (*measurementDriver) Events() <-chan event.Event
-method (*measurementDriver) Open(context.Context, capability.Policy) (capability.Manifest, error)
-method (*measurementDriver) ReadSecret(context.Context, input.SecretPrompt) (secret.Handle, error)
+method (*measurementDriver) Draw(context.Context, github.com/ben-ranford/stave/surface.Surface, github.com/ben-ranford/stave/surface.Patch) error
+method (*measurementDriver) Events() <-chan github.com/ben-ranford/stave/event.Event
+method (*measurementDriver) Open(context.Context, github.com/ben-ranford/stave/capability.Policy) (github.com/ben-ranford/stave/capability.Manifest, error)
+method (*measurementDriver) ReadSecret(context.Context, github.com/ben-ranford/stave/input.SecretPrompt) (github.com/ben-ranford/stave/secret.Handle, error)
 method (*measurementDriver) Restore(context.Context) error
 type Attempt struct { P50 time.Duration `json:"p50"`; P95 time.Duration `json:"p95"`; P99 time.Duration `json:"p99"` }
 type Budget struct { Name string `json:"name"`; Limit time.Duration `json:"limit"` }
 type Measurement struct { Name string `json:"name"`; Samples int `json:"samples"`; P50 time.Duration `json:"p50"`; P95 time.Duration `json:"p95"`; P99 time.Duration `json:"p99"`; AllWithinBudget bool `json:"allWithinBudget"`; Limit time.Duration `json:"limit"`; Disposition string `json:"disposition,omitempty"`; Attempts []Attempt `json:"attempts,omitempty"` }
 type RatioMeasurement struct { Name string `json:"name"`; Window time.Duration `json:"window"`; Value float64 `json:"value"`; Limit float64 `json:"limit"`; AllWithinBudget bool `json:"allWithinBudget"`; Disposition string `json:"disposition,omitempty"`; Attempts []float64 `json:"attempts,omitempty"` }
-type Report struct { GeneratedAt time.Time `json:"generatedAt"`; Host string `json:"host"`; GoVersion string `json:"goVersion"`; GOOS string `json:"goos"`; GOARCH string `json:"goarch"`; CPUs int `json:"cpus"`; Nodes int `json:"nodes"`; NodeShape string `json:"nodeDistribution"`; Renderer string `json:"renderer"`; Viewport layout.Size `json:"viewport"`; Capabilities capability.Manifest `json:"capabilities"`; Reproducibility Reproducibility `json:"reproducibility"`; AllocBytes uint64 `json:"allocBytes"`; AllocLimit uint64 `json:"allocLimitBytes"`; AllocWithin bool `json:"allocWithinBudget"`; IdleCPU RatioMeasurement `json:"idleCpu"`; Measurements []Measurement `json:"measurements"`; Invariants []string `json:"invariants"` }
+type Report struct { GeneratedAt time.Time `json:"generatedAt"`; Host string `json:"host"`; GoVersion string `json:"goVersion"`; GOOS string `json:"goos"`; GOARCH string `json:"goarch"`; CPUs int `json:"cpus"`; Nodes int `json:"nodes"`; NodeShape string `json:"nodeDistribution"`; Renderer string `json:"renderer"`; Viewport github.com/ben-ranford/stave/layout.Size `json:"viewport"`; Capabilities github.com/ben-ranford/stave/capability.Manifest `json:"capabilities"`; Reproducibility Reproducibility `json:"reproducibility"`; AllocBytes uint64 `json:"allocBytes"`; AllocLimit uint64 `json:"allocLimitBytes"`; AllocWithin bool `json:"allocWithinBudget"`; IdleCPU RatioMeasurement `json:"idleCpu"`; Measurements []Measurement `json:"measurements"`; Invariants []string `json:"invariants"` }
 type Reproducibility struct { Invocation []string `json:"invocation"`; SampleCount int `json:"sampleCount"`; Strict bool `json:"strict"`; GOMAXPROCS int `json:"gomaxprocs"`; VCSRevision string `json:"vcsRevision,omitempty"`; VCSModified bool `json:"vcsModified,omitempty"` }
 
 [github.com/ben-ranford/stave/primitive]
 const Grid Direction = "grid"
 const Horizontal Direction = "horizontal"
 const Vertical Direction = "vertical"
-func Action(string, string, bool) semantic.ActionRef
-func Alert(Options, string) (semantic.Node, error)
-func BarChart(Options, []int, string) (semantic.Node, error)
-func Button(Options, string) (semantic.Node, error)
-func CanonicalActionID(string) semantic.ActionID
-func Chart(Options, string) (semantic.Node, error)
-func Checkbox(CheckboxOptions, string) (semantic.Node, error)
-func Chip(Options, string) (semantic.Node, error)
-func CodeBlock(Options, string) (semantic.Node, error)
-func CommandPalette(Options, string, ...semantic.Node) (semantic.Node, error)
-func Confirmation(Options, string) (semantic.Node, error)
-func Dialog(Options, semantic.Node) (semantic.Node, error)
-func Disclosure(Options, string, bool, ...semantic.Node) (semantic.Node, error)
-func Divider(Options) (semantic.Node, error)
-func Empty(Options, string) (semantic.Node, error)
-func ErrorState(Options, string) (semantic.Node, error)
-func FocusIndicator(Options, semantic.Node) (semantic.Node, error)
-func Form(Options, ...semantic.Node) (semantic.Node, error)
-func Frame(Options, ...semantic.Node) (semantic.Node, error)
-func GridLayout(Options, ...semantic.Node) (semantic.Node, error)
-func Heading(Options, string) (semantic.Node, error)
-func Input(InputOptions) (semantic.Node, error)
-func Inspector(Options, ...semantic.Node) (semantic.Node, error)
-func Label(Options, string) (semantic.Node, error)
-func Link(Options, string) (semantic.Node, error)
-func List(Options, ...semantic.Node) (semantic.Node, error)
-func Loading(Options, string) (semantic.Node, error)
-func MasterDetail(Options, semantic.Node, semantic.Node) (semantic.Node, error)
-func Modal(Options, semantic.Node) (semantic.Node, error)
-func NumberInput(NumberOptions) (semantic.Node, error)
-func Overlay(Options, semantic.Node) (semantic.Node, error)
-func Pagination(Options, int, int) (semantic.Node, error)
-func Progress(Options, int, int, bool) (semantic.Node, error)
-func RadioGroup(RadioGroupOptions) (semantic.Node, error)
-func Row(Options, ...semantic.Node) (semantic.Node, error)
-func Section(Options, ...semantic.Node) (semantic.Node, error)
-func SecureInput(InputOptions) (semantic.Node, error)
-func Select(SelectOptions) (semantic.Node, error)
-func Spacer(Options) (semantic.Node, error)
-func Sparkline(Options, []int, string) (semantic.Node, error)
-func Stack(Options, ...semantic.Node) (semantic.Node, error)
-func Status(Options, string) (semantic.Node, error)
-func Surface(Options, ...semantic.Node) (semantic.Node, error)
-func Table(TableOptions) (semantic.Node, error)
-func Tabs(Options, ...Tab) (semantic.Node, error)
-func Text(Options, string) (semantic.Node, error)
-func Viewport(ViewportOptions) (semantic.Node, error)
+func Action(string, string, bool) github.com/ben-ranford/stave/semantic.ActionRef
+func Alert(Options, string) (github.com/ben-ranford/stave/semantic.Node, error)
+func BarChart(Options, []int, string) (github.com/ben-ranford/stave/semantic.Node, error)
+func Button(Options, string) (github.com/ben-ranford/stave/semantic.Node, error)
+func CanonicalActionID(string) github.com/ben-ranford/stave/semantic.ActionID
+func Chart(Options, string) (github.com/ben-ranford/stave/semantic.Node, error)
+func Checkbox(CheckboxOptions, string) (github.com/ben-ranford/stave/semantic.Node, error)
+func Chip(Options, string) (github.com/ben-ranford/stave/semantic.Node, error)
+func CodeBlock(Options, string) (github.com/ben-ranford/stave/semantic.Node, error)
+func CommandPalette(Options, string, ...github.com/ben-ranford/stave/semantic.Node) (github.com/ben-ranford/stave/semantic.Node, error)
+func Confirmation(Options, string) (github.com/ben-ranford/stave/semantic.Node, error)
+func Dialog(Options, github.com/ben-ranford/stave/semantic.Node) (github.com/ben-ranford/stave/semantic.Node, error)
+func Disclosure(Options, string, bool, ...github.com/ben-ranford/stave/semantic.Node) (github.com/ben-ranford/stave/semantic.Node, error)
+func Divider(Options) (github.com/ben-ranford/stave/semantic.Node, error)
+func Empty(Options, string) (github.com/ben-ranford/stave/semantic.Node, error)
+func ErrorState(Options, string) (github.com/ben-ranford/stave/semantic.Node, error)
+func FocusIndicator(Options, github.com/ben-ranford/stave/semantic.Node) (github.com/ben-ranford/stave/semantic.Node, error)
+func Form(Options, ...github.com/ben-ranford/stave/semantic.Node) (github.com/ben-ranford/stave/semantic.Node, error)
+func Frame(Options, ...github.com/ben-ranford/stave/semantic.Node) (github.com/ben-ranford/stave/semantic.Node, error)
+func GridLayout(Options, ...github.com/ben-ranford/stave/semantic.Node) (github.com/ben-ranford/stave/semantic.Node, error)
+func Heading(Options, string) (github.com/ben-ranford/stave/semantic.Node, error)
+func Input(InputOptions) (github.com/ben-ranford/stave/semantic.Node, error)
+func Inspector(Options, ...github.com/ben-ranford/stave/semantic.Node) (github.com/ben-ranford/stave/semantic.Node, error)
+func Label(Options, string) (github.com/ben-ranford/stave/semantic.Node, error)
+func Link(Options, string) (github.com/ben-ranford/stave/semantic.Node, error)
+func List(Options, ...github.com/ben-ranford/stave/semantic.Node) (github.com/ben-ranford/stave/semantic.Node, error)
+func Loading(Options, string) (github.com/ben-ranford/stave/semantic.Node, error)
+func MasterDetail(Options, github.com/ben-ranford/stave/semantic.Node, github.com/ben-ranford/stave/semantic.Node) (github.com/ben-ranford/stave/semantic.Node, error)
+func Modal(Options, github.com/ben-ranford/stave/semantic.Node) (github.com/ben-ranford/stave/semantic.Node, error)
+func NumberInput(NumberOptions) (github.com/ben-ranford/stave/semantic.Node, error)
+func Overlay(Options, github.com/ben-ranford/stave/semantic.Node) (github.com/ben-ranford/stave/semantic.Node, error)
+func Pagination(Options, int, int) (github.com/ben-ranford/stave/semantic.Node, error)
+func Progress(Options, int, int, bool) (github.com/ben-ranford/stave/semantic.Node, error)
+func RadioGroup(RadioGroupOptions) (github.com/ben-ranford/stave/semantic.Node, error)
+func Row(Options, ...github.com/ben-ranford/stave/semantic.Node) (github.com/ben-ranford/stave/semantic.Node, error)
+func Section(Options, ...github.com/ben-ranford/stave/semantic.Node) (github.com/ben-ranford/stave/semantic.Node, error)
+func SecureInput(InputOptions) (github.com/ben-ranford/stave/semantic.Node, error)
+func Select(SelectOptions) (github.com/ben-ranford/stave/semantic.Node, error)
+func Spacer(Options) (github.com/ben-ranford/stave/semantic.Node, error)
+func Sparkline(Options, []int, string) (github.com/ben-ranford/stave/semantic.Node, error)
+func Stack(Options, ...github.com/ben-ranford/stave/semantic.Node) (github.com/ben-ranford/stave/semantic.Node, error)
+func Status(Options, string) (github.com/ben-ranford/stave/semantic.Node, error)
+func Surface(Options, ...github.com/ben-ranford/stave/semantic.Node) (github.com/ben-ranford/stave/semantic.Node, error)
+func Table(TableOptions) (github.com/ben-ranford/stave/semantic.Node, error)
+func Tabs(Options, ...Tab) (github.com/ben-ranford/stave/semantic.Node, error)
+func Text(Options, string) (github.com/ben-ranford/stave/semantic.Node, error)
+func Viewport(ViewportOptions) (github.com/ben-ranford/stave/semantic.Node, error)
 type CheckboxOptions struct { Options; Checked bool; Required bool; Invalid bool; ErrorMessage string }
 type Choice struct { Key string; Name string; Description string; Selected bool; Disabled bool }
 type Column struct { Key, Name string; Width int; WidthPolicy string; Numeric, Sticky bool }
 type Direction string
 type InputOptions struct { Options; Value, Placeholder string; Secret, Multiline, ReadOnly, Required, Invalid bool; ErrorMessage string }
 type NumberOptions struct { InputOptions; Min string; Max string; Step string }
-type Options struct { Namespace, View, Kind, Entity, Slot, Name, Description string; Generation uint32; Actions []semantic.ActionRef; Relations []semantic.Relation; Metadata map[string]string; StyleRole string; Live semantic.LiveMode; Focusable, Disabled, Visible, Sensitive, Hidden bool }
+type Options struct { Namespace, View, Kind, Entity, Slot, Name, Description string; Generation uint32; Actions []github.com/ben-ranford/stave/semantic.ActionRef; Relations []github.com/ben-ranford/stave/semantic.Relation; Metadata map[string]string; StyleRole string; Live github.com/ben-ranford/stave/semantic.LiveMode; Focusable, Disabled, Visible, Sensitive, Hidden bool }
 type RadioGroupOptions struct { Options; Required bool; Invalid bool; ErrorMessage string; Choices []Choice }
-type SecretHandle = secret.Handle
+type SecretHandle = github.com/ben-ranford/stave/secret.Handle
 type SelectOptions struct { Options; Value string; Placeholder string; ReadOnly bool; Required bool; Invalid bool; Multi bool; ErrorMessage string; Choices []Choice }
 type Tab struct { Key, Name string; Selected bool }
 type TableOptions struct { Options; Columns []Column; Rows []TableRow; SelectedKey string; Offset, Limit, Total int; SortKey string; SortDescending bool; SelectionMode string; State string; ErrorMessage string }
 type TableRow struct { Key, Name string; Cells []string; Selected, Expanded bool }
-type ViewportOptions struct { Options; Width, Height int; Narrow bool; Children []semantic.Node }
+type ViewportOptions struct { Options; Width, Height int; Narrow bool; Children []github.com/ben-ranford/stave/semantic.Node }
 
 [github.com/ben-ranford/stave/protocol]
 const Backpressure untyped int = -32003
@@ -526,33 +526,33 @@ func DecodeLine([]byte, int) (Request, error)
 func Errorf(int, string, ...any) *Error
 func Marshal(any) ([]byte, error)
 method (ID) Valid() bool
-type ActionErrorData struct { StaveCode action.Code `json:"staveCode"`; ActionID action.ID `json:"actionId,omitempty"`; NodeID semantic.NodeID `json:"nodeId,omitempty"`; Revision uint64 `json:"revision,omitempty"`; Retryable bool `json:"retryable"`; CauseClass string `json:"causeClass,omitempty"` }
+type ActionErrorData struct { StaveCode github.com/ben-ranford/stave/action.Code `json:"staveCode"`; ActionID github.com/ben-ranford/stave/action.ID `json:"actionId,omitempty"`; NodeID github.com/ben-ranford/stave/semantic.NodeID `json:"nodeId,omitempty"`; Revision uint64 `json:"revision,omitempty"`; Retryable bool `json:"retryable"`; CauseClass string `json:"causeClass,omitempty"` }
 type Application struct { ID string `json:"id"`; Version string `json:"version"` }
-type ConfirmParams struct { CallID string `json:"callId"`; ActionID string `json:"actionId"`; Target json.RawMessage `json:"target,omitempty"`; Arguments json.RawMessage `json:"arguments,omitempty"`; SessionID string `json:"sessionId,omitempty"` }
+type ConfirmParams struct { CallID string `json:"callId"`; ActionID string `json:"actionId"`; Target encoding/json.RawMessage `json:"target,omitempty"`; Arguments encoding/json.RawMessage `json:"arguments,omitempty"`; SessionID string `json:"sessionId,omitempty"` }
 type ConfirmationPresentation struct { Token string `json:"token"`; SessionID string `json:"sessionId"` }
 type Error struct { Code int `json:"code"`; Message string `json:"message"`; Data any `json:"data,omitempty"` }
-type ID json.RawMessage
+type ID encoding/json.RawMessage
 type InitializeParams struct { ProtocolVersions []string `json:"protocolVersions"`; Client any `json:"client,omitempty"`; Capabilities map[string]any `json:"capabilities,omitempty"`; Limits Limits `json:"limits,omitempty"` }
 type InitializeResult struct { ProtocolVersion string `json:"protocolVersion"`; SessionID string `json:"sessionId"`; Server string `json:"server,omitempty"`; Application Application `json:"application"`; Schemas map[string]string `json:"schemas,omitempty"`; Capabilities any `json:"capabilities,omitempty"`; Limits Limits `json:"limits"`; Manifest any `json:"manifest,omitempty"`; ResolvedManifest any `json:"resolvedManifest,omitempty"` }
-type InvokeParams struct { CallID string `json:"callId"`; ActionID string `json:"actionId"`; Target json.RawMessage `json:"target,omitempty"`; Arguments json.RawMessage `json:"arguments,omitempty"`; Confirmation *ConfirmationPresentation `json:"confirmation,omitempty"`; DeadlineMS int64 `json:"deadlineMs,omitempty"`; SessionID string `json:"sessionId,omitempty"` }
-type InvokeResult struct { CallID string `json:"callId"`; ActionID action.ID `json:"actionId"`; Target semantic.Target `json:"target,omitempty"`; Status action.ResultStatus `json:"status"`; Output json.RawMessage `json:"output,omitempty"`; Revision uint64 `json:"revision,omitempty"`; TreeHash string `json:"treeHash,omitempty"`; Diagnostics []diag.Diagnostic `json:"diagnostics,omitempty"` }
+type InvokeParams struct { CallID string `json:"callId"`; ActionID string `json:"actionId"`; Target encoding/json.RawMessage `json:"target,omitempty"`; Arguments encoding/json.RawMessage `json:"arguments,omitempty"`; Confirmation *ConfirmationPresentation `json:"confirmation,omitempty"`; DeadlineMS int64 `json:"deadlineMs,omitempty"`; SessionID string `json:"sessionId,omitempty"` }
+type InvokeResult struct { CallID string `json:"callId"`; ActionID github.com/ben-ranford/stave/action.ID `json:"actionId"`; Target github.com/ben-ranford/stave/semantic.Target `json:"target,omitempty"`; Status github.com/ben-ranford/stave/action.ResultStatus `json:"status"`; Output encoding/json.RawMessage `json:"output,omitempty"`; Revision uint64 `json:"revision,omitempty"`; TreeHash string `json:"treeHash,omitempty"`; Diagnostics []github.com/ben-ranford/stave/diag.Diagnostic `json:"diagnostics,omitempty"` }
 type Limits struct { MaxMessageBytes int `json:"maxMessageBytes,omitempty"`; MaxOutputBytes int `json:"maxOutputBytes,omitempty"`; MaxTreeNodes int `json:"maxTreeNodes,omitempty"` }
-type Notification struct { JSONRPC string `json:"jsonrpc"`; Method string `json:"method"`; Params json.RawMessage `json:"params,omitempty"` }
-type Request struct { JSONRPC string `json:"jsonrpc"`; ID json.RawMessage `json:"id,omitempty"`; Method string `json:"method"`; Params json.RawMessage `json:"params,omitempty"` }
-type Response struct { JSONRPC string `json:"jsonrpc"`; ID json.RawMessage `json:"id,omitempty"`; Result any `json:"result,omitempty"`; Error *Error `json:"error,omitempty"` }
+type Notification struct { JSONRPC string `json:"jsonrpc"`; Method string `json:"method"`; Params encoding/json.RawMessage `json:"params,omitempty"` }
+type Request struct { JSONRPC string `json:"jsonrpc"`; ID encoding/json.RawMessage `json:"id,omitempty"`; Method string `json:"method"`; Params encoding/json.RawMessage `json:"params,omitempty"` }
+type Response struct { JSONRPC string `json:"jsonrpc"`; ID encoding/json.RawMessage `json:"id,omitempty"`; Result any `json:"result,omitempty"`; Error *Error `json:"error,omitempty"` }
 type SnapshotParams struct { Mode string `json:"mode,omitempty"`; IncludeActions bool `json:"includeActions,omitempty"`; SinceRevision uint64 `json:"sinceRevision,omitempty"` }
-type SnapshotResult struct { SchemaVersion string `json:"schemaVersion"`; SessionID string `json:"sessionId"`; Sequence uint64 `json:"sequence"`; Mode string `json:"mode"`; Snapshot *semantic.Snapshot `json:"snapshot,omitempty"`; Patch *semantic.Patch `json:"patch,omitempty"`; Revision uint64 `json:"revision"`; TreeHash string `json:"treeHash"`; CapabilityHash string `json:"capabilityHash"`; SemanticVersion string `json:"semanticVersion"`; ConfigHash string `json:"configHash"`; ThemeHash string `json:"themeHash"`; WidthVersion string `json:"widthVersion"`; Actions []action.Definition `json:"actions,omitempty"`; Diagnostics []diag.Diagnostic `json:"diagnostics,omitempty"` }
+type SnapshotResult struct { SchemaVersion string `json:"schemaVersion"`; SessionID string `json:"sessionId"`; Sequence uint64 `json:"sequence"`; Mode string `json:"mode"`; Snapshot *github.com/ben-ranford/stave/semantic.Snapshot `json:"snapshot,omitempty"`; Patch *github.com/ben-ranford/stave/semantic.Patch `json:"patch,omitempty"`; Revision uint64 `json:"revision"`; TreeHash string `json:"treeHash"`; CapabilityHash string `json:"capabilityHash"`; SemanticVersion string `json:"semanticVersion"`; ConfigHash string `json:"configHash"`; ThemeHash string `json:"themeHash"`; WidthVersion string `json:"widthVersion"`; Actions []github.com/ben-ranford/stave/action.Definition `json:"actions,omitempty"`; Diagnostics []github.com/ben-ranford/stave/diag.Diagnostic `json:"diagnostics,omitempty"` }
 var ErrBatch error
 
 [github.com/ben-ranford/stave/render]
-func ANSI(string, capability.ColorLevel, string) string
+func ANSI(string, github.com/ben-ranford/stave/capability.ColorLevel, string) string
 func Render(Request) (Result, error)
-method (Writer) Render(surface.Surface) (string, error)
+method (Writer) Render(github.com/ben-ranford/stave/surface.Surface) (string, error)
 type Budgets struct { MaxBytes int; MaxCells int; MaxDepth int; MaxWork int }
-type EventContext struct { Reason string `json:"reason,omitempty"`; Focused semantic.NodeID `json:"focused,omitempty"`; Hovered semantic.NodeID `json:"hovered,omitempty"`; Revision uint64 `json:"revision,omitempty"` }
-type Request struct { Context context.Context; Tree semantic.Tree; Theme theme.Resolved; Capabilities capability.Manifest; Viewport layout.Size; Window layout.Rect; Previous *surface.Surface; Event EventContext; Budgets Budgets }
-type Result struct { Viewport layout.Size; Capabilities capability.Manifest; ThemeHash string; Event EventContext; Plan layout.Plan; Surface surface.Surface; Patch surface.Patch; Plain string; Machine []byte; Terminal string }
-type Writer struct { Manifest capability.Manifest; ByteLimit int }
+type EventContext struct { Reason string `json:"reason,omitempty"`; Focused github.com/ben-ranford/stave/semantic.NodeID `json:"focused,omitempty"`; Hovered github.com/ben-ranford/stave/semantic.NodeID `json:"hovered,omitempty"`; Revision uint64 `json:"revision,omitempty"` }
+type Request struct { Context context.Context; Tree github.com/ben-ranford/stave/semantic.Tree; Theme github.com/ben-ranford/stave/theme.Resolved; Capabilities github.com/ben-ranford/stave/capability.Manifest; Viewport github.com/ben-ranford/stave/layout.Size; Window github.com/ben-ranford/stave/layout.Rect; Previous *github.com/ben-ranford/stave/surface.Surface; Event EventContext; Budgets Budgets }
+type Result struct { Viewport github.com/ben-ranford/stave/layout.Size; Capabilities github.com/ben-ranford/stave/capability.Manifest; ThemeHash string; Event EventContext; Plan github.com/ben-ranford/stave/layout.Plan; Surface github.com/ben-ranford/stave/surface.Surface; Patch github.com/ben-ranford/stave/surface.Patch; Plain string; Machine []byte; Terminal string }
+type Writer struct { Manifest github.com/ben-ranford/stave/capability.Manifest; ByteLimit int }
 
 [github.com/ben-ranford/stave/replay]
 const DivergenceCapability DivergenceCode = "CAPABILITY_HASH_MISMATCH"
@@ -572,38 +572,38 @@ const DivergenceThemeHash DivergenceCode = "THEME_HASH_MISMATCH"
 const DivergenceTreeHash DivergenceCode = "TREE_HASH_MISMATCH"
 const DivergenceWidthPolicy DivergenceCode = "WIDTH_POLICY_MISMATCH"
 const SchemaVersion untyped string = "stave.replay/v1"
-func DigestFromState[M any](state.State[M]) Digest
+func DigestFromState[M any](github.com/ben-ranford/stave/state.State[M]) Digest
 func Encode(Record) ([]byte, error)
 func Execute(context.Context, Transcript, ApplyFunc) (Transcript, error)
-func NewTranscript(string, state.Versions, state.Checkpoint) Transcript
+func NewTranscript(string, github.com/ben-ranford/stave/state.Versions, github.com/ben-ranford/stave/state.Checkpoint) Transcript
 func Validate(Transcript, Transcript) error
 method (*Divergence) Error() string
 method (*Transcript) Append(Record)
 method (Transcript) CanonicalJSON() ([]byte, error)
 method (Transcript) Clone() (Transcript, error)
-type ApplyFunc func(context.Context, state.Checkpoint, event.Event) (state.Checkpoint, error)
-type Digest struct { Sequence uint64 `json:"sequence"`; Revision uint64 `json:"revision"`; Hashes state.Hashes `json:"hashes"`; DiagnosticCount uint64 `json:"diagnosticCount,omitempty"` }
+type ApplyFunc func(context.Context, github.com/ben-ranford/stave/state.Checkpoint, github.com/ben-ranford/stave/event.Event) (github.com/ben-ranford/stave/state.Checkpoint, error)
+type Digest struct { Sequence uint64 `json:"sequence"`; Revision uint64 `json:"revision"`; Hashes github.com/ben-ranford/stave/state.Hashes `json:"hashes"`; DiagnosticCount uint64 `json:"diagnosticCount,omitempty"` }
 type Divergence struct { Code DivergenceCode `json:"code"`; Index int `json:"index"`; Field string `json:"field"`; Expected any `json:"expected,omitempty"`; Actual any `json:"actual,omitempty"`; Remap *RemapMetadata `json:"remap,omitempty"` }
 type DivergenceCode string
-type Record struct { SchemaVersion string `json:"schemaVersion"`; Event event.Event `json:"event"`; Prior Digest `json:"prior"`; Result Digest `json:"result"`; Delivery string `json:"delivery,omitempty"`; CompletionIndex uint32 `json:"completionIndex,omitempty"` }
+type Record struct { SchemaVersion string `json:"schemaVersion"`; Event github.com/ben-ranford/stave/event.Event `json:"event"`; Prior Digest `json:"prior"`; Result Digest `json:"result"`; Delivery string `json:"delivery,omitempty"`; CompletionIndex uint32 `json:"completionIndex,omitempty"` }
 type RemapMetadata struct { NodeID string `json:"nodeId,omitempty"`; Generation uint32 `json:"generation,omitempty"`; ObservedRevision uint64 `json:"observedRevision,omitempty"`; Hints []string `json:"hints,omitempty"` }
-type Transcript struct { SchemaVersion string `json:"schemaVersion"`; SessionID string `json:"sessionId"`; Versions state.Versions `json:"versions"`; Initial state.Checkpoint `json:"initial"`; Records []Record `json:"records"` }
+type Transcript struct { SchemaVersion string `json:"schemaVersion"`; SessionID string `json:"sessionId"`; Versions github.com/ben-ranford/stave/state.Versions `json:"versions"`; Initial github.com/ben-ranford/stave/state.Checkpoint `json:"initial"`; Records []Record `json:"records"` }
 
 [github.com/ben-ranford/stave/requirements]
 
 [github.com/ben-ranford/stave/runtime/agent]
 func New(Options) *Server
 method (*Server) Close()
-method (*Server) Notifications() <-chan protocol.Notification
-method (*Server) Notify(protocol.Notification) error
+method (*Server) Notifications() <-chan github.com/ben-ranford/stave/protocol.Notification
+method (*Server) Notify(github.com/ben-ranford/stave/protocol.Notification) error
 method (*Server) Serve(context.Context, io.ReadCloser, io.Writer) error
-type AuthorizeCall func(context.Context, action.Call) *action.Error
-type AuthorizePreparedCall func(context.Context, action.Call) (action.Call, *action.Error)
-type CapabilityNegotiator func(context.Context, map[string]any) (capability.Manifest, error)
-type ConfirmCall func(context.Context, action.Call) (action.Confirmation, error)
-type Options struct { MaxMessageBytes int; MaxOutputBytes int; MaxTreeNodes int; MaxInFlight int; Queue int; Snapshot SnapshotProvider; SnapshotPatch SnapshotPatchProvider; SnapshotEnvelope SnapshotEnvelopeProvider; Actions *action.Registry; Invoke func(context.Context, action.Call) action.Result; Authorize AuthorizeCall; AuthorizePrepared AuthorizePreparedCall; Confirm ConfirmCall; Negotiate CapabilityNegotiator; CancelSession func(context.Context) error; CompatibilityMode bool; Observer observer.Observer; ServerName string; Application protocol.Application; SessionID string; Capabilities map[string]any; Manifest any }
+type AuthorizeCall func(context.Context, github.com/ben-ranford/stave/action.Call) *github.com/ben-ranford/stave/action.Error
+type AuthorizePreparedCall func(context.Context, github.com/ben-ranford/stave/action.Call) (github.com/ben-ranford/stave/action.Call, *github.com/ben-ranford/stave/action.Error)
+type CapabilityNegotiator func(context.Context, map[string]any) (github.com/ben-ranford/stave/capability.Manifest, error)
+type ConfirmCall func(context.Context, github.com/ben-ranford/stave/action.Call) (github.com/ben-ranford/stave/action.Confirmation, error)
+type Options struct { MaxMessageBytes int; MaxOutputBytes int; MaxTreeNodes int; MaxInFlight int; Queue int; Snapshot SnapshotProvider; SnapshotPatch SnapshotPatchProvider; SnapshotEnvelope SnapshotEnvelopeProvider; Actions *github.com/ben-ranford/stave/action.Registry; Invoke func(context.Context, github.com/ben-ranford/stave/action.Call) github.com/ben-ranford/stave/action.Result; Authorize AuthorizeCall; AuthorizePrepared AuthorizePreparedCall; Confirm ConfirmCall; Negotiate CapabilityNegotiator; CancelSession func(context.Context) error; CompatibilityMode bool; Observer github.com/ben-ranford/stave/observer.Observer; ServerName string; Application github.com/ben-ranford/stave/protocol.Application; SessionID string; Capabilities map[string]any; Manifest any }
 type Server struct {  }
-type SnapshotEnvelope struct { Snapshot *semantic.Snapshot; Patch *semantic.Patch; Mode string; SessionID string; Sequence, Revision uint64; TreeHash, CapabilityHash, SemanticVersion, ConfigHash, ThemeHash, WidthVersion string; Actions []action.Definition; Diagnostics []diag.Diagnostic }
+type SnapshotEnvelope struct { Snapshot *github.com/ben-ranford/stave/semantic.Snapshot; Patch *github.com/ben-ranford/stave/semantic.Patch; Mode string; SessionID string; Sequence, Revision uint64; TreeHash, CapabilityHash, SemanticVersion, ConfigHash, ThemeHash, WidthVersion string; Actions []github.com/ben-ranford/stave/action.Definition; Diagnostics []github.com/ben-ranford/stave/diag.Diagnostic }
 type SnapshotEnvelopeProvider func(context.Context, string, uint64) (SnapshotEnvelope, error)
 type SnapshotPatchProvider func(context.Context, uint64) (any, uint64, string, error)
 type SnapshotProvider func(context.Context) (any, uint64, string, error)
@@ -617,31 +617,31 @@ const ProfileLine Profile = "line"
 const ProfileNonTTY Profile = "non-tty"
 const ProfilePlain Profile = "plain"
 func New(Options) (*Runtime, error)
-func NewEvent(input.KeyChord) event.Event
+func NewEvent(github.com/ben-ranford/stave/input.KeyChord) github.com/ben-ranford/stave/event.Event
 func NewLineDriver(LineDriverOptions) (*LineDriver, error)
 func Run(context.Context, Options) error
 method (*LineDriver) Close() error
-method (*LineDriver) Draw(context.Context, surface.Surface, surface.Patch) error
-method (*LineDriver) Events() <-chan event.Event
-method (*LineDriver) Open(context.Context, capability.Policy) (capability.Manifest, error)
-method (*LineDriver) ReadSecret(context.Context, input.SecretPrompt) (secret.Handle, error)
+method (*LineDriver) Draw(context.Context, github.com/ben-ranford/stave/surface.Surface, github.com/ben-ranford/stave/surface.Patch) error
+method (*LineDriver) Events() <-chan github.com/ben-ranford/stave/event.Event
+method (*LineDriver) Open(context.Context, github.com/ben-ranford/stave/capability.Policy) (github.com/ben-ranford/stave/capability.Manifest, error)
+method (*LineDriver) ReadSecret(context.Context, github.com/ben-ranford/stave/input.SecretPrompt) (github.com/ben-ranford/stave/secret.Handle, error)
 method (*LineDriver) Restore(context.Context) error
-method (*Runtime) Manifest() capability.Manifest
-method (*Runtime) Open(context.Context) (capability.Manifest, error)
+method (*Runtime) Manifest() github.com/ben-ranford/stave/capability.Manifest
+method (*Runtime) Open(context.Context) (github.com/ben-ranford/stave/capability.Manifest, error)
 method (*Runtime) Profile() Profile
-method (*Runtime) ReadSecret(context.Context, input.SecretPrompt) (secret.Handle, error)
+method (*Runtime) ReadSecret(context.Context, github.com/ben-ranford/stave/input.SecretPrompt) (github.com/ben-ranford/stave/secret.Handle, error)
 method (*Runtime) Run(context.Context) error
 method (*Runtime) String() string
 type Backend = Driver
-type Driver interface { Close() error; Draw(context.Context, surface.Surface, surface.Patch) error; Events() <-chan event.Event; Open(context.Context, capability.Policy) (capability.Manifest, error); ReadSecret(context.Context, input.SecretPrompt) (secret.Handle, error); Restore(context.Context) error }
-type EventSource interface { Events() <-chan event.Event }
+type Driver interface { Close() error; Draw(context.Context, github.com/ben-ranford/stave/surface.Surface, github.com/ben-ranford/stave/surface.Patch) error; Events() <-chan github.com/ben-ranford/stave/event.Event; Open(context.Context, github.com/ben-ranford/stave/capability.Policy) (github.com/ben-ranford/stave/capability.Manifest, error); ReadSecret(context.Context, github.com/ben-ranford/stave/input.SecretPrompt) (github.com/ben-ranford/stave/secret.Handle, error); Restore(context.Context) error }
+type EventSource interface { Events() <-chan github.com/ben-ranford/stave/event.Event }
 type LineDriver struct {  }
 type LineDriverOptions struct { Input io.Reader; Output io.Writer; Environment map[string]string; TTY bool; Width int; Height int; Queue int; ByteLimit int }
-type Options struct { Driver Driver; Policy capability.Policy; QueueCapacity int; RestoreTimeout time.Duration; Draw func(context.Context, event.Event) (surface.Surface, surface.Patch, error); Handle func(context.Context, event.Event) error; Diagnostics func(input.Diagnostic); Keymap keymap.Map; FocusGraph *focus.Graph; FocusState *focus.State; OnResolution func(context.Context, keymap.Resolution) error }
-type OutputSink interface { Draw(context.Context, surface.Surface, surface.Patch) error }
+type Options struct { Driver Driver; Policy github.com/ben-ranford/stave/capability.Policy; QueueCapacity int; RestoreTimeout time.Duration; Draw func(context.Context, github.com/ben-ranford/stave/event.Event) (github.com/ben-ranford/stave/surface.Surface, github.com/ben-ranford/stave/surface.Patch, error); Handle func(context.Context, github.com/ben-ranford/stave/event.Event) error; Diagnostics func(github.com/ben-ranford/stave/input.Diagnostic); Keymap github.com/ben-ranford/stave/keymap.Map; FocusGraph *github.com/ben-ranford/stave/focus.Graph; FocusState *github.com/ben-ranford/stave/focus.State; OnResolution func(context.Context, github.com/ben-ranford/stave/keymap.Resolution) error }
+type OutputSink interface { Draw(context.Context, github.com/ben-ranford/stave/surface.Surface, github.com/ben-ranford/stave/surface.Patch) error }
 type Profile string
 type Runtime struct {  }
-type SecretProvider interface { ReadSecret(context.Context, input.SecretPrompt) (secret.Handle, error) }
+type SecretProvider interface { ReadSecret(context.Context, github.com/ben-ranford/stave/input.SecretPrompt) (github.com/ben-ranford/stave/secret.Handle, error) }
 var ErrBackpressure error
 var ErrEventSourceClosed error
 var ErrInvalidEvent error
@@ -753,20 +753,20 @@ const LifecycleRunning Lifecycle = "running"
 const LifecycleStarting Lifecycle = "starting"
 func New[M any](context.Context, Options[M]) (*Session[M], error)
 method (*Session[M]) Cancel()
-method (*Session[M]) Checkpoint() (state.Checkpoint, error)
+method (*Session[M]) Checkpoint() (github.com/ben-ranford/stave/state.Checkpoint, error)
 method (*Session[M]) Close()
 method (*Session[M]) Diagnostics() []Diagnostic
 method (*Session[M]) Lifecycle() Lifecycle
-method (*Session[M]) Send(event.Event) error
-method (*Session[M]) Snapshot() (state.State[M], error)
-method (*Session[M]) Transcript() (replay.Transcript, error)
-method (*Session[M]) Wait(context.Context, func(state.State[M]) bool) error
+method (*Session[M]) Send(github.com/ben-ranford/stave/event.Event) error
+method (*Session[M]) Snapshot() (github.com/ben-ranford/stave/state.State[M], error)
+method (*Session[M]) Transcript() (github.com/ben-ranford/stave/replay.Transcript, error)
+method (*Session[M]) Wait(context.Context, func(github.com/ben-ranford/stave/state.State[M]) bool) error
 type Diagnostic struct { Code string; Message string; SafeContext map[string]string }
 type Lifecycle string
-type Options[M any] struct { SessionID string; Initial M; Reduce Reducer[M]; View View[M]; QueueCapacity int; ReduceTimeout time.Duration; ViewTimeout time.Duration; EffectParallelism int; EffectDelivery effect.Delivery; EffectPorts map[string]effect.Port; MaxActiveBatches int; ModelPolicy state.ModelPolicy[M]; Capabilities capability.Manifest; ConfigHash string; ThemeHash string; WidthPolicy string; Versions state.Versions }
-type Reducer[M any] func(context.Context, M, event.Event) (M, []effect.Request, error)
+type Options[M any] struct { SessionID string; Initial M; Reduce Reducer[M]; View View[M]; QueueCapacity int; ReduceTimeout time.Duration; ViewTimeout time.Duration; EffectParallelism int; EffectDelivery github.com/ben-ranford/stave/effect.Delivery; EffectPorts map[string]github.com/ben-ranford/stave/effect.Port; MaxActiveBatches int; ModelPolicy github.com/ben-ranford/stave/state.ModelPolicy[M]; Capabilities github.com/ben-ranford/stave/capability.Manifest; ConfigHash string; ThemeHash string; WidthPolicy string; Versions github.com/ben-ranford/stave/state.Versions }
+type Reducer[M any] func(context.Context, M, github.com/ben-ranford/stave/event.Event) (M, []github.com/ben-ranford/stave/effect.Request, error)
 type Session[M any] struct {  }
-type ViewResult struct { Tree semantic.Tree; SurfaceHash string; Diagnostics []Diagnostic }
+type ViewResult struct { Tree github.com/ben-ranford/stave/semantic.Tree; SurfaceHash string; Diagnostics []Diagnostic }
 type View[M any] func(context.Context, M) (ViewResult, error)
 var ErrBackpressure error
 var ErrReducerNil error
@@ -779,17 +779,17 @@ const DefaultWidthPolicy untyped string = "stave-width-v1"
 const ReplaySchemaVersion untyped string = "stave.replay/v1"
 func Clone[T any](T) (T, error)
 func HashString(any) (string, error)
-func New[M any](string, M, semantic.Tree, Meta, ModelPolicy[M]) (State[M], error)
+func New[M any](string, M, github.com/ben-ranford/stave/semantic.Tree, Meta, ModelPolicy[M]) (State[M], error)
 func ValidateSupportedVersions(Versions) error
 method (Checkpoint) CanonicalJSON() ([]byte, error)
 method (Checkpoint) VerifyChecksum() error
 method (State[M]) Checkpoint(ModelPolicy[M]) (Checkpoint, error)
 method (State[M]) Clone(ModelPolicy[M]) (State[M], error)
-type Checkpoint struct { SchemaVersion string `json:"schemaVersion"`; SessionID string `json:"sessionId"`; Sequence uint64 `json:"sequence"`; Revision uint64 `json:"revision"`; Versions Versions `json:"versions"`; Hashes Hashes `json:"hashes"`; Capabilities capability.Manifest `json:"capabilities"`; Model any `json:"model,omitempty"`; Tree any `json:"tree,omitempty"`; DiagnosticCount uint64 `json:"diagnosticCount,omitempty"`; Checksum string `json:"checksum"` }
+type Checkpoint struct { SchemaVersion string `json:"schemaVersion"`; SessionID string `json:"sessionId"`; Sequence uint64 `json:"sequence"`; Revision uint64 `json:"revision"`; Versions Versions `json:"versions"`; Hashes Hashes `json:"hashes"`; Capabilities github.com/ben-ranford/stave/capability.Manifest `json:"capabilities"`; Model any `json:"model,omitempty"`; Tree any `json:"tree,omitempty"`; DiagnosticCount uint64 `json:"diagnosticCount,omitempty"`; Checksum string `json:"checksum"` }
 type Hashes struct { Config string `json:"config,omitempty"`; Theme string `json:"theme,omitempty"`; Capability string `json:"capability,omitempty"`; Model string `json:"model,omitempty"`; Tree string `json:"tree,omitempty"`; Surface string `json:"surface,omitempty"`; EffectLedger string `json:"effectLedger,omitempty"`; Declarations string `json:"declarations,omitempty"` }
-type Meta struct { Sequence uint64; Revision uint64; Capabilities capability.Manifest; ConfigHash string; ThemeHash string; SurfaceHash string; WidthPolicy string; Versions Versions; DiagnosticCount uint64; EffectLedger string; Declarations string }
+type Meta struct { Sequence uint64; Revision uint64; Capabilities github.com/ben-ranford/stave/capability.Manifest; ConfigHash string; ThemeHash string; SurfaceHash string; WidthPolicy string; Versions Versions; DiagnosticCount uint64; EffectLedger string; Declarations string }
 type ModelPolicy[M any] struct { Clone func(M) (M, error); Sanitize func(M) (M, error); Hash func(M) ([32]byte, error) }
-type State[M any] struct { SessionID string; Sequence uint64; Revision uint64; Model M; Tree semantic.Tree; Capabilities capability.Manifest; ConfigHash string; ThemeHash string; WidthPolicy string; SurfaceHash string; Hashes Hashes; Versions Versions; DiagnosticCount uint64 }
+type State[M any] struct { SessionID string; Sequence uint64; Revision uint64; Model M; Tree github.com/ben-ranford/stave/semantic.Tree; Capabilities github.com/ben-ranford/stave/capability.Manifest; ConfigHash string; ThemeHash string; WidthPolicy string; SurfaceHash string; Hashes Hashes; Versions Versions; DiagnosticCount uint64 }
 type Versions struct { CheckpointSchema string `json:"checkpointSchema"`; SemanticSchema string `json:"semanticSchema"`; EventSchema string `json:"eventSchema"`; ReplaySchema string `json:"replaySchema"`; JSONPolicy string `json:"jsonPolicy"`; NodeIDAlgorithm string `json:"nodeIdAlgorithm"`; WidthPolicy string `json:"widthPolicy"`; KeymapSchema string `json:"keymapSchema"`; ModuleSchema string `json:"moduleSchema"`; ProtocolSchema string `json:"protocolSchema"`; CanonicalSchema string `json:"canonicalSchema"`; EffectSchema string `json:"effectSchema"`; EventAlgorithm string `json:"eventAlgorithm"`; CheckpointSchemaVersion string `json:"checkpointVersion"` }
 
 [github.com/ben-ranford/stave/surface]
@@ -799,7 +799,7 @@ func New(int, int) Surface
 func NewBounded(int, int, int) (Surface, error)
 func NewBuilder(int, int, int) (*Builder, error)
 method (*Builder) Surface() Surface
-method (*Builder) WithText(int, int, string, ResolvedStyle, string, semantic.NodeID, uint32, layout.Rect) error
+method (*Builder) WithText(int, int, string, ResolvedStyle, string, github.com/ben-ranford/stave/semantic.NodeID, uint32, github.com/ben-ranford/stave/layout.Rect) error
 method (*Surface) Apply(Patch) error
 method (*Surface) Finalize()
 method (*Surface) Put(int, int, Cell)
@@ -811,10 +811,10 @@ method (Surface) Links() []string
 method (Surface) String() string
 method (Surface) Styles() []ResolvedStyle
 method (Surface) WithCell(int, int, Cell) Surface
-method (Surface) WithStyledGrapheme(int, int, string, ResolvedStyle, string, semantic.NodeID, uint32, layout.Rect) (Surface, error)
-method (Surface) WithText(int, int, string, ResolvedStyle, string, semantic.NodeID, uint32, layout.Rect) (Surface, error)
+method (Surface) WithStyledGrapheme(int, int, string, ResolvedStyle, string, github.com/ben-ranford/stave/semantic.NodeID, uint32, github.com/ben-ranford/stave/layout.Rect) (Surface, error)
+method (Surface) WithText(int, int, string, ResolvedStyle, string, github.com/ben-ranford/stave/semantic.NodeID, uint32, github.com/ben-ranford/stave/layout.Rect) (Surface, error)
 type Builder struct {  }
-type Cell struct { Grapheme string `json:"grapheme,omitempty"`; Width uint8 `json:"width,omitempty"`; Continuation bool `json:"continuation,omitempty"`; Style StyleID `json:"style,omitempty"`; Link LinkID `json:"link,omitempty"`; NodeID semantic.NodeID `json:"nodeId,omitempty"`; Generation uint32 `json:"generation,omitempty"` }
+type Cell struct { Grapheme string `json:"grapheme,omitempty"`; Width uint8 `json:"width,omitempty"`; Continuation bool `json:"continuation,omitempty"`; Style StyleID `json:"style,omitempty"`; Link LinkID `json:"link,omitempty"`; NodeID github.com/ben-ranford/stave/semantic.NodeID `json:"nodeId,omitempty"`; Generation uint32 `json:"generation,omitempty"` }
 type LinkID uint32
 type Patch struct { FromHash [32]byte `json:"fromHash"`; ToHash [32]byte `json:"toHash"`; Resize bool `json:"resize,omitempty"`; Width int `json:"width,omitempty"`; Height int `json:"height,omitempty"`; Runs []Run `json:"runs,omitempty"`; Dirty []Region `json:"dirty,omitempty"`; Styles []ResolvedStyle `json:"styles,omitempty"`; Links []string `json:"links,omitempty"` }
 type Region struct { X, Y, Width, Height int }
@@ -824,11 +824,11 @@ type StyleID uint32
 type Surface struct { Width, Height int }
 
 [github.com/ben-ranford/stave/testfixture]
-func BrandTree(string, string) (semantic.Node, error)
-func Must(semantic.Node, error) semantic.Node
-func Primitive(string, string) (semantic.Node, error)
-func Surface() (surface.Surface, error)
-func TableTree(string) (semantic.Node, error)
+func BrandTree(string, string) (github.com/ben-ranford/stave/semantic.Node, error)
+func Must(github.com/ben-ranford/stave/semantic.Node, error) github.com/ben-ranford/stave/semantic.Node
+func Primitive(string, string) (github.com/ben-ranford/stave/semantic.Node, error)
+func Surface() (github.com/ben-ranford/stave/surface.Surface, error)
+func TableTree(string) (github.com/ben-ranford/stave/semantic.Node, error)
 
 [github.com/ben-ranford/stave/theme]
 const DensityComfortable Density = "comfortable"
@@ -847,7 +847,7 @@ func ContrastPairs() []ContrastPair
 func ContrastRatio(string, string) (float64, error)
 func FromDTCG([]byte) (Theme, error)
 func FromJSON([]byte) (Theme, error)
-func Quantize(string, capability.ColorLevel) string
+func Quantize(string, github.com/ben-ranford/stave/capability.ColorLevel) string
 func RequiredRoleIDs() []TokenID
 method (Resolved) Asset(string) (AssetRef, bool)
 method (Resolved) Assets() map[string]AssetRef
@@ -863,7 +863,7 @@ method (Theme) CanonicalJSON() ([]byte, error)
 method (Theme) CanonicalVersion() string
 method (Theme) Hash() [32]byte
 method (Theme) HashString() string
-method (Theme) Resolve(Mode, Density, capability.Manifest) (Resolved, error)
+method (Theme) Resolve(Mode, Density, github.com/ben-ranford/stave/capability.Manifest) (Resolved, error)
 method (Theme) ToDTCG() ([]byte, error)
 method (Theme) ToJSON() ([]byte, error)
 method (Theme) Validate() error

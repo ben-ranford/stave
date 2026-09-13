@@ -334,22 +334,27 @@ func compatibleStructFieldAddition(baselineDeclaration, candidateDeclaration str
 	if len(candidateFields) < len(baselineFields) {
 		return false
 	}
-	for field := range baselineFields {
-		if !candidateFields[field] {
+	candidateIndex := 0
+	for _, field := range baselineFields {
+		for candidateIndex < len(candidateFields) && candidateFields[candidateIndex] != field {
+			candidateIndex++
+		}
+		if candidateIndex == len(candidateFields) {
 			return false
 		}
+		candidateIndex++
 	}
 	return true
 }
 
-func structFields(declaration string) map[string]bool {
+func structFields(declaration string) []string {
 	body := strings.TrimSuffix(strings.SplitN(declaration, structMarker, 2)[1], " }")
-	fields := map[string]bool{}
+	fields := []string{}
 	if body == "" {
 		return fields
 	}
 	for _, field := range strings.Split(body, "; ") {
-		fields[strings.TrimSpace(field)] = true
+		fields = append(fields, strings.TrimSpace(field))
 	}
 	return fields
 }

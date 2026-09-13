@@ -282,7 +282,10 @@ func renderPublicAPI(modulePath string, pkgs []goListPackage) (string, error) {
 
 		entries := []string{}
 		for _, parsedPkg := range parsed {
-			typeInfo := types.Info{Defs: make(map[*ast.Ident]types.Object)}
+			typeInfo := types.Info{
+				Defs:  make(map[*ast.Ident]types.Object),
+				Types: make(map[ast.Expr]types.TypeAndValue),
+			}
 			config := types.Config{Importer: importer}
 			files := make([]*ast.File, 0, len(parsedPkg.Files))
 			for _, file := range parsedPkg.Files {
@@ -292,6 +295,7 @@ func renderPublicAPI(modulePath string, pkgs []goListPackage) (string, error) {
 			if err != nil {
 				return "", err
 			}
+			qualifier := packagePathQualifier(checkedPkg)
 			for _, file := range parsedPkg.Files {
 				for _, decl := range file.Decls {
 					switch d := decl.(type) {
@@ -309,7 +313,7 @@ func renderPublicAPI(modulePath string, pkgs []goListPackage) (string, error) {
 								}
 								for _, name := range valueSpec.Names {
 									if ast.IsExported(name.Name) {
-										entry, err := publicValueDeclaration(label, name.Name, typeInfo.Defs[name], types.RelativeTo(checkedPkg))
+										entry, err := publicValueDeclaration(label, name.Name, typeInfo.Defs[name], qualifier)
 										if err != nil {
 											return "", err
 										}
@@ -321,7 +325,7 @@ func renderPublicAPI(modulePath string, pkgs []goListPackage) (string, error) {
 							for _, spec := range d.Specs {
 								typeSpec, ok := spec.(*ast.TypeSpec)
 								if ok && ast.IsExported(typeSpec.Name.Name) {
-									entries = append(entries, typeDeclaration(fset, typeSpec))
+									entries = append(entries, typeDeclaration(fset, typeSpec, &typeInfo, qualifier))
 								}
 							}
 						}
@@ -329,7 +333,7 @@ func renderPublicAPI(modulePath string, pkgs []goListPackage) (string, error) {
 						if d.Name == nil || !ast.IsExported(d.Name.Name) {
 							continue
 						}
-						signature := funcSignature(fset, d.Type)
+						signature := typedFuncSignature(typeInfo.Defs[d.Name], d.Type, fset, qualifier)
 						if d.Recv == nil || len(d.Recv.List) == 0 {
 							entries = append(entries, fmt.Sprintf("func %s%s", d.Name.Name, signature))
 							continue
@@ -746,7 +750,16 @@ func exprString(fset *token.FileSet, expr any) string {
 	return buf.String()
 }
 
-func funcSignature(fset *token.FileSet, fn *ast.FuncType) string {
+func typedFuncSignature(object types.Object, fallback *ast.FuncType, fset *token.FileSet, qualifier types.Qualifier) string {
+	if object != nil {
+		if signature, ok := object.Type().(*types.Signature); ok {
+			return typeSignature(signature, qualifier)
+		}
+	}
+	return astFuncSignature(fset, fallback)
+}
+
+func astFuncSignature(fset *token.FileSet, fn *ast.FuncType) string {
 	var out strings.Builder
 	if fn.TypeParams != nil {
 		out.WriteString(typeParameterList(fset, fn.TypeParams))
@@ -754,6 +767,62 @@ func funcSignature(fset *token.FileSet, fn *ast.FuncType) string {
 	out.WriteString(signatureFields(fset, fn.Params))
 	out.WriteString(signatureResults(fset, fn.Results))
 	return out.String()
+}
+
+func typeSignature(signature *types.Signature, qualifier types.Qualifier) string {
+	var out strings.Builder
+	if parameters := signature.TypeParams(); parameters != nil && parameters.Len() > 0 {
+		values := make([]string, 0, parameters.Len())
+		for i := 0; i < parameters.Len(); i++ {
+			parameter := parameters.At(i)
+			values = append(values, parameter.Obj().Name()+" "+canonicalTypeString(parameter.Constraint(), qualifier))
+		}
+		out.WriteString("[" + strings.Join(values, ", ") + "]")
+	}
+	out.WriteString(typeTuple(signature.Params(), signature.Variadic(), qualifier))
+	results := typeTuple(signature.Results(), false, qualifier)
+	if results != "()" {
+		if signature.Results().Len() == 1 {
+			out.WriteString(" " + results[1:len(results)-1])
+		} else {
+			out.WriteString(" " + results)
+		}
+	}
+	return out.String()
+}
+
+func typeTuple(values *types.Tuple, variadic bool, qualifier types.Qualifier) string {
+	if values == nil || values.Len() == 0 {
+		return "()"
+	}
+	items := make([]string, 0, values.Len())
+	for i := 0; i < values.Len(); i++ {
+		typ := values.At(i).Type()
+		if variadic && i == values.Len()-1 {
+			if slice, ok := typ.(*types.Slice); ok {
+				items = append(items, "..."+canonicalTypeString(slice.Elem(), qualifier))
+				continue
+			}
+		}
+		items = append(items, canonicalTypeString(typ, qualifier))
+	}
+	return "(" + strings.Join(items, ", ") + ")"
+}
+
+func canonicalTypeString(typ types.Type, qualifier types.Qualifier) string {
+	if signature, ok := typ.(*types.Signature); ok {
+		return "func" + typeSignature(signature, qualifier)
+	}
+	return types.TypeString(typ, qualifier)
+}
+
+func packagePathQualifier(current *types.Package) types.Qualifier {
+	return func(pkg *types.Package) string {
+		if pkg == nil || pkg.Path() == current.Path() {
+			return ""
+		}
+		return pkg.Path()
+	}
 }
 
 func signatureFields(fset *token.FileSet, fields *ast.FieldList) string {
@@ -795,17 +864,21 @@ func signatureResults(fset *token.FileSet, fields *ast.FieldList) string {
 
 func signatureType(fset *token.FileSet, expression ast.Expr) string {
 	if function, ok := expression.(*ast.FuncType); ok {
-		return "func" + funcSignature(fset, function)
+		return "func" + astFuncSignature(fset, function)
 	}
 	return exprString(fset, expression)
 }
 
-func typeDeclaration(fset *token.FileSet, spec *ast.TypeSpec) string {
+func typeDeclaration(fset *token.FileSet, spec *ast.TypeSpec, typeInfo *types.Info, qualifier types.Qualifier) string {
 	var out strings.Builder
 	out.WriteString("type ")
 	out.WriteString(spec.Name.Name)
 	if spec.TypeParams != nil {
-		out.WriteString(typeParameterList(fset, spec.TypeParams))
+		if parameters, ok := typedTypeParameterList(spec.TypeParams, typeInfo, qualifier); ok {
+			out.WriteString(parameters)
+		} else {
+			out.WriteString(typeParameterList(fset, spec.TypeParams))
+		}
 	}
 	if spec.Assign.IsValid() {
 		out.WriteString(" =")
@@ -814,19 +887,19 @@ func typeDeclaration(fset *token.FileSet, spec *ast.TypeSpec) string {
 	switch typ := spec.Type.(type) {
 	case *ast.StructType:
 		out.WriteString("struct { ")
-		out.WriteString(strings.Join(publicStructFields(fset, typ.Fields), "; "))
+		out.WriteString(strings.Join(publicStructFields(fset, typ.Fields, typeInfo, qualifier), "; "))
 		out.WriteString(" }")
 	case *ast.InterfaceType:
 		out.WriteString("interface { ")
-		out.WriteString(strings.Join(publicInterfaceElements(fset, typ.Methods), "; "))
+		out.WriteString(strings.Join(publicInterfaceElements(fset, typ.Methods, typeInfo, qualifier), "; "))
 		out.WriteString(" }")
 	default:
-		out.WriteString(exprString(fset, spec.Type))
+		out.WriteString(canonicalExpressionType(fset, spec.Type, typeInfo, qualifier))
 	}
 	return out.String()
 }
 
-func publicStructFields(fset *token.FileSet, fields *ast.FieldList) []string {
+func publicStructFields(fset *token.FileSet, fields *ast.FieldList, typeInfo *types.Info, qualifier types.Qualifier) []string {
 	if fields == nil {
 		return nil
 	}
@@ -836,7 +909,7 @@ func publicStructFields(fset *token.FileSet, fields *ast.FieldList) []string {
 		if len(field.Names) > 0 && len(names) == 0 {
 			continue
 		}
-		declaration := exprString(fset, field.Type)
+		declaration := canonicalExpressionType(fset, field.Type, typeInfo, qualifier)
 		if len(names) > 0 {
 			declaration = strings.Join(names, ", ") + " " + declaration
 		}
@@ -848,7 +921,7 @@ func publicStructFields(fset *token.FileSet, fields *ast.FieldList) []string {
 	return out
 }
 
-func publicInterfaceElements(fset *token.FileSet, fields *ast.FieldList) []string {
+func publicInterfaceElements(fset *token.FileSet, fields *ast.FieldList, typeInfo *types.Info, qualifier types.Qualifier) []string {
 	if fields == nil {
 		return nil
 	}
@@ -858,9 +931,9 @@ func publicInterfaceElements(fset *token.FileSet, fields *ast.FieldList) []strin
 		for _, name := range field.Names {
 			names = append(names, name.Name)
 		}
-		declaration := exprString(fset, field.Type)
-		if fn, ok := field.Type.(*ast.FuncType); ok {
-			declaration = funcSignature(fset, fn)
+		declaration := canonicalExpressionType(fset, field.Type, typeInfo, qualifier)
+		if fn, ok := field.Type.(*ast.FuncType); ok && len(field.Names) > 0 {
+			declaration = typedFuncSignature(typeInfo.Defs[field.Names[0]], fn, fset, qualifier)
 		}
 		if len(names) > 0 {
 			declaration = strings.Join(names, ", ") + declaration
@@ -869,6 +942,13 @@ func publicInterfaceElements(fset *token.FileSet, fields *ast.FieldList) []strin
 	}
 	sort.Strings(out)
 	return out
+}
+
+func canonicalExpressionType(fset *token.FileSet, expression ast.Expr, typeInfo *types.Info, qualifier types.Qualifier) string {
+	if value, ok := typeInfo.Types[expression]; ok && value.Type != nil {
+		return canonicalTypeString(value.Type, qualifier)
+	}
+	return exprString(fset, expression)
 }
 
 func typeParameterList(fset *token.FileSet, fields *ast.FieldList) string {
@@ -884,6 +964,32 @@ func typeParameterList(fset *token.FileSet, fields *ast.FieldList) string {
 		parameters = append(parameters, strings.Join(names, ", ")+" "+exprString(fset, field.Type))
 	}
 	return "[" + strings.Join(parameters, ", ") + "]"
+}
+
+func typedTypeParameterList(fields *ast.FieldList, typeInfo *types.Info, qualifier types.Qualifier) (string, bool) {
+	if fields == nil || len(fields.List) == 0 {
+		return "", true
+	}
+	parameters := make([]string, 0, len(fields.List))
+	for _, field := range fields.List {
+		if len(field.Names) == 0 {
+			return "", false
+		}
+		object, ok := typeInfo.Defs[field.Names[0]].(*types.TypeName)
+		if !ok {
+			return "", false
+		}
+		parameter, ok := object.Type().(*types.TypeParam)
+		if !ok {
+			return "", false
+		}
+		names := make([]string, 0, len(field.Names))
+		for _, name := range field.Names {
+			names = append(names, name.Name)
+		}
+		parameters = append(parameters, strings.Join(names, ", ")+" "+canonicalTypeString(parameter.Constraint(), qualifier))
+	}
+	return "[" + strings.Join(parameters, ", ") + "]", true
 }
 
 func exportedFieldNames(names []*ast.Ident) []string {
