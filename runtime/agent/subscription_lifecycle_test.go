@@ -1192,7 +1192,6 @@ func startSubscriptionLifecycleClient(t *testing.T, options Options) (*subscript
 		}
 	}
 	t.Cleanup(func() {
-		cancel()
 		_ = writer.Close()
 		if joined {
 			return
@@ -1207,6 +1206,7 @@ func startSubscriptionLifecycleClient(t *testing.T, options Options) (*subscript
 			t.Error("Serve cleanup did not finish")
 		}
 	})
+	t.Cleanup(cancel)
 	c := &subscriptionTestClient{t: t, done: ctx.Done(), in: writer, out: output}
 	c.request(`{"jsonrpc":"2.0","id":1,"method":"stave.initialize","params":{"protocolVersions":["1.0"],"capabilities":{"snapshotSubscriptionVersions":["stave.snapshot.subscribe/v1"]}}}`)
 	c.response(1)
