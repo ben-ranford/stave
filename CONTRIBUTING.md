@@ -9,6 +9,8 @@ Repository verification requires:
 - Go at the version declared in [`.tool-versions`](.tool-versions).
 - The Node.js runtime configured by [CI](.github/workflows/ci.yml) for the workflow and queue test scripts.
 - Bash, GNU Make, and ripgrep (`rg`), which the Make targets and rigor scripts invoke.
+- `curl` and `jq` for release-consumer verification, plus either `sha256sum` or
+  `shasum` for release-asset checksums.
 - A C compiler such as `gcc` or `clang` for the race tests in `make verify` and `make ci`.
 - A Git checkout; the hook installer configures Git locally. The first rigor run also needs network access so `go install` can download the pinned tools into `.cache/rigor/bin`.
 

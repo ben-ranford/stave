@@ -23,6 +23,9 @@ func TestPublishedReleaseProbeIsAnonymousAndWorkflowGated(t *testing.T) {
 		"GONOSUMDB=",
 		"curl -q --connect-timeout",
 		"RELEASE_PROBE_REQUEST_TIMEOUT_SECONDS",
+		"RELEASE_PROBE_GO_TIMEOUT_SECONDS",
+		"wait_for_release_metadata",
+		"release metadata incomplete after %s attempts",
 		"retry_command \"resolving github.com/ben-ranford/stave@${tag}",
 		"release probe failed after %s attempts",
 		"CHANGELOG.md LICENSE report.json",
@@ -45,14 +48,20 @@ func TestPublishedReleaseProbeIsAnonymousAndWorkflowGated(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	jobStart := strings.Index(string(workflow), "  verify-public-consumer:\n")
+	if jobStart < 0 {
+		t.Fatal("release workflow must define verify-public-consumer")
+	}
+	publicConsumerJob := string(workflow)[jobStart:]
 	for _, fragment := range []string{
-		"verify-public-consumer:",
 		"needs: publish",
 		"name: release / public consumer",
 		"persist-credentials: false",
+		"RELEASE_PROBE_ATTEMPTS: \"3\"",
+		"RELEASE_PROBE_GO_TIMEOUT_SECONDS: \"60\"",
 		"./scripts/rigor/verify-published-release.sh \"${{ github.ref_name }}\"",
 	} {
-		if !strings.Contains(string(workflow), fragment) {
+		if !strings.Contains(publicConsumerJob, fragment) {
 			t.Fatalf("release workflow must retain %q", fragment)
 		}
 	}
