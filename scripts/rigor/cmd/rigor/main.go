@@ -327,13 +327,15 @@ func parsePublicAPIPackage(fset *token.FileSet, pkg goListPackage) ([][]*ast.Fil
 }
 
 func publicAPIEntriesForFiles(fset *token.FileSet, importPath string, files []*ast.File, importer *sourceImporter) ([]string, error) {
-	typeInfo := types.Info{Defs: make(map[*ast.Ident]types.Object), Types: make(map[ast.Expr]types.TypeAndValue)}
+	typeInfo := types.Info{Defs: make(map[*ast.Ident]types.Object), Uses: make(map[*ast.Ident]types.Object), Types: make(map[ast.Expr]types.TypeAndValue)}
 	checkedPkg, err := (&types.Config{Importer: importer, Sizes: importer.sizes}).Check(importPath, fset, files, &typeInfo)
 	if err != nil {
 		return nil, err
 	}
 	qualifier := packagePathQualifier(checkedPkg)
 	entries := []string{}
+	hiddenTypes := localTypeSpecs(files, &typeInfo)
+	seenHiddenTypes := make(map[types.Object]struct{})
 	for _, file := range files {
 		for _, declaration := range file.Decls {
 			current, err := publicAPIEntriesForDeclaration(fset, declaration, &typeInfo, qualifier)
@@ -341,9 +343,94 @@ func publicAPIEntriesForFiles(fset *token.FileSet, importPath string, files []*a
 				return nil, err
 			}
 			entries = append(entries, current...)
+			collector := aliasHiddenTypeCollector{fset: fset, typeInfo: &typeInfo, qualifier: qualifier, hiddenTypes: hiddenTypes, seen: seenHiddenTypes}
+			collector.collect(declaration)
+			entries = append(entries, collector.entries...)
 		}
 	}
 	return entries, nil
+}
+
+func localTypeSpecs(files []*ast.File, typeInfo *types.Info) map[types.Object]*ast.TypeSpec {
+	specs := make(map[types.Object]*ast.TypeSpec)
+	for _, file := range files {
+		for _, declaration := range file.Decls {
+			for _, spec := range typeDeclarationSpecs(declaration) {
+				object := typeInfo.Defs[spec.Name]
+				if object != nil {
+					specs[object] = spec
+				}
+			}
+		}
+	}
+	return specs
+}
+
+func typeDeclarationSpecs(declaration ast.Decl) []*ast.TypeSpec {
+	general, ok := declaration.(*ast.GenDecl)
+	if !ok || general.Tok != token.TYPE {
+		return nil
+	}
+	specs := make([]*ast.TypeSpec, 0, len(general.Specs))
+	for _, declaration := range general.Specs {
+		if spec, ok := declaration.(*ast.TypeSpec); ok {
+			specs = append(specs, spec)
+		}
+	}
+	return specs
+}
+
+// aliasHiddenTypeCollector records only local hidden definitions that
+// are reachable through an exported alias. The alias remains nominal in the
+// inventory, while its otherwise omitted definition makes consumer-visible
+// field and identity changes observable to the release baseline.
+type aliasHiddenTypeCollector struct {
+	fset        *token.FileSet
+	typeInfo    *types.Info
+	qualifier   types.Qualifier
+	hiddenTypes map[types.Object]*ast.TypeSpec
+	seen        map[types.Object]struct{}
+	entries     []string
+}
+
+func (collector *aliasHiddenTypeCollector) collect(declaration ast.Decl) {
+	for _, spec := range typeDeclarationSpecs(declaration) {
+		if ast.IsExported(spec.Name.Name) && spec.Assign.IsValid() {
+			collector.visitExpression(spec.Type)
+		}
+	}
+}
+
+func (collector *aliasHiddenTypeCollector) visitExpression(expression ast.Expr) {
+	ast.Inspect(expression, func(node ast.Node) bool {
+		identifier, ok := node.(*ast.Ident)
+		if !ok {
+			return true
+		}
+		object := collector.typeInfo.Defs[identifier]
+		if object == nil {
+			object = collector.typeInfo.Uses[identifier]
+		}
+		spec, exists := collector.hiddenTypes[object]
+		if !exists || ast.IsExported(spec.Name.Name) {
+			return true
+		}
+		collector.visitSpec(spec)
+		return true
+	})
+}
+
+func (collector *aliasHiddenTypeCollector) visitSpec(spec *ast.TypeSpec) {
+	object := collector.typeInfo.Defs[spec.Name]
+	if object == nil {
+		return
+	}
+	if _, exists := collector.seen[object]; exists {
+		return
+	}
+	collector.seen[object] = struct{}{}
+	collector.entries = append(collector.entries, typeDeclaration(collector.fset, spec, collector.typeInfo, collector.qualifier))
+	collector.visitExpression(spec.Type)
 }
 
 func publicAPIEntriesForDeclaration(fset *token.FileSet, declaration ast.Decl, typeInfo *types.Info, qualifier types.Qualifier) ([]string, error) {

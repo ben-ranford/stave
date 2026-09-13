@@ -66,6 +66,70 @@ type ID string
 	}
 }
 
+func TestPublicAPIInventoryIncludesAliasReachableHiddenTypes(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "api.go")
+	render := func(source string) string {
+		t.Helper()
+		if err := os.WriteFile(path, []byte(source), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		inventory, err := renderPublicAPI("example.com/api", []goListPackage{{ImportPath: "example.com/api", Dir: dir, GoFiles: []string{"api.go"}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return inventory
+	}
+
+	before := render(`package api
+type hidden struct { Value string }
+type Public = hidden
+type Wrapped = []hidden
+type Again = hidden
+type recursive struct { Next *recursive; Value string }
+type Recursive = recursive
+`)
+	for _, want := range []string{
+		"type Public = hidden",
+		"type Wrapped = []hidden",
+		"type hidden struct { Value string }",
+		"type recursive struct { Next *recursive; Value string }",
+	} {
+		if !strings.Contains(before, want) {
+			t.Fatalf("public alias inventory missing %q:\n%s", want, before)
+		}
+	}
+	if strings.Count(before, "type hidden struct") != 1 {
+		t.Fatalf("repeated aliases duplicated hidden definition:\n%s", before)
+	}
+	if strings.Count(before, "type recursive struct") != 1 {
+		t.Fatalf("recursive hidden definition was duplicated:\n%s", before)
+	}
+
+	fieldChanged := render(`package api
+type hidden struct { Value int }
+type Public = hidden
+type Wrapped = []hidden
+type Again = hidden
+type recursive struct { Next *recursive; Value string }
+type Recursive = recursive
+`)
+	if before == fieldChanged {
+		t.Fatalf("hidden field change reachable through exported alias did not change inventory:\n%s", before)
+	}
+	nominalBefore := render(`package api
+type hiddenOne struct { Value string }
+type Public = hiddenOne
+`)
+	nominallyChanged := render(`package api
+type hiddenTwo struct { Value string }
+type Public = hiddenTwo
+	`)
+	if nominalBefore == nominallyChanged {
+		t.Fatalf("same-underlying hidden type replacement did not change inventory:\n%s", nominalBefore)
+	}
+}
+
 func TestPublicAPIInventoryNormalizesParameterNamesAndInterfaceOrder(t *testing.T) {
 	dir := t.TempDir()
 	render := func(source string) string {
