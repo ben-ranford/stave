@@ -3,8 +3,12 @@ package agent
 import (
 	"bytes"
 	"context"
+	"io"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/ben-ranford/stave/capability"
 	"github.com/ben-ranford/stave/protocol"
@@ -31,6 +35,103 @@ func TestSnapshotSubscriptionRequiresNegotiatedExtensionAndIsIdempotentlyRemoved
 	if !strings.Contains(output.String(), `"snapshot":{"schemaVersion":"stave.semantic/v1"`) || !strings.Contains(output.String(), `"id":4,"result":{"ok":true}`) {
 		t.Fatalf("subscription transcript = %s", output.String())
 	}
+}
+
+func TestSnapshotSubscriptionBaselinePrecedesNotification(t *testing.T) {
+	base := subscriptionEnvelope(t)
+	publication := make(chan struct{}, 1)
+	delivered := make(chan struct{}, 1)
+	gate := make(chan struct{})
+	blocked := make(chan struct{})
+	var sequence atomic.Uint64
+	sequence.Store(1)
+	options := Options{Negotiate: func(context.Context, map[string]any) (capability.Manifest, error) {
+		return capability.Manifest{ProtocolVersions: []string{protocol.Version}, SnapshotModes: []string{"full"}, SnapshotSubscriptionVersions: []string{protocol.SnapshotSubscriptionVersion}}, nil
+	}, SnapshotEnvelope: func(context.Context, string, uint64) (SnapshotEnvelope, error) {
+		env := base
+		env.Sequence = sequence.Load()
+		if env.Sequence == 2 {
+			select {
+			case delivered <- struct{}{}:
+			default:
+			}
+		}
+		return env, nil
+	}, SnapshotPublicationWaiter: func(ctx context.Context, _ uint64) error {
+		select {
+		case <-publication:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}}
+	reader, inputWriter := io.Pipe()
+	notificationWritten := make(chan struct{}, 1)
+	writer := &baselineGateWriter{gate: gate, blocked: blocked, notification: notificationWritten}
+	done := make(chan error, 1)
+	go func() { done <- New(options).Serve(context.Background(), reader, writer) }()
+	_, _ = io.WriteString(inputWriter, "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"stave.initialize\",\"params\":{\"protocolVersions\":[\"1.0\"]}}\n{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"stave.initialized\"}\n{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"stave.snapshot.subscribe\"}\n")
+	select {
+	case <-blocked:
+	case <-time.After(time.Second):
+		t.Fatal("baseline write did not block")
+	}
+	sequence.Store(2)
+	publication <- struct{}{}
+	close(gate)
+	select {
+	case <-delivered:
+	case <-time.After(time.Second):
+		t.Fatal("publication was not delivered")
+	}
+	select {
+	case <-notificationWritten:
+	case <-time.After(time.Second):
+		t.Fatal("notification was not written")
+	}
+	_ = inputWriter.Close()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Serve did not finish")
+	}
+	out := writer.String()
+	baseline := strings.Index(out, `"id":3`)
+	notification := strings.Index(out, `"method":"stave.snapshot.subscription"`)
+	if baseline < 0 || notification < 0 || baseline > notification {
+		t.Fatalf("baseline did not precede notification: %s", out)
+	}
+}
+
+type baselineGateWriter struct {
+	mu sync.Mutex
+	bytes.Buffer
+	gate, blocked, notification chan struct{}
+	once                        sync.Once
+}
+
+func (w *baselineGateWriter) Write(p []byte) (int, error) {
+	if bytes.Contains(p, []byte(`"id":3`)) {
+		w.once.Do(func() { close(w.blocked) })
+		<-w.gate
+	}
+	if bytes.Contains(p, []byte(`"method":"stave.snapshot.subscription"`)) {
+		select {
+		case w.notification <- struct{}{}:
+		default:
+		}
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.Buffer.Write(p)
+}
+func (w *baselineGateWriter) String() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.Buffer.String()
 }
 
 func subscriptionEnvelope(t *testing.T) SnapshotEnvelope {
