@@ -61,8 +61,17 @@ case "$1 $2" in
 	[[ "$(<"${bin_dir}/fail-go-get")" != 1 ]] || exit 1
 	if [[ "$(<"${bin_dir}/term-ignore-go-get")" == 1 ]]; then
 		printf '%s\n' "$$" >"${bin_dir}/term-ignore-parent-pid"
-		trap '' TERM
-		while :; do sleep 30 & child_pid=$!; printf '%s\n' "${child_pid}" >"${bin_dir}/term-ignore-child-pid"; wait "${child_pid}" || true; done
+		spawn_replacement() {
+			sleep 30 & child_pid=$!
+			printf '%s\n' "${child_pid}" >"${bin_dir}/term-ignore-replacement-child-pid"
+			wait "${child_pid}" || true
+		}
+		trap 'spawn_replacement' TERM
+		while :; do
+			sleep 30 & child_pid=$!
+			printf '%s\n' "${child_pid}" >"${bin_dir}/term-ignore-child-pid"
+			wait "${child_pid}" || true
+		done
 	fi
 	if [[ "$(<"${bin_dir}/slow-go-get")" == 1 ]]; then
 		printf '%s\n' "$$" >"${bin_dir}/slow-go-get-pid"
@@ -168,9 +177,11 @@ if PATH="${workdir}/bin:${PATH}" RELEASE_PROBE_ATTEMPTS=1 RELEASE_PROBE_RETRY_SE
 	exit 1
 fi
 ((SECONDS < 5)) || { printf 'TERM-ignoring public module probe exceeded its bounded timeout\n' >&2; exit 1; }
-for process_pid in "$(<"${workdir}/bin/term-ignore-parent-pid")" "$(<"${workdir}/bin/term-ignore-child-pid")"; do
-	if kill -0 "${process_pid}" 2>/dev/null; then
-		printf 'TERM-ignoring public Go resolution descendant %s remained after cleanup\n' "${process_pid}" >&2
+[[ -s "${workdir}/bin/term-ignore-replacement-child-pid" ]] || { printf 'TERM-ignoring fixture did not replace its child during cleanup\n' >&2; exit 1; }
+for process_pid in "$(<"${workdir}/bin/term-ignore-parent-pid")" "$(<"${workdir}/bin/term-ignore-child-pid")" "$(<"${workdir}/bin/term-ignore-replacement-child-pid")"; do
+	process_state="$({ ps -o stat= -p "${process_pid}" 2>/dev/null || true; } | tr -d '[:space:]')"
+	if [[ -n "${process_state}" && "${process_state}" != Z* ]]; then
+		printf 'TERM-ignoring public Go resolution descendant %s remained after cleanup (state %s)\n' "${process_pid}" "${process_state}" >&2
 		exit 1
 	fi
 done

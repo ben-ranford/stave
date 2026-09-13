@@ -63,24 +63,6 @@ retry_command() {
 	done
 }
 
-descendant_pids() {
-	local parent_pid="$1" child_pid
-	while IFS= read -r child_pid; do
-		[[ -n "${child_pid}" ]] || continue
-		descendant_pids "${child_pid}"
-		printf '%s\n' "${child_pid}"
-	done < <(ps -eo pid=,ppid= | awk -v parent_pid="${parent_pid}" '$2 == parent_pid {print $1}')
-}
-
-terminate_processes() {
-	local signal="$1"
-	shift
-	local process_pid
-	for process_pid in "$@"; do
-		kill "-${signal}" "${process_pid}" 2>/dev/null || true
-	done
-}
-
 process_is_running() {
 	local process_pid="$1" process_state
 	process_state="$(ps -o stat= -p "${process_pid}" 2>/dev/null | tr -d '[:space:]')"
@@ -90,8 +72,28 @@ process_is_running() {
 run_with_timeout() {
 	local description="$1"
 	shift
-	"$@" &
-	local command_pid=$!
+	local command_pid_file command_pid wrapper_pid
+	command_pid_file="$(mktemp "${workdir}/command-pid.XXXXXX")"
+	# The inner shell owns the job-control process group. Its command can then
+	# be terminated as one unit without racing descendants that respawn during
+	# timeout cleanup.
+	(
+		set -m
+		"$@" &
+		command_pid=$!
+		printf '%s\n' "${command_pid}" >"${command_pid_file}"
+		wait "${command_pid}"
+	) &
+	wrapper_pid=$!
+	while [[ ! -s "${command_pid_file}" ]] && process_is_running "${wrapper_pid}"; do
+		sleep 1
+	done
+	if [[ ! -s "${command_pid_file}" ]]; then
+		wait "${wrapper_pid}" 2>/dev/null || true
+		rm -f "${command_pid_file}"
+		return 1
+	fi
+	command_pid="$(<"${command_pid_file}")"
 	local timeout_deadline=$((SECONDS + go_timeout_seconds))
 	while process_is_running "${command_pid}"; do
 		if (( SECONDS >= timeout_deadline )); then
@@ -100,34 +102,25 @@ run_with_timeout() {
 		sleep 1
 	done
 	if ! process_is_running "${command_pid}"; then
-		if wait "${command_pid}"; then
+		if wait "${wrapper_pid}"; then
+			rm -f "${command_pid_file}"
 			return 0
 		else
-			return $?
+			local command_status=$?
+			rm -f "${command_pid_file}"
+			return "${command_status}"
 		fi
 	fi
 
 	printf 'release probe timed out after %ss while %s\n' "${go_timeout_seconds}" "${description}" >&2
-	local -a process_pids=()
-	local process_pid
-	while IFS= read -r process_pid; do
-		[[ -n "${process_pid}" ]] && process_pids+=("${process_pid}")
-	done < <(descendant_pids "${command_pid}"; printf '%s\n' "${command_pid}")
-	terminate_processes TERM "${process_pids[@]}"
+	kill -TERM -- "-${command_pid}" 2>/dev/null || true
 	local grace_deadline=$((SECONDS + terminate_grace_seconds))
-	while (( SECONDS < grace_deadline )); do
-		local process_alive=false
-		for process_pid in "${process_pids[@]}"; do
-			if process_is_running "${process_pid}"; then
-				process_alive=true
-				break
-			fi
-		done
-		"${process_alive}" || break
+	while process_is_running "${command_pid}" && (( SECONDS < grace_deadline )); do
 		sleep 1
 	done
-	terminate_processes KILL "${process_pids[@]}"
-	wait "${command_pid}" 2>/dev/null || true
+	kill -KILL -- "-${command_pid}" 2>/dev/null || true
+	wait "${wrapper_pid}" 2>/dev/null || true
+	rm -f "${command_pid_file}"
 	return 124
 }
 
