@@ -98,3 +98,27 @@ jobs:
             CHANGELOG.md
             LICENSE
             .artifacts/performance/report.json
+
+  verify-public-consumer:
+    name: release / public consumer
+    if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
+    needs: publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: ${{ env.GO_VERSION_CURRENT }}
+          cache: false
+      - name: Verify anonymous public consumer
+        env:
+          RELEASE_PROBE_ATTEMPTS: "5"
+          RELEASE_PROBE_RETRY_SECONDS: "15"
+        run: ./scripts/rigor/verify-published-release.sh "${{ github.ref_name }}"
