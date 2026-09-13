@@ -10,10 +10,13 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/ben-ranford/stave/action"
 	staveevent "github.com/ben-ranford/stave/event"
 	"github.com/ben-ranford/stave/input"
+	"github.com/ben-ranford/stave/internal/canonical"
 	"github.com/ben-ranford/stave/primitive"
 	"github.com/ben-ranford/stave/semantic"
 )
@@ -111,6 +114,12 @@ type codecDocument struct {
 	Mappings []Mapping `json:"mappings"`
 }
 
+type codecImportDocument struct {
+	Version  string     `json:"version"`
+	Profile  string     `json:"profile"`
+	Mappings *[]Mapping `json:"mappings"`
+}
+
 type Dispatcher struct {
 	keymap          Map
 	pending         []input.KeyChord
@@ -189,6 +198,10 @@ func (m Map) Encode() ([]byte, error) {
 		return nil, errors.New("keymap profile exceeds byte limit")
 	}
 	mappings := m.Bindings()
+	document := codecDocument{Version: CodecVersion, Profile: m.profile, Mappings: mappings}
+	if err := validateCodecDocument(document); err != nil {
+		return nil, err
+	}
 	type sortableMapping struct {
 		mapping Mapping
 		encoded string
@@ -205,7 +218,8 @@ func (m Map) Encode() ([]byte, error) {
 	for i := range sorted {
 		mappings[i] = sorted[i].mapping
 	}
-	raw, err := json.Marshal(codecDocument{Version: CodecVersion, Profile: m.profile, Mappings: mappings})
+	document.Mappings = mappings
+	raw, err := json.Marshal(document)
 	if err != nil {
 		return nil, err
 	}
@@ -221,9 +235,12 @@ func Decode(raw []byte, manifest []action.Definition) (Map, error) {
 	if len(raw) > MaxProfileBytes {
 		return Map{}, errors.New("keymap profile exceeds byte limit")
 	}
+	if !utf8.Valid(raw) {
+		return Map{}, errors.New("decode keymap profile: invalid UTF-8")
+	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
-	var document codecDocument
+	var document codecImportDocument
 	if err := decoder.Decode(&document); err != nil {
 		return Map{}, fmt.Errorf("decode keymap profile: %w", err)
 	}
@@ -233,10 +250,13 @@ func Decode(raw []byte, manifest []action.Definition) (Map, error) {
 	if document.Version != CodecVersion {
 		return Map{}, fmt.Errorf("unsupported keymap profile version %q", document.Version)
 	}
-	if err := checkCodecMappings(document.Mappings); err != nil {
+	if document.Mappings == nil {
+		return Map{}, errors.New("decode keymap profile: mappings must be a non-null array")
+	}
+	if err := checkCodecMappings(*document.Mappings); err != nil {
 		return Map{}, err
 	}
-	keymap, err := New(document.Profile, document.Mappings)
+	keymap, err := New(document.Profile, *document.Mappings)
 	if err != nil {
 		return Map{}, fmt.Errorf("decode keymap profile: %w", err)
 	}
@@ -253,6 +273,38 @@ func checkCodecMappings(mappings []Mapping) error {
 	for _, mapping := range mappings {
 		if len(mapping.Binding.Sequence) > MaxBindingChords {
 			return errors.New("keymap binding exceeds chord limit")
+		}
+		for _, chord := range mapping.Binding.Sequence {
+			if !validCodecChord(chord) {
+				return errors.New("keymap binding contains an invalid chord")
+			}
+		}
+	}
+	return nil
+}
+
+func validCodecChord(chord input.KeyChord) bool {
+	normalized := chord.Normalize()
+	if normalized == (input.KeyChord{}) {
+		return false
+	}
+	if normalized.Mods&^(input.ModShift|input.ModCtrl|input.ModAlt|input.ModMeta) != 0 {
+		return false
+	}
+	if normalized.Code == input.KeyRune {
+		return utf8.ValidRune(normalized.Rune) && unicode.IsPrint(normalized.Rune) && !unicode.IsControl(normalized.Rune)
+	}
+	parsed, err := input.ParseKey(string(normalized.Code))
+	return err == nil && parsed.Code == normalized.Code && parsed.Rune == 0
+}
+
+func validateCodecDocument(document codecDocument) error {
+	if _, err := canonical.Encode(document); err != nil {
+		return fmt.Errorf("encode keymap profile: %w", err)
+	}
+	for _, mapping := range document.Mappings {
+		if !utf8.Valid(mapping.Route.Arguments) {
+			return errors.New("encode keymap profile: invalid UTF-8 in action arguments")
 		}
 	}
 	return nil

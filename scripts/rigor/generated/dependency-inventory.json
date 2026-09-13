@@ -363,13 +363,16 @@
         "github.com/ben-ranford/stave/action",
         "github.com/ben-ranford/stave/event",
         "github.com/ben-ranford/stave/input",
+        "github.com/ben-ranford/stave/internal/canonical",
         "github.com/ben-ranford/stave/primitive",
         "github.com/ben-ranford/stave/semantic",
         "io",
         "sort",
         "strconv",
         "strings",
-        "time"
+        "time",
+        "unicode",
+        "unicode/utf8"
       ]
     },
     {

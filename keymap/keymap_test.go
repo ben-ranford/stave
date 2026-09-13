@@ -73,6 +73,86 @@ func TestDecodeRejectsInvalidVersionsBindingsAndUnknownFields(t *testing.T) {
 	}
 }
 
+func TestDecodeRejectsInvalidCodecBoundaries(t *testing.T) {
+	invalidUTF8 := append([]byte(`{"version":"stave.keymap.v1","profile":"`), append([]byte{0xff}, []byte(`","mappings":[]}`)...)...)
+	for _, raw := range [][]byte{
+		[]byte(`{"version":"stave.keymap.v1","profile":"portable","mappings":[{"binding":{"command":"stave.activate.v1","sequence":[{}]},"route":{"kind":"event","eventKind":"shutdown"}}]}`),
+		[]byte(`{"version":"stave.keymap.v1","profile":"portable","mappings":[{"binding":{"command":"stave.activate.v1","sequence":[{"code":"invalid"}]},"route":{"kind":"event","eventKind":"shutdown"}}]}`),
+		[]byte(`{"version":"stave.keymap.v1","profile":"portable","mappings":[{"binding":{"command":"stave.activate.v1","sequence":[{"code":"tab","mods":128}]},"route":{"kind":"event","eventKind":"shutdown"}}]}`),
+		[]byte(`{"version":"stave.keymap.v1","profile":"portable","mappings":[{"binding":{"command":"stave.activate.v1","sequence":[{"code":"rune","rune":55296}]},"route":{"kind":"event","eventKind":"shutdown"}}]}`),
+		[]byte(`{"version":"stave.keymap.v1","profile":"portable","mappings":[{"binding":{"command":"stave.activate.v1","sequence":[{"code":"rune","rune":10}]},"route":{"kind":"event","eventKind":"shutdown"}}]}`),
+		invalidUTF8,
+		[]byte(`{"version":"stave.keymap.v1","profile":"portable"}`),
+		[]byte(`{"version":"stave.keymap.v1","profile":"portable","mappings":null}`),
+	} {
+		if _, err := Decode(raw, nil); err == nil {
+			t.Fatalf("Decode(%q) succeeded", raw)
+		}
+	}
+	if _, err := New("direct", []Mapping{{
+		Binding: Binding{Sequence: []input.KeyChord{{}}, Command: CommandActivate},
+		Route:   Route{Kind: RouteEvent, EventKind: "shutdown"},
+	}}); err != nil {
+		t.Fatalf("New changed for direct structured chords: %v", err)
+	}
+}
+
+func TestCodecRoundTripsStructuredRuneChords(t *testing.T) {
+	mappings := []Mapping{
+		{Binding: Binding{Sequence: []input.KeyChord{{Code: input.KeyRune, Rune: '+'}}, Command: CommandFocusNext}, Route: Route{Kind: RouteEvent, EventKind: "shutdown"}},
+		{Binding: Binding{Sequence: []input.KeyChord{{Code: input.KeyRune, Rune: '+', Mods: input.ModCtrl}}, Command: CommandFocusPrevious}, Route: Route{Kind: RouteEvent, EventKind: "shutdown"}},
+		{Binding: Binding{Sequence: []input.KeyChord{{Code: input.KeyRune, Rune: 'é', Mods: input.ModAlt | input.ModMeta}}, Command: CommandActivate}, Route: Route{Kind: RouteEvent, EventKind: "shutdown"}},
+	}
+	profile, err := New("structured-runes", mappings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := profile.Encode()
+	if err != nil {
+		t.Fatalf("Encode() error = %v", err)
+	}
+	decoded, err := Decode(raw, nil)
+	if err != nil {
+		t.Fatalf("Decode() error = %v", err)
+	}
+	encoded, err := decoded.Encode()
+	if err != nil {
+		t.Fatalf("re-encode error = %v", err)
+	}
+	if string(encoded) != string(raw) {
+		t.Fatalf("structured rune encoding changed:\n%s\n%s", encoded, raw)
+	}
+}
+
+func TestEncodeRejectsInvalidUTF8(t *testing.T) {
+	for _, mapping := range []Mapping{
+		{
+			Binding: Binding{Sequence: []input.KeyChord{{Code: input.KeyTab}}, Command: CommandID("\xff")},
+			Route:   Route{Kind: RouteEvent, EventKind: "shutdown"},
+		},
+		{
+			Binding: Binding{Sequence: []input.KeyChord{{Code: input.KeyTab}}, Command: CommandActivate},
+			Route: Route{Kind: RouteAction, ActionID: action.ID(primitive.CanonicalActionID("activate")),
+				Arguments: json.RawMessage("{\"value\":\"\xff\"}")},
+		},
+	} {
+		profile, err := New("portable", []Mapping{mapping})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := profile.Encode(); err == nil {
+			t.Fatal("Encode accepted invalid UTF-8")
+		}
+	}
+	profile, err := New("\xff", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := profile.Encode(); err == nil {
+		t.Fatal("Encode accepted invalid UTF-8 profile")
+	}
+}
+
 func TestDecodeRejectsConflictingBindingsAndActionManifestMismatches(t *testing.T) {
 	tab, _ := input.ParseKey("tab")
 	conflicting, err := json.Marshal(codecDocument{Version: CodecVersion, Profile: "portable", Mappings: []Mapping{
@@ -297,9 +377,9 @@ func codecMappings(count, chords int) []Mapping {
 	for i := range mappings {
 		sequence := make([]input.KeyChord, chords)
 		for j := range sequence {
-			sequence[j] = input.KeyChord{Code: "a"}
+			sequence[j] = input.KeyChord{Code: input.KeyRune, Rune: 'a'}
 		}
-		sequence[len(sequence)-1] = input.KeyChord{Code: input.KeyCode(fmt.Sprintf("key-%d", i))}
+		sequence[len(sequence)-1] = input.KeyChord{Code: input.KeyRune, Rune: rune(0x4E00 + i)}
 		mappings[i] = Mapping{Binding: Binding{Sequence: sequence, Command: CommandID(fmt.Sprint(i))}, Route: Route{Kind: RouteEvent, EventKind: "shutdown"}}
 	}
 	return mappings
