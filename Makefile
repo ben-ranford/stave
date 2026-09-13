@@ -13,7 +13,7 @@ RIGOR := $(GO) run ./scripts/rigor/cmd/rigor
 	suppression-check \
 	api-refresh api-boundary traceability-refresh schema-freshness generated-refresh \
 	adapters conformance-check atlas-check workflow-validate hooks-install hooks-pre-commit-dry-run \
-	hooks-pre-push-dry-run fast verify ci release-contract release-ga-contract release-dry-run clean \
+	hooks-pre-push-dry-run fast verify ci release-contract release-ga-contract release-dry-run release-probe-test clean \
 	queue-me-check
 
 help:
@@ -142,10 +142,13 @@ release-contract:
 release-ga-contract:
 	STAVE_GA_RELEASE_GATE=1 $(GO) test ./requirements -count=1
 
-ci: verify govulncheck workflow-validate release-contract
+ci: verify release-probe-test govulncheck workflow-validate release-contract
 
 release-dry-run:
 	./scripts/rigor/release-dry-run.sh
+
+release-probe-test:
+	./scripts/rigor/verify-published-release_test.sh
 
 clean:
 	rm -rf $(COVERAGE_DIR) .cache/rigor/tmp
