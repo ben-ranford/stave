@@ -12,6 +12,7 @@ import (
 	"sync"
 	"unicode/utf8"
 
+	"github.com/ben-ranford/stave/effect"
 	"github.com/ben-ranford/stave/event"
 	"github.com/ben-ranford/stave/state"
 )
@@ -444,11 +445,56 @@ func validateInspectorRecord(index int, record Record) error {
 	if err := record.Event.Validate(); err != nil {
 		return fmt.Errorf("replay record %d: %w", index, err)
 	}
+	if err := validateSensitiveTypedPayload(index, record.Event); err != nil {
+		return err
+	}
+	if err := validateDeliveryEvidence(index, record); err != nil {
+		return err
+	}
 	if record.Prior.Sequence == math.MaxUint64 {
 		return &Divergence{Code: DivergenceSequence, Index: index, Field: "prior.sequence", Expected: "sequence below maximum", Actual: record.Prior.Sequence}
 	}
 	if record.Result.Revision < record.Prior.Revision || record.Result.Revision-record.Prior.Revision > 1 {
 		return &Divergence{Code: DivergenceRevision, Index: index, Field: "result.revision", Expected: "prior revision or one greater", Actual: record.Result.Revision}
+	}
+	return nil
+}
+
+func validateSensitiveTypedPayload(index int, ev event.Event) error {
+	var sensitive bool
+	switch payload := ev.Payload.(type) {
+	case event.ActionInvokedPayload:
+		sensitive = payload.Sensitive
+	case event.EffectResultPayload:
+		sensitive = payload.Sensitive
+	}
+	if !sensitive {
+		return nil
+	}
+	// Marshal the payload directly: Event's canonical representation redacts it
+	// and would hide plaintext from callers of this typed validator.
+	raw, err := json.Marshal(ev.Payload)
+	if err != nil {
+		return fmt.Errorf("replay record %d sensitive payload is invalid", index)
+	}
+	if err := validateUniqueJSONKeys(raw, 0); err != nil {
+		return fmt.Errorf("replay record %d sensitive payload is invalid", index)
+	}
+	return validateSensitiveRawPayload(index, ev.Kind, raw)
+}
+
+func validateDeliveryEvidence(index int, record Record) error {
+	if record.Event.Kind != event.EffectResult {
+		if record.Delivery != "" || record.CompletionIndex != 0 || record.Event.Meta.CompletionIndex != 0 {
+			return fmt.Errorf("replay record %d delivery metadata requires an effect result", index)
+		}
+		return nil
+	}
+	if record.Delivery != string(effect.DeclarationOrder) && record.Delivery != string(effect.CompletionOrder) {
+		return fmt.Errorf("replay record %d has unsupported effect delivery", index)
+	}
+	if record.CompletionIndex != record.Event.Meta.CompletionIndex {
+		return fmt.Errorf("replay record %d completion index does not match its event", index)
 	}
 	return nil
 }

@@ -239,6 +239,7 @@ func TestDecodeTranscriptAcceptsAlreadyRedactedSensitivePayload(t *testing.T) {
 			CallID: "call-1", Status: "ok", Sensitive: true,
 		},
 	}
+	transcript.Records[0].Delivery = "declaration_order"
 	data, err := transcript.CanonicalJSON()
 	if err != nil {
 		t.Fatal(err)
