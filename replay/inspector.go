@@ -446,8 +446,8 @@ func ValidateTranscript(transcript Transcript) error {
 		if err := validateInspectorRecord(i, record); err != nil {
 			return err
 		}
-		if record.Event.Kind != event.EffectResult && record.Prior.Hashes.EffectLedger != record.Result.Hashes.EffectLedger {
-			return &Divergence{Code: DivergenceSchemaVersion, Index: i, Field: "result.hashes.effectLedger", Expected: "unchanged for non-effect event", Actual: "changed"}
+		if err := validateEffectLedger(i, record.Prior, record.Result, record.Event); err != nil {
+			return err
 		}
 		if err := validateProducerTransition(i, record.Prior, record.Result); err != nil {
 			return err
@@ -460,6 +460,29 @@ func ValidateTranscript(transcript Transcript) error {
 		}
 	}
 	return Validate(transcript, transcript)
+}
+
+func validateEffectLedger(index int, prior, result Digest, accepted event.Event) error {
+	if accepted.Kind != event.EffectResult {
+		if prior.Hashes.EffectLedger != result.Hashes.EffectLedger {
+			return &Divergence{Code: DivergenceSchemaVersion, Index: index, Field: "result.hashes.effectLedger", Expected: "unchanged for non-effect event", Actual: "changed"}
+		}
+		return nil
+	}
+	if result.Hashes == prior.Hashes && result.Revision == prior.Revision && result.DiagnosticCount > prior.DiagnosticCount {
+		return nil
+	}
+	expected, err := state.HashString(struct {
+		Prior string      `json:"prior,omitempty"`
+		Event event.Event `json:"event"`
+	}{prior.Hashes.EffectLedger, accepted})
+	if err != nil {
+		return fmt.Errorf("replay record %d effect ledger: %w", index, err)
+	}
+	if result.Hashes.EffectLedger != expected {
+		return &Divergence{Code: DivergenceEvent, Index: index, Field: "result.hashes.effectLedger", Expected: expected, Actual: result.Hashes.EffectLedger}
+	}
+	return nil
 }
 
 func validateProducerTransition(index int, prior, result Digest) error {
@@ -487,6 +510,9 @@ func validateProducerTransition(index int, prior, result Digest) error {
 func validateInspectorRecord(index int, record Record) error {
 	if record.SchemaVersion != SchemaVersion {
 		return &Divergence{Code: DivergenceSchemaVersion, Index: index, Field: "record.schemaVersion", Expected: SchemaVersion, Actual: record.SchemaVersion}
+	}
+	if record.Event.SchemaVersion != event.SchemaVersion {
+		return &Divergence{Code: DivergenceSchemaVersion, Index: index, Field: "event.schemaVersion", Expected: event.SchemaVersion, Actual: record.Event.SchemaVersion}
 	}
 	if err := record.Event.Validate(); err != nil {
 		return fmt.Errorf("replay record %d: %w", index, err)
