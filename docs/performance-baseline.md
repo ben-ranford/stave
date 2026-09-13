@@ -15,7 +15,12 @@ count, declared fixture metadata, capabilities, and exact run parameters. The ex
 (`os.Args[0]`) is excluded because launch and build locations can differ
 between runs or revisions, and the `-out`/`--out` destination is excluded because it
 names the artifact rather than a measurement parameter. All remaining arguments
-and environment metadata are compared. The report does not contain a fixture
+and environment metadata are compared. Declared invariants must match in order,
+and retained-attempt dispositions must match because they declare the fixed
+collector policy. Retained attempts, when present, must contain nonnegative,
+ordered percentile tuples. The aggregate must match the existing collector’s
+selection rule, and the idle CPU value must equal its lowest retained attempt.
+The report does not contain a fixture
 content hash, so matching declared fixture metadata does not prove identical
 fixture source content. Source revisions and dirty-worktree flags are recorded provenance and may
 differ, including when writing the first report changes the next build’s dirty

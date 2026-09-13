@@ -171,6 +171,9 @@ func ValidateReport(report Report) error {
 		if measurement.Name == "" || measurement.Samples < 1 || measurement.P50 < 0 || measurement.P50 > measurement.P95 || measurement.P95 > measurement.P99 || measurement.P95 > measurement.Limit || measurement.Limit <= 0 || !measurement.AllWithinBudget {
 			return fmt.Errorf("performance report fails absolute budget for %q", measurement.Name)
 		}
+		if err := validateMeasurementAttempts(measurement); err != nil {
+			return fmt.Errorf("performance report has invalid retained attempts for %q: %w", measurement.Name, err)
+		}
 		if _, duplicate := seen[measurement.Name]; duplicate {
 			return fmt.Errorf("performance report has duplicate metric %q", measurement.Name)
 		}
@@ -179,31 +182,62 @@ func ValidateReport(report Report) error {
 	return nil
 }
 
+func validateMeasurementAttempts(measurement Measurement) error {
+	if len(measurement.Attempts) == 0 {
+		return nil
+	}
+	var selected Attempt
+	for _, attempt := range measurement.Attempts {
+		if attempt.P50 < 0 || attempt.P50 > attempt.P95 || attempt.P95 > attempt.P99 {
+			return errors.New("attempt percentiles are not ordered non-negative durations")
+		}
+		// This deliberately mirrors the existing collector's zero-P95 sentinel:
+		// a zero selection is replaced by the next retained attempt.
+		if selected.P95 == 0 || attempt.P95 < selected.P95 {
+			selected = attempt
+		}
+	}
+	if measurement.P50 != selected.P50 || measurement.P95 != selected.P95 || measurement.P99 != selected.P99 {
+		return errors.New("aggregate does not match the selected retained attempt")
+	}
+	return nil
+}
+
 func validateIdleCPUReport(metric RatioMeasurement) error {
 	if metric.Name != "idle_cpu.percent_one_core" || metric.Window <= 0 || math.IsNaN(metric.Value) || math.IsInf(metric.Value, 0) || math.IsNaN(metric.Limit) || math.IsInf(metric.Limit, 0) || metric.Value < 0 || metric.Limit <= 0 || metric.Value >= metric.Limit || !metric.AllWithinBudget {
 		return errors.New("performance report fails its idle CPU budget")
 	}
+	if len(metric.Attempts) == 0 {
+		return nil
+	}
+	minimum := metric.Attempts[0]
 	for _, attempt := range metric.Attempts {
 		if math.IsNaN(attempt) || math.IsInf(attempt, 0) || attempt < 0 {
 			return errors.New("performance report has invalid idle CPU attempts")
 		}
+		if attempt < minimum {
+			minimum = attempt
+		}
+	}
+	if metric.Value != minimum {
+		return errors.New("idle CPU value does not match the lowest retained attempt")
 	}
 	return nil
 }
 
 func compatibleEnvironment(baseline, candidate Report, candidateMeasurements map[string]Measurement) error {
-	if baseline.Host != candidate.Host || baseline.GoVersion != candidate.GoVersion || baseline.GOOS != candidate.GOOS || baseline.GOARCH != candidate.GOARCH || baseline.CPUs != candidate.CPUs || baseline.Nodes != candidate.Nodes || baseline.NodeShape != candidate.NodeShape || baseline.Renderer != candidate.Renderer || baseline.Viewport != candidate.Viewport || !reflect.DeepEqual(baseline.Capabilities, candidate.Capabilities) {
+	if baseline.Host != candidate.Host || baseline.GoVersion != candidate.GoVersion || baseline.GOOS != candidate.GOOS || baseline.GOARCH != candidate.GOARCH || baseline.CPUs != candidate.CPUs || baseline.Nodes != candidate.Nodes || baseline.NodeShape != candidate.NodeShape || baseline.Renderer != candidate.Renderer || baseline.Viewport != candidate.Viewport || !reflect.DeepEqual(baseline.Capabilities, candidate.Capabilities) || !reflect.DeepEqual(baseline.Invariants, candidate.Invariants) {
 		return errors.New("performance reports use incompatible environment or fixture schema")
 	}
 	if baseline.Reproducibility.SampleCount != candidate.Reproducibility.SampleCount || baseline.Reproducibility.Strict != candidate.Reproducibility.Strict || baseline.Reproducibility.GOMAXPROCS != candidate.Reproducibility.GOMAXPROCS || !reflect.DeepEqual(comparableInvocation(baseline.Reproducibility.Invocation), comparableInvocation(candidate.Reproducibility.Invocation)) {
 		return errors.New("performance reports use incompatible reproducibility parameters")
 	}
-	if baseline.AllocLimit != candidate.AllocLimit || baseline.IdleCPU.Limit != candidate.IdleCPU.Limit || baseline.IdleCPU.Name != candidate.IdleCPU.Name || len(baseline.IdleCPU.Attempts) != len(candidate.IdleCPU.Attempts) || len(baseline.Measurements) != len(candidate.Measurements) {
+	if baseline.AllocLimit != candidate.AllocLimit || baseline.IdleCPU.Limit != candidate.IdleCPU.Limit || baseline.IdleCPU.Name != candidate.IdleCPU.Name || baseline.IdleCPU.Disposition != candidate.IdleCPU.Disposition || len(baseline.IdleCPU.Attempts) != len(candidate.IdleCPU.Attempts) || len(baseline.Measurements) != len(candidate.Measurements) {
 		return errors.New("performance reports use incompatible absolute budget schema")
 	}
 	for _, measurement := range baseline.Measurements {
 		candidateMetric := candidateMeasurements[measurement.Name]
-		if candidateMetric.Name == "" || candidateMetric.Limit != measurement.Limit || candidateMetric.Samples != measurement.Samples || len(candidateMetric.Attempts) != len(measurement.Attempts) {
+		if candidateMetric.Name == "" || candidateMetric.Limit != measurement.Limit || candidateMetric.Samples != measurement.Samples || candidateMetric.Disposition != measurement.Disposition || len(candidateMetric.Attempts) != len(measurement.Attempts) {
 			return fmt.Errorf("performance reports use incompatible metric schema for %q", measurement.Name)
 		}
 	}
