@@ -10,6 +10,7 @@ RIGOR := $(GO) run ./scripts/rigor/cmd/rigor
 
 .PHONY: help tools fmt fmt-check lint vet test race coverage coverage-threshold \
 	fuzz-smoke benchmark-smoke verify-performance govulncheck dependency-inventory license-inventory \
+	fuzz-smoke-regression \
 	suppression-check \
 	api-refresh api-boundary traceability-refresh schema-freshness generated-refresh \
 	adapters conformance-check atlas-check workflow-validate hooks-install hooks-pre-commit-dry-run \
@@ -62,6 +63,9 @@ coverage-threshold: coverage
 
 fuzz-smoke:
 	./scripts/rigor/run-fuzz-smoke.sh
+
+fuzz-smoke-regression:
+	./scripts/rigor/run-fuzz-smoke.test.sh
 
 benchmark-smoke:
 	$(GO) test -run '^$$' -bench . -benchtime=1x ./...
@@ -134,7 +138,7 @@ hooks-pre-push-dry-run:
 
 fast: fmt-check lint vet suppression-check api-boundary schema-freshness
 
-verify: fast test race coverage-threshold fuzz-smoke benchmark-smoke verify-performance dependency-inventory license-inventory adapters conformance-check atlas-check
+verify: fast test race coverage-threshold fuzz-smoke-regression fuzz-smoke benchmark-smoke verify-performance dependency-inventory license-inventory adapters conformance-check atlas-check
 
 release-contract:
 	STAVE_CANDIDATE_GATE=1 $(GO) test ./requirements -count=1
