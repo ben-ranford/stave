@@ -3,6 +3,8 @@ package performance
 import (
 	"encoding/json"
 	"math"
+	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -155,5 +157,31 @@ func TestCompareAllowsBuildProvenanceAndObservedIdleWindowChanges(t *testing.T) 
 	candidate.IdleCPU.Window += time.Nanosecond
 	if _, err := Compare(baseline, candidate); err != nil {
 		t.Fatalf("source provenance or observed elapsed window rejected: %v", err)
+	}
+}
+
+func TestReportJSONValidationDoesNotCopyEnclosingSubtrees(t *testing.T) {
+	data := []byte(`{"unknown":` + strings.Repeat("[", 48) + `"` + strings.Repeat("x", 1<<20) + `"` + strings.Repeat("]", 48) + `}`)
+	runtime.GC()
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	if err := validateJSONKeys(data, 0); err != nil {
+		t.Fatal(err)
+	}
+	runtime.ReadMemStats(&after)
+	// Allow decoder buffering and token copies, but not one full value copy per ancestor.
+	if allocated := after.TotalAlloc - before.TotalAlloc; allocated > uint64(12*len(data)) {
+		t.Fatalf("nested JSON validation allocated %d bytes for %d input bytes", allocated, len(data))
+	}
+}
+
+func TestReportJSONValidationRetainsNestedContracts(t *testing.T) {
+	for _, data := range []string{`{"a":[{"x":1,"x":2}]}`, `{"a":[1,]}`, `{"a":[]} {}`, strings.Repeat("[", 66) + `0` + strings.Repeat("]", 66)} {
+		if err := validateJSONKeys([]byte(data), 0); err == nil {
+			t.Fatalf("invalid nested JSON accepted: %.80s", data)
+		}
+	}
+	if err := validateJSONKeys([]byte(strings.Repeat("[", 65)+`0`+strings.Repeat("]", 65)), 0); err != nil {
+		t.Fatalf("depth boundary rejected: %v", err)
 	}
 }
