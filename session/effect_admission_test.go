@@ -148,3 +148,21 @@ func TestSessionEffectsWaitForPublication(t *testing.T) {
 		t.Fatal("published effect did not reach its port")
 	}
 }
+
+func TestEffectAdmissionDequeueObservesClosureBeforeDoneSignal(t *testing.T) {
+	q := newEffectAdmissionQueue(1)
+	if err := q.reserve(); err != nil {
+		t.Fatal(err)
+	}
+	q.commit([]effect.Call{{Sequence: 1}})
+	// Model the close operation after it marks the queue closed but before it
+	// signals done or drains the buffer. Receiving alone cannot authorize work.
+	q.mu.Lock()
+	q.closed = true
+	q.mu.Unlock()
+	calls, ok := q.next(context.Background())
+	close(q.done)
+	if ok || calls != nil {
+		t.Fatalf("closing queue returned pending batch %#v", calls)
+	}
+}

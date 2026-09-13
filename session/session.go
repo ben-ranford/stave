@@ -684,6 +684,11 @@ func (q *effectAdmissionQueue) next(ctx context.Context) ([]effect.Call, bool) {
 	case <-q.done:
 		return nil, false
 	case calls := <-q.committed:
+		q.mu.Lock()
+		defer q.mu.Unlock()
+		if q.closed {
+			return nil, false
+		}
 		return calls, true
 	}
 }
