@@ -3,7 +3,6 @@ package agent
 import (
 	"bytes"
 	"context"
-	"errors"
 	"io"
 	"strings"
 	"sync"
@@ -32,32 +31,7 @@ func TestSnapshotSubscriptionRequiresNegotiatedExtensionAndIsIdempotentlyRemoved
 		},
 		SnapshotPublicationWaiter: func(ctx context.Context, _ uint64) error { <-ctx.Done(); return ctx.Err() },
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	reader, writer := io.Pipe()
-	output := &subscriptionTestWriter{done: ctx.Done(), err: ctx.Err, lines: make(chan []byte, 8)}
-	done := make(chan error, 1)
-	go func() { done <- New(options).Serve(ctx, reader, output) }()
-	joined := false
-	t.Cleanup(func() {
-		_ = writer.Close()
-		if joined {
-			return
-		}
-		select {
-		case err := <-done:
-			if err != nil && !errors.Is(err, context.Canceled) {
-				t.Errorf("Serve cleanup error = %v", err)
-			}
-		case <-time.After(time.Second):
-			t.Error("Serve cleanup did not finish")
-		}
-	})
-	c := &subscriptionTestClient{t: t, done: ctx.Done(), in: writer, out: output}
-	c.request(`{"jsonrpc":"2.0","id":1,"method":"stave.initialize","params":{"protocolVersions":["1.0"],"capabilities":{"snapshotSubscriptionVersions":["stave.snapshot.subscribe/v1"]}}}`)
-	c.response(1)
-	c.request(`{"jsonrpc":"2.0","id":2,"method":"stave.initialized"}`)
-	c.response(2)
+	c, finish := startSubscriptionLifecycleClient(t, options)
 	c.request(`{"jsonrpc":"2.0","id":3,"method":"stave.snapshot.subscribe"}`)
 	baseline := c.line()
 	if !bytes.Contains(baseline, []byte(`"snapshot":{"schemaVersion":"stave.semantic/v1"`)) {
@@ -65,16 +39,12 @@ func TestSnapshotSubscriptionRequiresNegotiatedExtensionAndIsIdempotentlyRemoved
 	}
 	select {
 	case <-baselineContextCancelled:
-	case <-ctx.Done():
+	case <-c.done:
 		t.Fatal("completed baseline context was not released")
 	}
 	c.request(`{"jsonrpc":"2.0","id":4,"method":"stave.snapshot.unsubscribe"}`)
 	c.response(4)
-	_ = writer.Close()
-	if err := <-done; err != nil {
-		t.Fatal(err)
-	}
-	joined = true
+	finish()
 }
 
 func TestSnapshotSubscriptionBaselinePrecedesNotification(t *testing.T) {
