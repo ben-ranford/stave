@@ -52,8 +52,8 @@ module versions and tags; begin with the root module. See the
 [compatibility policy](docs/compatibility.md) and [security contract](docs/security.md)
 before integrating consequential agent actions.
 
-The v1.1.0 changes in this development checkout are unreleased. Pin a published
-tag before deploying consequential agent actions; use the development branch for
+Development checkouts may contain unreleased changes. Pin a published tag
+before deploying consequential agent actions; use the development branch for
 evaluation only.
 
 ## Quick start
