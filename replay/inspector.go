@@ -14,6 +14,7 @@ import (
 
 	"github.com/ben-ranford/stave/effect"
 	"github.com/ben-ranford/stave/event"
+	"github.com/ben-ranford/stave/semantic"
 	"github.com/ben-ranford/stave/state"
 )
 
@@ -431,6 +432,16 @@ func ValidateTranscript(transcript Transcript) error {
 	if err := transcript.Initial.VerifyChecksum(); err != nil {
 		return &Divergence{Code: DivergenceCheckpoint, Index: -1, Field: "initial.checksum", Expected: "valid", Actual: err.Error()}
 	}
+	snapshot, err := decodeInitialSemanticSnapshot(transcript.Initial.Tree)
+	if err != nil {
+		return &Divergence{Code: DivergenceCheckpoint, Index: -1, Field: "initial.tree", Expected: "valid semantic snapshot", Actual: "invalid"}
+	}
+	if snapshot.Revision != transcript.Initial.Revision {
+		return &Divergence{Code: DivergenceRevision, Index: -1, Field: "initial.tree.revision", Expected: transcript.Initial.Revision, Actual: snapshot.Revision}
+	}
+	if snapshot.TreeHash != transcript.Initial.Hashes.Tree {
+		return &Divergence{Code: DivergenceTreeHash, Index: -1, Field: "initial.tree.treeHash", Expected: transcript.Initial.Hashes.Tree, Actual: snapshot.TreeHash}
+	}
 	capabilityHash, err := state.HashString(transcript.Initial.Capabilities.Clone())
 	if err != nil {
 		return fmt.Errorf("initial capability manifest hash: %w", err)
@@ -445,6 +456,83 @@ func ValidateTranscript(transcript Transcript) error {
 		return err
 	}
 	return Validate(transcript, transcript)
+}
+
+func decodeInitialSemanticSnapshot(tree any) (semantic.Snapshot, error) {
+	data, err := json.Marshal(tree)
+	if err != nil {
+		return semantic.Snapshot{}, err
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	decoder.DisallowUnknownFields()
+	var wire semanticSnapshotWire
+	if err := decoder.Decode(&wire); err != nil {
+		return semantic.Snapshot{}, err
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		if err == nil {
+			return semantic.Snapshot{}, errors.New("trailing semantic snapshot")
+		}
+		return semantic.Snapshot{}, err
+	}
+	root, err := wire.Root.node()
+	if err != nil {
+		return semantic.Snapshot{}, err
+	}
+	treeValue, err := semantic.NewTree(wire.Revision, root)
+	if err != nil {
+		return semantic.Snapshot{}, err
+	}
+	snapshot := treeValue.Snapshot()
+	if wire.SchemaVersion != snapshot.SchemaVersion || wire.TreeHash != snapshot.TreeHash {
+		return semantic.Snapshot{}, errors.New("semantic snapshot metadata mismatch")
+	}
+	if err := snapshot.Validate(); err != nil {
+		return semantic.Snapshot{}, err
+	}
+	return snapshot, nil
+}
+
+type semanticSnapshotWire struct {
+	SchemaVersion string           `json:"schemaVersion"`
+	Revision      uint64           `json:"revision"`
+	TreeHash      string           `json:"treeHash"`
+	Root          semanticNodeWire `json:"root"`
+}
+
+type semanticNodeWire struct {
+	ID          semantic.NodeID      `json:"id"`
+	Generation  uint32               `json:"generation"`
+	Role        semantic.Role        `json:"role"`
+	Name        string               `json:"name"`
+	Description string               `json:"description,omitempty"`
+	Value       semantic.Value       `json:"value,omitempty"`
+	States      []semantic.State     `json:"states,omitempty"`
+	Relations   []semantic.Relation  `json:"relations,omitempty"`
+	Actions     []semantic.ActionRef `json:"actions,omitempty"`
+	Layout      semantic.LayoutSpec  `json:"layout,omitempty"`
+	Style       semantic.StyleIntent `json:"style,omitempty"`
+	Children    []semanticNodeWire   `json:"children,omitempty"`
+	Flags       semantic.Flags       `json:"flags"`
+	Metadata    map[string]string    `json:"metadata,omitempty"`
+}
+
+func (wire semanticNodeWire) node() (semantic.Node, error) {
+	children := make([]semantic.Node, len(wire.Children))
+	for i, child := range wire.Children {
+		decoded, err := child.node()
+		if err != nil {
+			return semantic.Node{}, err
+		}
+		children[i] = decoded
+	}
+	return semantic.NewNode(semantic.NodeSpec{
+		ID: wire.ID, Generation: wire.Generation, Role: wire.Role, Name: wire.Name, Description: wire.Description,
+		Value: wire.Value, States: wire.States, Relations: wire.Relations, Actions: wire.Actions, Layout: wire.Layout,
+		Style: wire.Style, Children: children, Flags: wire.Flags, Metadata: wire.Metadata,
+	})
 }
 
 func validateTranscriptProducerRecords(records []Record) error {
