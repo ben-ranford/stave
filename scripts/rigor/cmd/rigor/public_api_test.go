@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -105,6 +106,152 @@ func TestPublicAPIInventoryNormalizesParameterNamesAndInterfaceOrder(t *testing.
 	}
 }
 
+func TestPublicAPIInventoryNormalizesNestedFunctionParameterNames(t *testing.T) {
+	dir := t.TempDir()
+	render := func(source string) string {
+		t.Helper()
+		path := filepath.Join(dir, "api.go")
+		if err := os.WriteFile(path, []byte(source), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		got, err := renderPublicAPI("example.com/api", []goListPackage{{ImportPath: "example.com/api", Dir: dir, GoFiles: []string{"api.go"}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	for name, declarations := range map[string][2]string{
+		"slice":   {"func Keep(value []func(value string) string) {}", "func Keep(input []func(input string) string) {}"},
+		"array":   {"func Keep(value [1]func(value string) string) {}", "func Keep(input [1]func(input string) string) {}"},
+		"map":     {"func Keep(value map[string]func(value string) string) {}", "func Keep(input map[string]func(input string) string) {}"},
+		"channel": {"func Keep(value chan func(value string) string) {}", "func Keep(input chan func(input string) string) {}"},
+		"generic": {"type Box[T any] struct{}\nfunc Keep(value Box[func(value string) string]) {}", "type Box[T any] struct{}\nfunc Keep(input Box[func(input string) string]) {}"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			before := render("package api\n" + declarations[0] + "\n")
+			after := render("package api\n" + declarations[1] + "\n")
+			if before != after {
+				t.Fatalf("nested function parameter rename changed inventory:\n%s\n%s", before, after)
+			}
+		})
+	}
+}
+
+func TestPublicAPIInventoryNormalizesAnonymousTypeParameterNames(t *testing.T) {
+	dir := t.TempDir()
+	render := func(source string) string {
+		t.Helper()
+		path := filepath.Join(dir, "api.go")
+		if err := os.WriteFile(path, []byte(source), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		got, err := renderPublicAPI("example.com/api", []goListPackage{{ImportPath: "example.com/api", Dir: dir, GoFiles: []string{"api.go"}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	for name, declarations := range map[string][2]string{
+		"struct": {
+			"func Keep(value struct { Callback func(value string) string }) {}",
+			"func Keep(value struct { Callback func(input string) string }) {}",
+		},
+		"interface": {
+			"func Keep(value interface { Zebra(func(value string) string); Alpha() }) {}",
+			"func Keep(value interface { Alpha(); Zebra(func(input string) string) }) {}",
+		},
+		"constraint": {
+			"func Keep[T interface { ~func(value string) string }](value T) {}",
+			"func Keep[T interface { ~func(input string) string }](value T) {}",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			before := render("package api\n" + declarations[0] + "\n")
+			after := render("package api\n" + declarations[1] + "\n")
+			if before != after {
+				t.Fatalf("anonymous %s parameter rename changed inventory:\n%s\n%s", name, before, after)
+			}
+		})
+	}
+}
+
+func TestPublicAPIInventoryPreservesAnonymousStructFieldsTagsAndEmbeddings(t *testing.T) {
+	dir := t.TempDir()
+	source := "package api\ntype Embedded struct{}\nfunc Keep(value struct { Embedded; private string `json:\"private\"`; Callback func(value string) string `json:\"callback\"` }) {}\n"
+	if err := os.WriteFile(filepath.Join(dir, "api.go"), []byte(source), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	inventory, err := renderPublicAPI("example.com/api", []goListPackage{{ImportPath: "example.com/api", Dir: dir, GoFiles: []string{"api.go"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `func Keep(struct{Embedded; private string "json:\"private\""; Callback func(string) string "json:\"callback\""})`
+	if !strings.Contains(inventory, want) {
+		t.Fatalf("anonymous struct details were not preserved:\n%s", inventory)
+	}
+}
+
+func TestPublicAPIInventoryParenthesizesReceiveOnlyChannelElement(t *testing.T) {
+	dir := t.TempDir()
+	render := func(source string) string {
+		t.Helper()
+		path := filepath.Join(dir, "api.go")
+		if err := os.WriteFile(path, []byte(source), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		got, err := renderPublicAPI("example.com/api", []goListPackage{{ImportPath: "example.com/api", Dir: dir, GoFiles: []string{"api.go"}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+
+	receiveElement := render("package api\nfunc Keep(value chan (<-chan int)) {}\n")
+	if !strings.Contains(receiveElement, "func Keep(chan (<-chan int))") {
+		t.Fatalf("receive-only channel element was not parenthesized:\n%s", receiveElement)
+	}
+	sendOuter := render("package api\nfunc Keep(value chan<- chan int) {}\n")
+	if receiveElement == sendOuter {
+		t.Fatalf("distinct nested channel types produced identical inventory:\n%s", receiveElement)
+	}
+}
+
+func TestPublicAPIInventorySelectsRequestedBuildTarget(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, source string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(source), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("go.mod", "module example.com/api\n\ngo 1.22\n")
+	write("api.go", "package api\ntype Common struct{}\n")
+	write("api_linux.go", "//go:build linux\n\npackage api\ntype LinuxOnly struct{}\n")
+	write("api_windows.go", "//go:build windows\n\npackage api\n\nimport \"syscall\"\n\nvar _ = syscall.UTF16FromString\ntype WindowsOnly struct{}\n")
+	for _, target := range []struct {
+		goos string
+		want string
+		omit string
+	}{
+		{goos: "linux", want: "type LinuxOnly struct {  }", omit: "WindowsOnly"},
+		{goos: "windows", want: "type WindowsOnly struct {  }", omit: "LinuxOnly"},
+	} {
+		t.Run(target.goos, func(t *testing.T) {
+			pkgs, err := listPackagesInDirForTarget(context.Background(), dir, false, target.goos, "amd64")
+			if err != nil {
+				t.Fatal(err)
+			}
+			inventory, err := renderPublicAPIForTarget(context.Background(), "example.com/api", pkgs, target.goos, "amd64")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(inventory, target.want) || strings.Contains(inventory, target.omit) {
+				t.Fatalf("target %s inventory selected wrong files:\n%s", target.goos, inventory)
+			}
+		})
+	}
+}
+
 func TestPublicAPIInventoryPreservesImportedTypePackageIdentity(t *testing.T) {
 	dir := t.TempDir()
 	write := func(relative, source string) {
@@ -136,11 +283,12 @@ func TestPublicAPIInventoryPreservesImportedTypePackageIdentity(t *testing.T) {
 		return inventory
 	}
 	for name, declaration := range map[string]string{
-		"function":   "func Keep(value $ID) $ID { return value }\n",
-		"interface":  "type Contract interface { Keep($ID) $ID }\n",
-		"struct":     "type Record struct { ID $ID }\n",
-		"variable":   "var Default $ID\n",
-		"constraint": "type Holder[T $Constraint] struct { Value T }\n",
+		"function":         "func Keep(value $ID) $ID { return value }\n",
+		"interface":        "type Contract interface { Keep($ID) $ID }\n",
+		"struct":           "type Record struct { ID $ID }\n",
+		"anonymous-struct": "func Keep(value struct { id $ID }) {}\n",
+		"variable":         "var Default $ID\n",
+		"constraint":       "type Holder[T $Constraint] struct { Value T }\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			one := render("example.com/model/one", "model", declaration)

@@ -7,6 +7,7 @@ COVERAGE_DIR := .coverage
 COVERAGE_PROFILE := $(COVERAGE_DIR)/coverage.out
 GO_FILES := $(shell rg --files -g '*.go' .)
 RIGOR := $(GO) run ./scripts/rigor/cmd/rigor
+RELEASE_BASELINE_TARGETS := linux/amd64 darwin/amd64 darwin/arm64 windows/amd64
 
 .PHONY: help tools fmt fmt-check lint vet test race coverage coverage-threshold \
 	fuzz-smoke benchmark-smoke verify-performance govulncheck dependency-inventory license-inventory \
@@ -150,7 +151,9 @@ release-ga-contract:
 
 release-baseline:
 	$(GO) test ./scripts/rigor/cmd/releasebaseline -run '^TestConsumerCompilerFixtures$$' -count=1
-	$(GO) run ./scripts/rigor/cmd/releasebaseline --go "$(GO)"
+	@for target in $(RELEASE_BASELINE_TARGETS); do \
+		$(GO) run ./scripts/rigor/cmd/releasebaseline --go "$(GO)" --goos "$${target%/*}" --goarch "$${target#*/}"; \
+	done
 
 release-baseline-development:
 	$(GO) run ./scripts/rigor/cmd/releasebaseline --go "$(GO)" --development --baseline-tag v1.0.0-rc.2

@@ -64,8 +64,10 @@ The following are additive when existing meaning remains intact:
 
 ## Minor-release baseline gate
 
-`make release-baseline` runs the focused consumer fixture matrix, regenerates
-the candidate public API inventory from source, and compares it with the newest
+`make release-baseline` runs the focused consumer fixture matrix. For each
+supported public build target (`linux/amd64`, `darwin/amd64`, `darwin/arm64`,
+and `windows/amd64`), it regenerates the candidate public API inventory from
+source and compares it with the newest
 annotated stable `v1.x.y` tag on a strict
 ancestor of the candidate. Tags on the candidate itself or unrelated/future
 commits cannot serve as its baseline. It

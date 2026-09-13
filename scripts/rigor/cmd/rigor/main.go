@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	staveconfig "github.com/ben-ranford/stave/config"
@@ -32,6 +33,7 @@ type goListModule struct {
 	Path    string
 	Version string
 	Main    bool
+	Dir     string
 }
 
 type goListPackage struct {
@@ -48,6 +50,7 @@ type sourceImporter struct {
 	packages map[string]goListPackage
 	checked  map[string]*types.Package
 	standard types.Importer
+	sizes    types.Sizes
 }
 
 func (i *sourceImporter) Import(path string) (*types.Package, error) {
@@ -72,7 +75,7 @@ func (i *sourceImporter) Import(path string) (*types.Package, error) {
 		return nil, fmt.Errorf("package %s has no Go files", path)
 	}
 
-	pkg, err := (&types.Config{Importer: i}).Check(path, i.fset, files, nil)
+	pkg, err := (&types.Config{Importer: i, Sizes: i.sizes}).Check(path, i.fset, files, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -158,13 +161,18 @@ func run(ctx context.Context, args []string) error {
 		fs := flag.NewFlagSet("public-api", flag.ContinueOnError)
 		writePath := fs.String("write", "", "write output to path")
 		directory := fs.String("dir", "", "module directory to inventory")
+		goos := fs.String("goos", "", "target GOOS for build-tag selection")
+		goarch := fs.String("goarch", "", "target GOARCH for build-tag selection")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
+		}
+		if (*goos == "") != (*goarch == "") {
+			return errors.New("public-api requires both --goos and --goarch")
 		}
 		if *directory == "" {
 			*directory = mustRepoRoot()
 		}
-		pkgs, err := listPackagesInDir(ctx, *directory, false)
+		pkgs, err := listPackagesInDirForTarget(ctx, *directory, false, *goos, *goarch)
 		if err != nil {
 			return err
 		}
@@ -172,7 +180,7 @@ func run(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
-		content, err := renderPublicAPI(modulePath, pkgs)
+		content, err := renderPublicAPIForTarget(ctx, modulePath, pkgs, *goos, *goarch)
 		if err != nil {
 			return err
 		}
@@ -239,6 +247,10 @@ func run(ctx context.Context, args []string) error {
 }
 
 func renderPublicAPI(modulePath string, pkgs []goListPackage) (string, error) {
+	return renderPublicAPIForTarget(context.Background(), modulePath, pkgs, "", "")
+}
+
+func renderPublicAPIForTarget(ctx context.Context, modulePath string, pkgs []goListPackage, goos, goarch string) (string, error) {
 	exported := make(map[string][]string)
 	fset := token.NewFileSet()
 	packageIndex := make(map[string]goListPackage, len(pkgs))
@@ -249,7 +261,8 @@ func renderPublicAPI(modulePath string, pkgs []goListPackage) (string, error) {
 		fset:     fset,
 		packages: packageIndex,
 		checked:  make(map[string]*types.Package),
-		standard: importer.Default(),
+		standard: targetPackageImporter(ctx, fset, packageDirectory(pkgs), rigorGoBinary(), goos, goarch),
+		sizes:    targetSizes(goarch),
 	}
 
 	for _, pkg := range pkgs {
@@ -286,7 +299,7 @@ func renderPublicAPI(modulePath string, pkgs []goListPackage) (string, error) {
 				Defs:  make(map[*ast.Ident]types.Object),
 				Types: make(map[ast.Expr]types.TypeAndValue),
 			}
-			config := types.Config{Importer: importer}
+			config := types.Config{Importer: importer, Sizes: importer.sizes}
 			files := make([]*ast.File, 0, len(parsedPkg.Files))
 			for _, file := range parsedPkg.Files {
 				files = append(files, file)
@@ -367,6 +380,47 @@ func renderPublicAPI(modulePath string, pkgs []goListPackage) (string, error) {
 		out.WriteByte('\n')
 	}
 	return strings.TrimRight(out.String(), "\n") + "\n", nil
+}
+
+func targetSizes(goarch string) types.Sizes {
+	if goarch == "" {
+		return nil
+	}
+	return types.SizesFor("gc", goarch)
+}
+
+func packageDirectory(pkgs []goListPackage) string {
+	for _, pkg := range pkgs {
+		if pkg.Module != nil && pkg.Module.Main && pkg.Module.Dir != "" {
+			return pkg.Module.Dir
+		}
+	}
+	if len(pkgs) > 0 {
+		return pkgs[0].Dir
+	}
+	return mustRepoRoot()
+}
+
+func targetPackageImporter(ctx context.Context, fset *token.FileSet, directory, goBinary, goos, goarch string) types.Importer {
+	if goos == "" {
+		return importer.Default()
+	}
+	return importer.ForCompiler(fset, "gc", func(path string) (io.ReadCloser, error) {
+		output, err := execCommandInDirEnv(ctx, directory, goBinary, []string{"GOOS=" + goos, "GOARCH=" + goarch}, "list", "-export", "-json", path)
+		if err != nil {
+			return nil, err
+		}
+		var pkg struct {
+			Export string
+		}
+		if err := json.Unmarshal(output, &pkg); err != nil {
+			return nil, err
+		}
+		if pkg.Export == "" {
+			return nil, fmt.Errorf("target package %s has no export data", path)
+		}
+		return os.Open(pkg.Export)
+	})
 }
 
 func publicValueDeclaration(label, name string, object types.Object, qualifier types.Qualifier) (string, error) {
@@ -632,13 +686,21 @@ func listPackages(ctx context.Context, withDeps bool) ([]goListPackage, error) {
 }
 
 func listPackagesInDir(ctx context.Context, directory string, withDeps bool) ([]goListPackage, error) {
+	return listPackagesInDirForTarget(ctx, directory, withDeps, "", "")
+}
+
+func listPackagesInDirForTarget(ctx context.Context, directory string, withDeps bool, goos, goarch string) ([]goListPackage, error) {
 	args := []string{"list", "-e", "-json"}
 	if withDeps {
 		args = append(args, "-deps")
 	}
 	args = append(args, "./...")
 
-	output, err := execCommandInDir(ctx, directory, rigorGoBinary(), args...)
+	environment := []string(nil)
+	if goos != "" {
+		environment = []string{"GOOS=" + goos, "GOARCH=" + goarch}
+	}
+	output, err := execCommandInDirEnv(ctx, directory, rigorGoBinary(), environment, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -729,8 +791,15 @@ func execCommand(ctx context.Context, name string, args ...string) ([]byte, erro
 }
 
 func execCommandInDir(ctx context.Context, directory, name string, args ...string) ([]byte, error) {
+	return execCommandInDirEnv(ctx, directory, name, nil, args...)
+}
+
+func execCommandInDirEnv(ctx context.Context, directory, name string, environment []string, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = directory
+	if len(environment) > 0 {
+		cmd.Env = append(os.Environ(), environment...)
+	}
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -810,10 +879,117 @@ func typeTuple(values *types.Tuple, variadic bool, qualifier types.Qualifier) st
 }
 
 func canonicalTypeString(typ types.Type, qualifier types.Qualifier) string {
-	if signature, ok := typ.(*types.Signature); ok {
-		return "func" + typeSignature(signature, qualifier)
+	switch typ := typ.(type) {
+	case *types.Signature:
+		return "func" + typeSignature(typ, qualifier)
+	case *types.Pointer:
+		return "*" + canonicalTypeString(typ.Elem(), qualifier)
+	case *types.Slice:
+		return "[]" + canonicalTypeString(typ.Elem(), qualifier)
+	case *types.Array:
+		return fmt.Sprintf("[%d]%s", typ.Len(), canonicalTypeString(typ.Elem(), qualifier))
+	case *types.Map:
+		return "map[" + canonicalTypeString(typ.Key(), qualifier) + "]" + canonicalTypeString(typ.Elem(), qualifier)
+	case *types.Chan:
+		prefix := "chan "
+		switch typ.Dir() {
+		case types.SendOnly:
+			prefix = "chan<- "
+		case types.RecvOnly:
+			prefix = "<-chan "
+		}
+		element := canonicalTypeString(typ.Elem(), qualifier)
+		if typ.Dir() == types.SendRecv {
+			if channel, ok := typ.Elem().(*types.Chan); ok && channel.Dir() == types.RecvOnly {
+				element = "(" + element + ")"
+			}
+		}
+		return prefix + element
+	case *types.Struct:
+		return canonicalStructType(typ, qualifier)
+	case *types.Interface:
+		return canonicalInterfaceType(typ, qualifier)
+	case *types.Union:
+		return canonicalUnionType(typ, qualifier)
+	case *types.Named:
+		arguments := typ.TypeArgs()
+		if arguments.Len() == 0 {
+			break
+		}
+		values := make([]string, 0, arguments.Len())
+		for index := 0; index < arguments.Len(); index++ {
+			values = append(values, canonicalTypeString(arguments.At(index), qualifier))
+		}
+		name := typ.Obj().Name()
+		if pkg := typ.Obj().Pkg(); pkg != nil {
+			if prefix := qualifier(pkg); prefix != "" {
+				name = prefix + "." + name
+			}
+		}
+		return name + "[" + strings.Join(values, ", ") + "]"
 	}
 	return types.TypeString(typ, qualifier)
+}
+
+func canonicalStructType(typ *types.Struct, qualifier types.Qualifier) string {
+	fields := make([]string, 0, typ.NumFields())
+	for index := 0; index < typ.NumFields(); index++ {
+		field := typ.Field(index)
+		declaration := ""
+		if !field.Embedded() {
+			name := field.Name()
+			if !field.Exported() && field.Pkg() != nil {
+				if prefix := qualifier(field.Pkg()); prefix != "" {
+					name = prefix + "." + name
+				}
+			}
+			declaration = name + " "
+		}
+		declaration += canonicalTypeString(field.Type(), qualifier)
+		if tag := typ.Tag(index); tag != "" {
+			declaration += " " + strconv.Quote(tag)
+		}
+		fields = append(fields, declaration)
+	}
+	return "struct{" + strings.Join(fields, "; ") + "}"
+}
+
+func canonicalInterfaceType(typ *types.Interface, qualifier types.Qualifier) string {
+	typ.Complete()
+	elements := make([]string, 0, typ.NumEmbeddeds()+typ.NumExplicitMethods())
+	for index := 0; index < typ.NumEmbeddeds(); index++ {
+		elements = append(elements, canonicalTypeString(typ.EmbeddedType(index), qualifier))
+	}
+	for index := 0; index < typ.NumExplicitMethods(); index++ {
+		method := typ.ExplicitMethod(index)
+		name := method.Name()
+		if !method.Exported() && method.Pkg() != nil {
+			if prefix := qualifier(method.Pkg()); prefix != "" {
+				name = prefix + "." + name
+			}
+		}
+		if signature, ok := method.Type().(*types.Signature); ok {
+			elements = append(elements, name+typeSignature(signature, qualifier))
+			continue
+		}
+		elements = append(elements, name+" "+canonicalTypeString(method.Type(), qualifier))
+	}
+	sort.Strings(elements)
+	return "interface{" + strings.Join(elements, "; ") + "}"
+}
+
+func canonicalUnionType(typ *types.Union, qualifier types.Qualifier) string {
+	terms := make([]string, 0, typ.Len())
+	for index := 0; index < typ.Len(); index++ {
+		term := typ.Term(index)
+		value := canonicalTypeString(term.Type(), qualifier)
+		if term.Tilde() {
+			value = "~" + value
+		}
+		terms = append(terms, value)
+	}
+	sort.Strings(terms)
+	return strings.Join(terms, " | ")
 }
 
 func packagePathQualifier(current *types.Package) types.Qualifier {

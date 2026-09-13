@@ -78,6 +78,14 @@ func TestCompareInventoriesRejectsStructFieldReordering(t *testing.T) {
 	}
 }
 
+func TestCompareInventoriesRejectsNestedStructFieldChanges(t *testing.T) {
+	baseline := "# Public API inventory\nmodule example.com/api\n\n[example.com/api]\ntype Options struct { F struct { X int; Y int } }\n"
+	candidate := "# Public API inventory\nmodule example.com/api\n\n[example.com/api]\ntype Options struct { F struct { X int; Z bool; Y int } }\n"
+	if err := compareInventories(baseline, candidate); err == nil {
+		t.Fatal("nested struct field change was accepted")
+	}
+}
+
 func TestCompareInventoriesRejectsDeletedEmptyPackageAndAllowsFirstField(t *testing.T) {
 	baseline := "# Public API inventory\nmodule example.com/api\n\n[example.com/api]\ntype Empty struct { }\n\n[example.com/api/empty]\n"
 	if err := compareInventories(baseline, "# Public API inventory\nmodule example.com/api\n\n[example.com/api]\ntype Empty struct { Enabled bool }\n"); err == nil {
@@ -121,6 +129,27 @@ func TestPrereleaseV1TagRejectsLeadingZeroNumericIdentifiers(t *testing.T) {
 		if !prereleaseV1Tag.MatchString(tag) {
 			t.Fatalf("valid prerelease %q rejected", tag)
 		}
+	}
+}
+
+func TestInventoryForDirUsesRequestedBuildTarget(t *testing.T) {
+	directory := t.TempDir()
+	write := func(name, source string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(directory, name), []byte(source), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("go.mod", "module example.com/api\n\ngo 1.22\n")
+	write("api.go", "package api\ntype Common struct{}\n")
+	write("api_linux.go", "//go:build linux\n\npackage api\ntype LinuxOnly struct{}\n")
+	write("api_windows.go", "//go:build windows\n\npackage api\n\nimport \"syscall\"\n\nvar _ = syscall.UTF16FromString\ntype WindowsOnly struct{}\n")
+	inventory, err := inventoryForDir(context.Background(), directory, "go", "windows", "amd64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(inventory, "type WindowsOnly struct {  }") || strings.Contains(inventory, "LinuxOnly") {
+		t.Fatalf("windows inventory selected wrong files:\n%s", inventory)
 	}
 }
 

@@ -49,6 +49,8 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 	development := flags.Bool("development", false, "allow an explicitly named prerelease development baseline")
 	baselineTag := flags.String("baseline-tag", "", "baseline tag; required for development mode")
 	goBinary := flags.String("go", "go", "Go executable used for both inventories")
+	goos := flags.String("goos", "", "target GOOS for build-tag selection")
+	goarch := flags.String("goarch", "", "target GOARCH for build-tag selection")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -60,6 +62,9 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 	}
 	if !*development && *baselineTag != "" {
 		return errors.New("stable comparison selects its own stable v1 tag; use --development for an explicit prerelease baseline")
+	}
+	if (*goos == "") != (*goarch == "") {
+		return errors.New("release-baseline requires both --goos and --goarch")
 	}
 
 	tag := *baselineTag
@@ -73,11 +78,11 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 	if *development && !prereleaseV1Tag.MatchString(tag) {
 		return fmt.Errorf("baseline tag %q is not a v1 prerelease semver tag", tag)
 	}
-	base, err := loadBaseline(ctx, tag, *goBinary)
+	base, err := loadBaseline(ctx, tag, *goBinary, *goos, *goarch)
 	if err != nil {
 		return err
 	}
-	candidate, err := currentInventory(ctx, *goBinary)
+	candidate, err := currentInventory(ctx, *goBinary, *goos, *goarch)
 	if err != nil {
 		return err
 	}
@@ -128,7 +133,7 @@ func latestStableV1Tag(ctx context.Context) (string, error) {
 	return "", fmt.Errorf("no earlier stable v1 tag is available for the minor-release compatibility gate; ancestor v1 tags: %s; create the stable baseline through issue #2 before GA", available)
 }
 
-func loadBaseline(ctx context.Context, tag, goBinary string) (baseline, error) {
+func loadBaseline(ctx context.Context, tag, goBinary, goos, goarch string) (baseline, error) {
 	if !stableV1Tag.MatchString(tag) && !prereleaseV1Tag.MatchString(tag) {
 		return baseline{}, fmt.Errorf("baseline tag %q is not a v1 semver tag", tag)
 	}
@@ -148,7 +153,7 @@ func loadBaseline(ctx context.Context, tag, goBinary string) (baseline, error) {
 		return baseline{}, err
 	}
 	defer os.RemoveAll(directory)
-	inventory, err := inventoryForDir(ctx, directory, goBinary)
+	inventory, err := inventoryForDir(ctx, directory, goBinary, goos, goarch)
 	if err != nil {
 		return baseline{}, fmt.Errorf("inventory baseline tag %q: %w", tag, err)
 	}
@@ -227,12 +232,16 @@ func archiveEntryTarget(directory, name string) (string, error) {
 	return target, nil
 }
 
-func currentInventory(ctx context.Context, goBinary string) (string, error) {
-	return inventoryForDir(ctx, mustRepoRoot(), goBinary)
+func currentInventory(ctx context.Context, goBinary, goos, goarch string) (string, error) {
+	return inventoryForDir(ctx, mustRepoRoot(), goBinary, goos, goarch)
 }
 
-func inventoryForDir(ctx context.Context, directory, goBinary string) (string, error) {
-	command := exec.CommandContext(ctx, goBinary, "run", "./scripts/rigor/cmd/rigor", "public-api", "--dir", directory)
+func inventoryForDir(ctx context.Context, directory, goBinary, goos, goarch string) (string, error) {
+	args := []string{"run", "./scripts/rigor/cmd/rigor", "public-api", "--dir", directory}
+	if goos != "" {
+		args = append(args, "--goos", goos, "--goarch", goarch)
+	}
+	command := exec.CommandContext(ctx, goBinary, args...)
 	command.Dir = mustRepoRoot()
 	command.Env = append(os.Environ(), "STAVE_RIGOR_GO="+goBinary)
 	output, err := command.CombinedOutput()
@@ -353,9 +362,44 @@ func structFields(declaration string) []string {
 	if body == "" {
 		return fields
 	}
-	for _, field := range strings.Split(body, "; ") {
-		fields = append(fields, strings.TrimSpace(field))
+	start, curly, square, paren := 0, 0, 0, 0
+	var quote rune
+	escaped := false
+	for index, character := range body {
+		if quote != 0 {
+			if quote != '`' && character == '\\' && !escaped {
+				escaped = true
+				continue
+			}
+			if character == quote && !escaped {
+				quote = 0
+			}
+			escaped = false
+			continue
+		}
+		switch character {
+		case '\'', '"', '`':
+			quote = character
+		case '{':
+			curly++
+		case '}':
+			curly--
+		case '[':
+			square++
+		case ']':
+			square--
+		case '(':
+			paren++
+		case ')':
+			paren--
+		case ';':
+			if curly == 0 && square == 0 && paren == 0 {
+				fields = append(fields, strings.TrimSpace(body[start:index]))
+				start = index + 1
+			}
+		}
 	}
+	fields = append(fields, strings.TrimSpace(body[start:]))
 	return fields
 }
 
