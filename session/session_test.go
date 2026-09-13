@@ -209,6 +209,78 @@ func TestSessionWaitForPublicationCallerCancellationPrecedesClosedSessionWhileWa
 	}
 }
 
+func TestSessionWaitForPublicationWaitsForInFlightCallbackAfterParentCancellation(t *testing.T) {
+	parent, cancelParent := context.WithCancel(context.Background())
+	defer cancelParent()
+	callbackEntered, releaseCallback := make(chan struct{}), make(chan struct{})
+	s, err := New(parent, Options[model]{
+		Reduce: func(_ context.Context, current model, _ event.Event) (model, []effect.Request, error) {
+			close(callbackEntered)
+			<-releaseCallback
+			current.Count++
+			return current, nil, nil
+		},
+		View: testView,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	matched := make(chan error, 1)
+	unmatched := make(chan error, 1)
+	go func() {
+		matched <- s.WaitForPublication(context.Background(), func(snapshot state.State[model]) bool { return snapshot.Model.Count == 1 })
+	}()
+	go func() {
+		unmatched <- s.WaitForPublication(context.Background(), func(state.State[model]) bool { return false })
+	}()
+	if err := s.Send(mustEvent(t, event.Key, event.KeyPayload{Key: "enter"})); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-callbackEntered:
+	case <-time.After(time.Second):
+		t.Fatal("reducer did not start")
+	}
+	cancelParent()
+	select {
+	case <-s.ctx.Done():
+	case <-time.After(time.Second):
+		t.Fatal("parent cancellation did not reach session")
+	}
+	for _, result := range []<-chan error{matched, unmatched} {
+		select {
+		case err := <-result:
+			t.Fatalf("publication waiter returned before callback completed: %v", err)
+		case <-time.After(25 * time.Millisecond):
+		}
+	}
+
+	deadline, cancelDeadline := context.WithTimeout(context.Background(), 25*time.Millisecond)
+	defer cancelDeadline()
+	if err := s.WaitForPublication(deadline, func(state.State[model]) bool { return false }); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("caller deadline error = %v, want context deadline exceeded", err)
+	}
+	close(releaseCallback)
+	select {
+	case err := <-matched:
+		if err != nil {
+			t.Fatalf("final publication was not observed: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("matching waiter did not observe final publication")
+	}
+	select {
+	case err := <-unmatched:
+		if !errors.Is(err, ErrSessionClosed) {
+			t.Fatalf("unmatched waiter error = %v, want ErrSessionClosed", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("unmatched waiter did not return after loop stop")
+	}
+}
+
 func assertPublicationCallerCancellationWhileWaiting(t *testing.T) {
 	t.Helper()
 	parent, cancel := context.WithCancel(context.Background())

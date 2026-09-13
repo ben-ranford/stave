@@ -250,7 +250,13 @@ func (s *Session[M]) WaitForPublication(ctx context.Context, predicate func(stat
 		s.mu.RLock()
 		current := s.current
 		publication := s.publication
-		closed := s.ctx.Err() != nil
+		loopDone := s.loopDone
+		terminal := false
+		select {
+		case <-loopDone:
+			terminal = true
+		default:
+		}
 		s.mu.RUnlock()
 
 		snapshot, err := current.Clone(s.modelPolicy)
@@ -263,13 +269,13 @@ func (s *Session[M]) WaitForPublication(ctx context.Context, predicate func(stat
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if closed {
+		if terminal {
 			return ErrSessionClosed
 		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-s.ctx.Done():
+		case <-loopDone:
 		case <-publication:
 		}
 	}
