@@ -155,10 +155,13 @@ func New[M any](ctx context.Context, opts Options[M]) (*Session[M], error) {
 // its proposed state will be published. Pending effect batches are separately
 // bounded by Options.QueueCapacity (default 256). Saturation discards ordinary
 // input proposals with effects before rendering and reports
-// EFFECT_ADMISSION_BACKPRESSURE through Diagnostics, without changing state or
-// transcript. A completed effect result is instead published with its follow-up
-// declarations, then the overloaded session closes and cancels unadmitted work.
-// Its state and transcript remain replayable; replay does not reproduce this
+// EFFECT_ADMISSION_BACKPRESSURE through Diagnostics once per saturation episode,
+// without changing state or transcript. A completed effect result runs the normal
+// event transaction: successful output and follow-up declarations are published;
+// callback failures retain the prior model and effect hashes under normal
+// rejection semantics. Either outcome closes the overloaded session and cancels
+// unadmitted work.
+// Successfully published results remain replayable; replay does not reproduce
 // overload-driven lifecycle closure. Effectless input remains processable, and
 // Cancel or Shutdown still closes a saturated session.
 func (s *Session[M]) Send(ev event.Event) error {
@@ -296,6 +299,7 @@ func (s *Session[M]) handleEvent(raw event.Event) {
 	if admission == effectAdmissionRejected {
 		return
 	}
+	defer s.finishEffectAdmission(raw, admission)
 	reservationHeld := admission == effectAdmissionReserved
 	defer func() {
 		if reservationHeld {
@@ -360,8 +364,6 @@ func (s *Session[M]) handleEvent(raw event.Event) {
 		s.effectAdmissions.commit(calls)
 		reservationHeld = false
 	}
-
-	s.finishEffectAdmission(raw, admission)
 }
 
 func (s *Session[M]) rejectEvent(current state.State[M], ev event.Event, code, message string, safe map[string]string) {
@@ -457,7 +459,7 @@ func (s *Session[M]) reserveEffectBatch(raw event.Event, requestCount int) effec
 
 func (s *Session[M]) finishEffectAdmission(raw event.Event, admission effectAdmissionDecision) {
 	if admission == effectAdmissionTerminal {
-		s.addTransientDiagnostic("EFFECT_ADMISSION_BACKPRESSURE", "completed result preserved; closing session with saturated effect admission", nil)
+		s.addTransientDiagnostic("EFFECT_ADMISSION_BACKPRESSURE", "effect result follow-up admission saturated; closing session", nil)
 	}
 	if admission == effectAdmissionTerminal || raw.Kind == event.Cancel || raw.Kind == event.Shutdown {
 		s.beginClose()

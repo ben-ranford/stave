@@ -13,7 +13,7 @@ import (
 )
 
 func TestSessionPreservesCompletedEffectResultWhenFollowupAdmissionIsSaturated(t *testing.T) {
-	fixture := newSaturatedEffectResultFixture(t)
+	fixture := newSaturatedEffectResultFixture(t, "")
 	defer fixture.session.Close()
 
 	fixture.startInitialBatch(t)
@@ -25,6 +25,27 @@ func TestSessionPreservesCompletedEffectResultWhenFollowupAdmissionIsSaturated(t
 	fixture.assertTranscriptReplays(t)
 }
 
+func TestSessionClosesAfterSaturatedCompletedResultLaterFails(t *testing.T) {
+	for _, failure := range []struct {
+		name, diagnostic string
+	}{
+		{name: "view", diagnostic: "VIEW_FAILED"},
+		{name: "bind", diagnostic: "EFFECT_BIND_FAILED"},
+	} {
+		t.Run(failure.name, func(t *testing.T) {
+			fixture := newSaturatedEffectResultFixture(t, failure.name)
+			defer fixture.session.Close()
+
+			fixture.startInitialBatch(t)
+			fixture.queuePendingBatch(t)
+			close(fixture.releaseComplete)
+
+			fixture.assertRejectedResultClosed(t, failure.diagnostic)
+			fixture.assertUnadmittedWorkWasCancelled(t)
+		})
+	}
+}
+
 type saturatedEffectResultFixture struct {
 	session         *Session[model]
 	releaseComplete chan struct{}
@@ -33,9 +54,10 @@ type saturatedEffectResultFixture struct {
 	pendingStarted  chan struct{}
 	followupStarted chan struct{}
 	beforeResult    state.Hashes
+	beforeState     state.State[model]
 }
 
-func newSaturatedEffectResultFixture(t *testing.T) *saturatedEffectResultFixture {
+func newSaturatedEffectResultFixture(t *testing.T, failure string) *saturatedEffectResultFixture {
 	t.Helper()
 	fixture := &saturatedEffectResultFixture{
 		releaseComplete: make(chan struct{}),
@@ -73,28 +95,10 @@ func newSaturatedEffectResultFixture(t *testing.T) *saturatedEffectResultFixture
 				return nil, nil
 			}),
 		},
-		Reduce: saturatedEffectResultReducer,
-		View:   testView,
+		Reduce: saturatedEffectResultReducer(failure),
+		View:   saturatedEffectResultView(failure),
 	})
 	return fixture
-}
-
-func saturatedEffectResultReducer(_ context.Context, current model, ev event.Event) (model, []effect.Request, error) {
-	switch ev.Kind {
-	case event.Key:
-		current.Count++
-		if current.Count == 1 {
-			return current, []effect.Request{{Spec: effect.Spec{Kind: "complete"}}, {Spec: effect.Spec{Kind: "hold"}}}, nil
-		}
-		return current, []effect.Request{{Spec: effect.Spec{Kind: "pending"}}}, nil
-	case event.EffectResult:
-		ordinal := ev.Payload.(event.EffectResultPayload).Ordinal
-		current.Count += 10
-		current.EffectOrdinals = append(current.EffectOrdinals, int(ordinal))
-		return current, []effect.Request{{Spec: effect.Spec{Kind: "followup"}}}, nil
-	default:
-		return current, nil, nil
-	}
 }
 
 func (fixture *saturatedEffectResultFixture) startInitialBatch(t *testing.T) {
@@ -124,6 +128,7 @@ func (fixture *saturatedEffectResultFixture) queuePendingBatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	fixture.beforeResult = snapshot.Hashes
+	fixture.beforeState = snapshot
 }
 
 func (fixture *saturatedEffectResultFixture) assertCompletedResultWasPublished(t *testing.T) {
@@ -144,6 +149,52 @@ func (fixture *saturatedEffectResultFixture) assertCompletedResultWasPublished(t
 		t.Fatalf("completed result did not persist effect hashes: %#v", snapshot.Hashes)
 	}
 	assertDiagnostic(t, fixture.session.Diagnostics(), "EFFECT_ADMISSION_BACKPRESSURE")
+}
+
+func (fixture *saturatedEffectResultFixture) assertRejectedResultClosed(t *testing.T, diagnostic string) {
+	t.Helper()
+	waitSnapshot(t, fixture.session, func(snapshot state.State[model]) bool {
+		return snapshot.Sequence == 3
+	})
+	select {
+	case <-fixture.session.loopDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("failed saturated result admission did not close the session")
+	}
+	if fixture.session.Lifecycle() != LifecycleClosed {
+		t.Fatalf("lifecycle = %v, want closed", fixture.session.Lifecycle())
+	}
+	snapshot, err := fixture.session.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.Model.Count != fixture.beforeState.Model.Count || fmt.Sprint(snapshot.Model.EffectOrdinals) != fmt.Sprint(fixture.beforeState.Model.EffectOrdinals) || snapshot.Revision != fixture.beforeState.Revision {
+		t.Fatalf("rejected result changed model or revision: %#v, want %#v", snapshot, fixture.beforeState)
+	}
+	if snapshot.Hashes.EffectLedger != fixture.beforeResult.EffectLedger || snapshot.Hashes.Declarations != fixture.beforeResult.Declarations {
+		t.Fatalf("rejected result changed effect hashes: %#v, want %#v", snapshot.Hashes, fixture.beforeResult)
+	}
+	assertDiagnostic(t, fixture.session.Diagnostics(), diagnostic)
+	assertDiagnostic(t, fixture.session.Diagnostics(), "EFFECT_ADMISSION_BACKPRESSURE")
+	fixture.assertRejectedResultRecorded(t, snapshot)
+}
+
+func (fixture *saturatedEffectResultFixture) assertRejectedResultRecorded(t *testing.T, snapshot state.State[model]) {
+	t.Helper()
+	transcript, err := fixture.session.Transcript()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(transcript.Records) != 3 {
+		t.Fatalf("records = %d, want key, key, rejected result", len(transcript.Records))
+	}
+	recorded := transcript.Records[2]
+	if recorded.Event.Kind != event.EffectResult || recorded.Event.Sequence != 3 || recorded.Result.Sequence != 3 || recorded.Result.Revision != fixture.beforeState.Revision {
+		t.Fatalf("rejected result record = %#v", recorded)
+	}
+	if recorded.Prior.Hashes != fixture.beforeResult || recorded.Result.Hashes != snapshot.Hashes {
+		t.Fatalf("rejected result hashes = prior %#v result %#v", recorded.Prior.Hashes, recorded.Result.Hashes)
+	}
 }
 
 func (fixture *saturatedEffectResultFixture) assertUnadmittedWorkWasCancelled(t *testing.T) {
@@ -196,7 +247,7 @@ func (fixture *saturatedEffectResultFixture) assertTranscriptReplays(t *testing.
 
 	playback := newSession(t, Options[model]{
 		QueueCapacity: 8, MaxActiveBatches: 1, EffectParallelism: 2,
-		Reduce: saturatedEffectResultReducer, View: testView,
+		Reduce: saturatedEffectResultReducer(""), View: testView,
 		EffectPorts: blockedEffectPorts(),
 	})
 	defer playback.Close()
@@ -210,6 +261,38 @@ func (fixture *saturatedEffectResultFixture) assertTranscriptReplays(t *testing.
 	}
 	if checkpoint.Checksum != original.Checksum {
 		t.Fatalf("replayed checkpoint checksum = %q, want %q", checkpoint.Checksum, original.Checksum)
+	}
+}
+
+func saturatedEffectResultReducer(failure string) func(context.Context, model, event.Event) (model, []effect.Request, error) {
+	return func(_ context.Context, current model, ev event.Event) (model, []effect.Request, error) {
+		switch ev.Kind {
+		case event.Key:
+			current.Count++
+			if current.Count == 1 {
+				return current, []effect.Request{{Spec: effect.Spec{Kind: "complete"}}, {Spec: effect.Spec{Kind: "hold"}}}, nil
+			}
+			return current, []effect.Request{{Spec: effect.Spec{Kind: "pending"}}}, nil
+		case event.EffectResult:
+			ordinal := ev.Payload.(event.EffectResultPayload).Ordinal
+			current.Count += 10
+			current.EffectOrdinals = append(current.EffectOrdinals, int(ordinal))
+			if failure == "bind" {
+				return current, []effect.Request{{Spec: effect.Spec{Kind: ""}}}, nil
+			}
+			return current, []effect.Request{{Spec: effect.Spec{Kind: "followup"}}}, nil
+		default:
+			return current, nil, nil
+		}
+	}
+}
+
+func saturatedEffectResultView(failure string) func(context.Context, model) (ViewResult, error) {
+	return func(ctx context.Context, current model) (ViewResult, error) {
+		if failure == "view" && current.Count == 12 {
+			return ViewResult{}, fmt.Errorf("result view rejected proposal")
+		}
+		return testView(ctx, current)
 	}
 }
 
