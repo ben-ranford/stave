@@ -50,12 +50,14 @@ func NewConfirmationE(session string, d Definition, target semantic.Target, args
 func NewRegistry() *Registry
 func Register[In, Out any](r *Registry, d Definition, decode func(json.RawMessage) (In, error), encode func(Out) (json.RawMessage, error), h func(context.Context, Call, In) (Out, error)) error
 method (*Error) Error() string
+method (*Registry) ActivateConfirmation(c Confirmation) error
 method (*Registry) CancelConfirmation(c Confirmation) bool
 method (*Registry) Definition(id ID) (Definition, bool)
 method (*Registry) Invoke(ctx context.Context, c Call) Result
 method (*Registry) IssueConfirmation(c Confirmation) error
 method (*Registry) Manifest() []Definition
 method (*Registry) Register(d Definition, h Handler) error
+method (*Registry) StageConfirmation(c Confirmation) error
 method (Definition) EffectiveIdempotency() Idempotency
 method (Definition) Validate() error
 method (Schema) Validate(b json.RawMessage) (any, error)

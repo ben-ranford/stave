@@ -70,6 +70,35 @@ func TestConfirmationFlowCancelRevokesIssuedGrant(t *testing.T) {
 	}
 }
 
+func TestConfirmationFlowKeepsStagedGrantInactiveUntilConfirmed(t *testing.T) {
+	registry, definition, invoked := confirmationRegistry(t)
+	grant := confirmationGrant(t, definition, time.Now().Add(time.Minute))
+	started := make(chan struct{})
+	release := make(chan struct{})
+	flow := ConfirmationFlow{Registry: registry, Presenter: confirmationPresenterFunc(func(context.Context, ConfirmationView) (ConfirmationDecision, error) {
+		close(started)
+		<-release
+		return ConfirmationConfirmed, nil
+	})}
+	resolved := make(chan action.Result, 1)
+	go func() {
+		resolved <- flow.Resolve(context.Background(), grant, confirmationCall(definition))
+	}()
+	<-started
+	if err := registry.IssueConfirmation(grant); err == nil {
+		t.Fatal("staged grant was issued before confirmation")
+	}
+	concurrent := confirmationCall(definition)
+	concurrent.Confirmation = &action.Confirmation{Token: grant.Token, SessionID: grant.SessionID}
+	if result := registry.Invoke(context.Background(), concurrent); result.Error == nil || result.Error.Code != action.ConfirmationInvalid || *invoked != 0 {
+		t.Fatalf("staged grant invoked before confirmation: %+v, invoked=%d", result, *invoked)
+	}
+	close(release)
+	if result := <-resolved; result.Status != action.ResultOK || *invoked != 1 {
+		t.Fatalf("confirmed result = %+v, invoked=%d", result, *invoked)
+	}
+}
+
 func TestConfirmationFlowRejectsActionMismatchAndPresenterFailure(t *testing.T) {
 	registry, definition, invoked := confirmationRegistry(t)
 	grant := confirmationGrant(t, definition, time.Now().Add(time.Minute))

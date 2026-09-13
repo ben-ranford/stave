@@ -46,9 +46,9 @@ type ConfirmationFlow struct {
 	Presenter ConfirmationPresenter
 }
 
-// Resolve issues a grant, presents only its redacted view, then routes an
-// explicit confirmation through Registry.Invoke. Cancellation removes the
-// issued grant and never invokes the action handler.
+// Resolve stages a grant, presents only its redacted view, then activates an
+// explicit confirmation through Registry.Invoke. Cancellation tombstones the
+// staged grant and never invokes the action handler.
 func (f ConfirmationFlow) Resolve(ctx context.Context, grant action.Confirmation, call action.Call) action.Result {
 	if f.Registry == nil {
 		return confirmationRejected(call, action.ConfirmationInvalid, ErrConfirmationRegistryRequired.Error())
@@ -59,7 +59,7 @@ func (f ConfirmationFlow) Resolve(ctx context.Context, grant action.Confirmation
 	if grant.ActionID != call.ActionID {
 		return confirmationRejected(call, action.ConfirmationInvalid, "confirmation action mismatch")
 	}
-	if err := f.Registry.IssueConfirmation(grant); err != nil {
+	if err := f.Registry.StageConfirmation(grant); err != nil {
 		if errors.Is(err, action.ErrConfirmationLimit) {
 			return confirmationRejected(call, action.ResourceLimit, "confirmation capacity reached")
 		}
@@ -79,6 +79,9 @@ func (f ConfirmationFlow) Resolve(ctx context.Context, grant action.Confirmation
 	if decision != ConfirmationConfirmed {
 		f.Registry.CancelConfirmation(grant)
 		return confirmationRejected(call, action.ConfirmationInvalid, "confirmation cancelled")
+	}
+	if err := f.Registry.ActivateConfirmation(grant); err != nil {
+		return confirmationRejected(call, action.ConfirmationInvalid, "confirmation could not be activated")
 	}
 
 	call.Confirmation = &action.Confirmation{Token: grant.Token, SessionID: grant.SessionID}
