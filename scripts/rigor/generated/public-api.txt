@@ -680,9 +680,12 @@ const LiveAssertive
 const LiveNone
 const LivePolite
 const NodeIDNormalizationPolicy
+const PatchDetailV1
 const SnapshotStability
 const Stable
 func Diff(a, b Tree) Patch
+func DiffDetail(a, b Tree, version PatchDetailVersion) (PatchDetail, error)
+func NegotiatePatchDetailVersion(offered []PatchDetailVersion) (PatchDetailVersion, bool)
 func NewNode(s NodeSpec) (Node, error)
 func NewTombstones() *Tombstones
 func NewTree(revision uint64, root Node) (Tree, error)
@@ -714,6 +717,7 @@ method (Node) WithChildren(c ...Node) (Node, error)
 method (NodeID) String() string
 method (NodeID) Valid() bool
 method (Patch) Validate() error
+method (PatchDetail) Validate() error
 method (Snapshot) Validate() error
 method (Tree) Hash() string
 method (Tree) MarshalJSON() ([]byte, error)
@@ -725,14 +729,18 @@ method (Tree) Validate() error
 method (Tree) WithRevision(revision uint64) (Tree, error)
 type ActionID string
 type ActionRef struct { ID ActionID `json:"id"`; Label string `json:"label,omitempty"`; Default bool `json:"default,omitempty"` }
+type FieldChange struct { Path string `json:"path"`; Before json.RawMessage `json:"before"`; After json.RawMessage `json:"after"` }
 type Flags struct { Visible bool `json:"visible"`; Focusable bool `json:"focusable"`; Disabled bool `json:"disabled"`; Sensitive bool `json:"sensitive"`; Offscreen bool `json:"offscreen"`; Live LiveMode `json:"live,omitempty"`; Stability Stability `json:"stability,omitempty"` }
 type LayoutSpec struct { Width int `json:"width,omitempty"`; Height int `json:"height,omitempty"` }
 type LiveMode string
 type Node struct {  }
+type NodeChange struct { NodeID NodeID `json:"nodeId"`; Fields []FieldChange `json:"fields"` }
 type NodeID string
 type NodeKey struct { AppNamespace string `json:"appNamespace"`; View string `json:"view"`; Kind string `json:"kind"`; Entity string `json:"entity"`; Slot string `json:"slot"` }
 type NodeSpec struct { ID NodeID; Key *NodeKey; Generation uint32; Role Role; Name, Description string; Value Value; States []State; Relations []Relation; Actions []ActionRef; Layout LayoutSpec; Style StyleIntent; Children []Node; Flags Flags; Metadata map[string]string }
 type Patch struct { FromRevision uint64 `json:"fromRevision"`; ToRevision uint64 `json:"toRevision"`; Added []NodeID `json:"added,omitempty"`; Removed []NodeID `json:"removed,omitempty"`; GenerationChanged []NodeID `json:"generationChanged,omitempty"` }
+type PatchDetail struct { SchemaVersion PatchDetailVersion `json:"schemaVersion"`; FromRevision uint64 `json:"fromRevision"`; ToRevision uint64 `json:"toRevision"`; Added []NodeID `json:"added,omitempty"`; Removed []NodeID `json:"removed,omitempty"`; GenerationChanged []NodeID `json:"generationChanged,omitempty"`; Changed []NodeChange `json:"changed,omitempty"` }
+type PatchDetailVersion string
 type Relation struct { Kind RelationKind `json:"kind"`; Target NodeID `json:"target"` }
 type RelationKind string
 type Role string
