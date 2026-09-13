@@ -63,6 +63,189 @@ func TestSessionSerializesReducerOwnership(t *testing.T) {
 	}
 }
 
+func TestSessionWaitKeepsPollingTimeVaryingPredicate(t *testing.T) {
+	s := newSession(t, Options[model]{
+		Reduce: func(ctx context.Context, current model, ev event.Event) (model, []effect.Request, error) {
+			return current, nil, nil
+		},
+		View: testView,
+	})
+	defer s.Close()
+
+	deadline := time.Now().Add(5 * time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	var evaluations atomic.Int32
+	if err := s.Wait(ctx, func(state.State[model]) bool {
+		evaluations.Add(1)
+		return !time.Now().Before(deadline)
+	}); err != nil {
+		t.Fatalf("Wait() error = %v", err)
+	}
+	if got := evaluations.Load(); got < 2 {
+		t.Fatalf("Wait predicate evaluations = %d, want polling to re-evaluate time-varying predicate", got)
+	}
+}
+
+func TestSessionWaitForPublicationWakesOnSequenceOnlyPublication(t *testing.T) {
+	s := newSession(t, Options[model]{
+		Reduce: func(ctx context.Context, current model, ev event.Event) (model, []effect.Request, error) {
+			return current, nil, errors.New("reject")
+		},
+		View: testView,
+	})
+	defer s.Close()
+
+	entered := make(chan struct{})
+	result := make(chan error, 1)
+	go func() {
+		result <- s.WaitForPublication(context.Background(), func(snapshot state.State[model]) bool {
+			if snapshot.Sequence == 0 {
+				close(entered)
+			}
+			return snapshot.Sequence == 1
+		})
+	}()
+	<-entered
+	if err := s.Send(mustEvent(t, event.Key, event.KeyPayload{Key: "enter"})); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-result:
+		if err != nil {
+			t.Fatalf("WaitForPublication() error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("WaitForPublication did not observe sequence-only publication")
+	}
+	assertDiagnostic(t, s.Diagnostics(), "REDUCE_FAILED")
+}
+
+func TestSessionWaitForPublicationWakesOnTransientDiagnostic(t *testing.T) {
+	s := newSession(t, Options[model]{
+		Reduce: func(ctx context.Context, current model, ev event.Event) (model, []effect.Request, error) {
+			return current, nil, nil
+		},
+		View: testView,
+	})
+	defer s.Close()
+
+	entered := make(chan struct{})
+	result := make(chan error, 1)
+	go func() {
+		result <- s.WaitForPublication(context.Background(), func(state.State[model]) bool {
+			diagnostics := s.Diagnostics()
+			if len(diagnostics) == 0 {
+				close(entered)
+			}
+			return len(diagnostics) == 1
+		})
+	}()
+	<-entered
+	s.addTransientDiagnostic("TEST", "test", nil)
+	select {
+	case err := <-result:
+		if err != nil {
+			t.Fatalf("WaitForPublication() error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("WaitForPublication did not observe transient diagnostic")
+	}
+}
+
+func TestSessionWaitForPublicationAvoidsIdleClonePolling(t *testing.T) {
+	var clones atomic.Int32
+	s := newSession(t, Options[model]{
+		ModelPolicy: state.ModelPolicy[model]{
+			Clone: func(current model) (model, error) {
+				clones.Add(1)
+				return current, nil
+			},
+		},
+		Reduce: func(ctx context.Context, current model, ev event.Event) (model, []effect.Request, error) {
+			return current, nil, nil
+		},
+		View: testView,
+	})
+	defer s.Close()
+	clones.Store(0)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	entered := make(chan struct{})
+	result := make(chan error, 1)
+	go func() {
+		result <- s.WaitForPublication(ctx, func(state.State[model]) bool {
+			close(entered)
+			return false
+		})
+	}()
+	<-entered
+	if got := clones.Load(); got != 1 {
+		t.Fatalf("initial WaitForPublication clones = %d, want 1", got)
+	}
+	cancel()
+	if err := <-result; !errors.Is(err, context.Canceled) {
+		t.Fatalf("WaitForPublication() error = %v, want context.Canceled", err)
+	}
+	if got := clones.Load(); got != 1 {
+		t.Fatalf("idle WaitForPublication clones = %d, want 1", got)
+	}
+}
+
+func TestSessionWaitForPublicationWakesConcurrentWaitersAndClose(t *testing.T) {
+	s := newSession(t, Options[model]{
+		Reduce: func(ctx context.Context, current model, ev event.Event) (model, []effect.Request, error) {
+			current.Count++
+			return current, nil, nil
+		},
+		View: testView,
+	})
+
+	const waiters = 4
+	ready := make(chan struct{}, waiters)
+	results := make(chan error, waiters)
+	for range waiters {
+		go func() {
+			results <- s.WaitForPublication(context.Background(), func(snapshot state.State[model]) bool {
+				if snapshot.Sequence == 0 {
+					ready <- struct{}{}
+				}
+				return snapshot.Sequence == 1
+			})
+		}()
+	}
+	for range waiters {
+		<-ready
+	}
+	if err := s.Send(mustEvent(t, event.Key, event.KeyPayload{Key: "enter"})); err != nil {
+		t.Fatal(err)
+	}
+	for range waiters {
+		select {
+		case err := <-results:
+			if err != nil {
+				t.Fatalf("WaitForPublication() error = %v", err)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("concurrent WaitForPublication waiter did not wake")
+		}
+	}
+
+	closeReady := make(chan struct{})
+	closed := make(chan error, 1)
+	go func() {
+		closed <- s.WaitForPublication(context.Background(), func(state.State[model]) bool {
+			close(closeReady)
+			return false
+		})
+	}()
+	<-closeReady
+	s.Close()
+	if err := <-closed; !errors.Is(err, ErrSessionClosed) {
+		t.Fatalf("WaitForPublication() close error = %v, want ErrSessionClosed", err)
+	}
+}
+
 func TestSessionQueueBackpressureAndCoalescing(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
