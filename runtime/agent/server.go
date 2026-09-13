@@ -204,10 +204,8 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 		case <-subscriptionContext.Done():
 		}
 	}()
-	defer func() {
-		cancelSubscriptions()
-		<-subscriptionWatcherDone
-	}()
+	defer func() { <-subscriptionWatcherDone }()
+	defer cancelSubscriptions()
 	sc := bufio.NewScanner(in)
 	sc.Buffer(make([]byte, 4096), s.opt.MaxMessageBytes+1)
 	type outbound struct {
