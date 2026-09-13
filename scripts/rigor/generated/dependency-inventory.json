@@ -557,7 +557,8 @@
         "encoding/json",
         "fmt",
         "os",
-        "os/exec"
+        "os/exec",
+        "strings"
       ]
     },
     {

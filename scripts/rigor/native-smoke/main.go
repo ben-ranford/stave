@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 )
 
 var expected = map[string]bool{
@@ -36,21 +37,21 @@ func main() {
 		fmt.Fprintf(os.Stderr, "native smoke tests failed: %v\n", err)
 		os.Exit(1)
 	}
-	seen, err := selectedTestStarts(output)
+	seen, err := selectedTestPasses(output)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 	for name := range expected {
 		if !seen[name] {
-			fmt.Fprintf(os.Stderr, "native smoke selected zero instances of %s\n", name)
+			fmt.Fprintf(os.Stderr, "native smoke has no passing result for %s\n", name)
 			os.Exit(1)
 		}
 	}
 	fmt.Printf("native smoke selected and passed %d tests\n", len(expected))
 }
 
-func selectedTestStarts(output []byte) (map[string]bool, error) {
+func selectedTestPasses(output []byte) (map[string]bool, error) {
 	seen := make(map[string]bool, len(expected))
 	for _, line := range bytes.Split(output, []byte{'\n'}) {
 		if len(line) == 0 {
@@ -60,7 +61,14 @@ func selectedTestStarts(output []byte) (map[string]bool, error) {
 		if err := json.Unmarshal(line, &event); err != nil {
 			return nil, fmt.Errorf("decode go test event: %w", err)
 		}
-		if event.Action == "run" && expected[event.Test] {
+		root, _, _ := strings.Cut(event.Test, "/")
+		if !expected[root] {
+			continue
+		}
+		if event.Action == "skip" || event.Action == "fail" {
+			return nil, fmt.Errorf("native smoke %s reported %s", event.Test, event.Action)
+		}
+		if event.Action == "pass" && expected[event.Test] {
 			seen[event.Test] = true
 		}
 	}

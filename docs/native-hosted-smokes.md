@@ -2,11 +2,11 @@
 
 The CI workflow runs bounded root-module smoke tests on GitHub-hosted
 `macos-14` and `windows-2025` runners. They execute startup, cancellation,
-EOF, newline input, no-colour/non-TTY, and Unicode capability tests selected by
+EOF, newline input, no-colour/non-TTY, and Unicode line-input tests selected by
 `scripts/rigor/native-smoke`.
 
-The helper consumes `go test -json` and fails if any named smoke test has zero
-matching test events. It does not replace Linux minimum/current-Go, race,
+The helper consumes `go test -json` and requires a terminal passing result for every named
+smoke test. A skipped or failed selected root or subtest fails accounting. It does not replace Linux minimum/current-Go, race,
 security, cross-compile, or full verification jobs.
 
 Each native job has a 12-minute timeout. The pair therefore has a maximum
