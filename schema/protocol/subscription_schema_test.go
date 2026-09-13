@@ -7,6 +7,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/ben-ranford/stave/diag"
 )
 
 func TestSnapshotSubscriptionSchemaIsSeparateAndValid(t *testing.T) {
@@ -36,6 +38,7 @@ func TestSnapshotSubscriptionSchemaIsSeparateAndValid(t *testing.T) {
 		`"$ref": "../protocol.json#/$defs/snapshotResult"`,
 		`"required": ["snapshot"]`,
 		`"not": {"anyOf": [{"required": ["actions"]}, {"required": ["patch"]}]}`, `"minimum": 1`)
+	assertSubscriptionDiagnosticContract(t, schema.Defs["fullSnapshot"])
 	for name, method := range map[string]string{
 		"subscribeRequest":   "stave.snapshot.subscribe",
 		"unsubscribeRequest": "stave.snapshot.unsubscribe",
@@ -54,6 +57,61 @@ func TestSnapshotSubscriptionSchemaIsSeparateAndValid(t *testing.T) {
 	}
 	if strings.Contains(string(base), "stave.snapshot.subscribe") || strings.Contains(string(base), "stave.snapshot.subscription") {
 		t.Fatal("base protocol schema must not absorb the separately negotiated extension")
+	}
+}
+
+func assertSubscriptionDiagnosticContract(t *testing.T, fullSnapshot json.RawMessage) {
+	t.Helper()
+	var definition struct {
+		AllOf []struct {
+			Properties map[string]json.RawMessage `json:"properties"`
+		} `json:"allOf"`
+	}
+	if err := json.Unmarshal(fullSnapshot, &definition); err != nil {
+		t.Fatal(err)
+	}
+	var diagnostics struct {
+		Items struct {
+			Required   []string `json:"required"`
+			Properties struct {
+				Redacted struct {
+					Const bool `json:"const"`
+				} `json:"redacted"`
+				Message struct {
+					Const string `json:"const"`
+				} `json:"message"`
+				Attributes *bool `json:"attributes"`
+			} `json:"properties"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(definition.AllOf[1].Properties["diagnostics"], &diagnostics); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(diagnostics.Items.Required, []string{"redacted"}) {
+		t.Fatalf("diagnostic required fields = %v, want [redacted]", diagnostics.Items.Required)
+	}
+	if !diagnostics.Items.Properties.Redacted.Const || diagnostics.Items.Properties.Message.Const != "[REDACTED]" || diagnostics.Items.Properties.Attributes == nil || *diagnostics.Items.Properties.Attributes {
+		t.Fatalf("diagnostic contract = %+v", diagnostics.Items.Properties)
+	}
+
+	runtimeDiagnostic, err := json.Marshal(diag.Diagnostic{
+		Redacted:   true,
+		Message:    "secret",
+		Attributes: map[string]string{"secret": "value"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var representation struct {
+		Redacted   bool               `json:"redacted"`
+		Message    string             `json:"message"`
+		Attributes *map[string]string `json:"attributes"`
+	}
+	if err := json.Unmarshal(runtimeDiagnostic, &representation); err != nil {
+		t.Fatal(err)
+	}
+	if !representation.Redacted || representation.Message != "[REDACTED]" || representation.Attributes != nil {
+		t.Fatalf("redacted runtime representation leaked attributes: %s", runtimeDiagnostic)
 	}
 }
 
