@@ -433,7 +433,7 @@ func (t Tree) Validate() error {
 	var check func(Node) error
 	check = func(n Node) error {
 		for _, r := range n.relations {
-			if !containsNode(t.root, r.Target) {
+			if _, ok := seen[r.Target]; !ok {
 				return fmt.Errorf("dangling relation %s", r.Target)
 			}
 		}
@@ -445,17 +445,6 @@ func (t Tree) Validate() error {
 		return nil
 	}
 	return check(t.root)
-}
-func containsNode(n Node, id NodeID) bool {
-	if n.id == id {
-		return true
-	}
-	for _, c := range n.children {
-		if containsNode(c, id) {
-			return true
-		}
-	}
-	return false
 }
 func (t Tree) Root() Node            { return t.root }
 func (t Tree) Revision() uint64      { return t.revision }

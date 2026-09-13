@@ -3,6 +3,7 @@ package semantic
 import (
 	"encoding/base32"
 	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -158,6 +159,135 @@ func TestTreeValidationAndPatch(t *testing.T) {
 	if _, e := json.Marshal(a); e != nil {
 		t.Fatal(e)
 	}
+}
+
+func TestTreeRelationValidationPreservesPreorderErrors(t *testing.T) {
+	rootID, err := NodeIDFor(NodeKey{"app", "relations", "group", "root", "main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	childID, err := NodeIDFor(NodeKey{"app", "relations", "text", "child", "main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	danglingID, err := NodeIDFor(NodeKey{"app", "relations", "text", "missing", "main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, err := NewNode(NodeSpec{ID: childID, Role: "text", Name: "child"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("valid", func(t *testing.T) {
+		root, err := NewNode(NodeSpec{ID: rootID, Role: "group", Name: "root", Relations: []Relation{{Kind: "described-by", Target: childID}}, Children: []Node{child}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		tree, err := NewTree(1, root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tree.WithRevision(2); err != nil {
+			t.Fatal(err)
+		}
+		if err := tree.Snapshot().Validate(); err != nil {
+			t.Fatal(err)
+		}
+		relations := tree.Root().Relations()
+		relations[0].Target = danglingID
+		if err := tree.Validate(); err != nil {
+			t.Fatalf("relation accessor mutation changed tree validation: %v", err)
+		}
+	})
+
+	t.Run("invalid target", func(t *testing.T) {
+		root, err := NewNode(NodeSpec{ID: rootID, Role: "group", Name: "root", Relations: []Relation{{Kind: "described-by", Target: "invalid"}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := NewTree(1, root); err == nil || err.Error() != "invalid relation target" {
+			t.Fatalf("NewTree() error = %v", err)
+		}
+	})
+
+	t.Run("dangling relation", func(t *testing.T) {
+		root, err := NewNode(NodeSpec{ID: rootID, Role: "group", Name: "root", Relations: []Relation{{Kind: "described-by", Target: danglingID}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := "dangling relation " + danglingID.String()
+		if _, err := NewTree(1, root); err == nil || err.Error() != want {
+			t.Fatalf("NewTree() error = %v, want %q", err, want)
+		}
+		invalid := Tree{schemaVersion: "stave-semantic-v1", revision: 1, root: root}
+		if _, err := invalid.WithRevision(2); err == nil || err.Error() != want {
+			t.Fatalf("WithRevision() error = %v, want %q", err, want)
+		}
+		snapshot := Snapshot{SchemaVersion: "stave-semantic-v1", Revision: 1, TreeHash: "hash", Root: root}
+		if err := snapshot.Validate(); err == nil || err.Error() != want {
+			t.Fatalf("Snapshot.Validate() error = %v, want %q", err, want)
+		}
+	})
+
+	t.Run("duplicate precedes dangling relation", func(t *testing.T) {
+		duplicate, err := NewNode(NodeSpec{ID: rootID, Role: "text", Name: "duplicate"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		root, err := NewNode(NodeSpec{ID: rootID, Role: "group", Name: "root", Relations: []Relation{{Kind: "described-by", Target: danglingID}}, Children: []Node{duplicate}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := "duplicate node id " + rootID.String() + " generations 0/0"
+		if _, err := NewTree(1, root); err == nil || err.Error() != want {
+			t.Fatalf("NewTree() error = %v, want %q", err, want)
+		}
+	})
+}
+
+func BenchmarkTreeValidateRelationRich(b *testing.B) {
+	for _, nodes := range []int{1000, 2000} {
+		b.Run(strconv.Itoa(nodes), func(b *testing.B) {
+			tree := relationRichTree(b, nodes)
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				if err := tree.Validate(); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func relationRichTree(tb testing.TB, nodes int) Tree {
+	tb.Helper()
+	rootID, err := NodeIDFor(NodeKey{"benchmark", "relations", "group", "root", "main"})
+	if err != nil {
+		tb.Fatal(err)
+	}
+	ids := make([]NodeID, nodes)
+	for i := range nodes {
+		id, err := NodeIDFor(NodeKey{"benchmark", "relations", "text", strconv.Itoa(i), "main"})
+		if err != nil {
+			tb.Fatal(err)
+		}
+		ids[i] = id
+	}
+	children := make([]Node, 0, nodes)
+	for _, id := range ids {
+		node, err := NewNode(NodeSpec{ID: id, Role: "text", Name: "node", Relations: []Relation{{Kind: "described-by", Target: ids[len(ids)-1]}}})
+		if err != nil {
+			tb.Fatal(err)
+		}
+		children = append(children, node)
+	}
+	root, err := NewNode(NodeSpec{ID: rootID, Role: "group", Name: "root", Children: children})
+	if err != nil {
+		tb.Fatal(err)
+	}
+	return Tree{schemaVersion: "stave-semantic-v1", revision: 1, root: root}
 }
 
 func TestNodeRejectsDELAndC1Controls(t *testing.T) {
