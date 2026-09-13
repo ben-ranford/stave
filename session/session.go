@@ -239,20 +239,18 @@ func (s *Session[M]) Wait(ctx context.Context, predicate func(state.State[M]) bo
 // waits for the next state publication, transient diagnostic, or close. Unlike
 // Wait, it does not poll: predicates that depend on elapsed time should keep
 // using Wait. Predicate runs without the session lock and may call Session
-// methods. Session closure returns ErrSessionClosed; caller cancellation
+// methods. Session closure returns ErrSessionClosed after evaluating its latest
+// publication if the predicate remains false; caller cancellation
 // returns ctx.Err().
 func (s *Session[M]) WaitForPublication(ctx context.Context, predicate func(state.State[M]) bool) error {
 	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-s.ctx.Done():
-			return publicationWaitCloseError(ctx)
-		default:
+		if err := ctx.Err(); err != nil {
+			return err
 		}
 		s.mu.RLock()
 		current := s.current
 		publication := s.publication
+		closed := s.ctx.Err() != nil
 		s.mu.RUnlock()
 
 		snapshot, err := current.Clone(s.modelPolicy)
@@ -262,21 +260,19 @@ func (s *Session[M]) WaitForPublication(ctx context.Context, predicate func(stat
 		if predicate(snapshot) {
 			return nil
 		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if closed {
+			return ErrSessionClosed
+		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-s.ctx.Done():
-			return publicationWaitCloseError(ctx)
 		case <-publication:
 		}
 	}
-}
-
-func publicationWaitCloseError(ctx context.Context) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	return ErrSessionClosed
 }
 
 func (s *Session[M]) Cancel() {

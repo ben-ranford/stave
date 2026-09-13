@@ -291,10 +291,11 @@ func TestSessionWaitForPublicationWakesConcurrentWaitersAndClose(t *testing.T) {
 	}
 
 	closeReady := make(chan struct{})
+	var closeReadyOnce sync.Once
 	closed := make(chan error, 1)
 	go func() {
 		closed <- s.WaitForPublication(context.Background(), func(state.State[model]) bool {
-			close(closeReady)
+			closeReadyOnce.Do(func() { close(closeReady) })
 			return false
 		})
 	}()
@@ -887,4 +888,60 @@ func waitDiagnostic(t *testing.T, s *Session[model], code string) {
 		time.Sleep(time.Millisecond)
 	}
 	t.Fatalf("missing diagnostic %q in %#v", code, s.Diagnostics())
+}
+
+func TestSessionWaitForPublicationObservesFinalShutdown(t *testing.T) {
+	for _, startBeforeClose := range []bool{false, true} {
+		t.Run(fmt.Sprint(startBeforeClose), func(t *testing.T) {
+			s := newSession(t, Options[model]{Reduce: func(_ context.Context, current model, _ event.Event) (model, []effect.Request, error) {
+				return current, nil, nil
+			}, View: testView})
+			defer s.Close()
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			entered, release := make(chan struct{}), make(chan struct{})
+			var once sync.Once
+			result := make(chan error, 1)
+			wait := func() {
+				result <- s.WaitForPublication(ctx, func(snapshot state.State[model]) bool {
+					if snapshot.Sequence == 0 {
+						once.Do(func() { close(entered) })
+						select {
+						case <-release:
+						case <-ctx.Done():
+						}
+					}
+					return snapshot.Sequence == 1
+				})
+			}
+			if startBeforeClose {
+				go wait()
+				select {
+				case <-entered:
+				case <-ctx.Done():
+					t.Fatal("waiter did not start")
+				}
+			}
+			if err := s.Send(mustEvent(t, event.Shutdown, nil)); err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case <-s.loopDone:
+			case <-ctx.Done():
+				t.Fatal("shutdown did not close")
+			}
+			close(release)
+			if !startBeforeClose {
+				go wait()
+			}
+			select {
+			case err := <-result:
+				if err != nil {
+					t.Fatalf("final publication was not observed: %v", err)
+				}
+			case <-ctx.Done():
+				t.Fatal("waiter did not return")
+			}
+		})
+	}
 }
