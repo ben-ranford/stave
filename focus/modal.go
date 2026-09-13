@@ -5,7 +5,12 @@ import "github.com/ben-ranford/stave/semantic"
 // ModalLifecycle composes Graph scope operations for application-owned dialogs.
 type ModalLifecycle struct {
 	State  State
-	scopes []semantic.NodeID
+	scopes []modalScope
+}
+
+type modalScope struct {
+	scope    semantic.NodeID
+	previous semantic.NodeID
 }
 
 func NewModalLifecycle(state State) ModalLifecycle { return ModalLifecycle{State: state} }
@@ -17,15 +22,15 @@ func (m *ModalLifecycle) Open(g Graph, scope semantic.NodeID) bool {
 	if !ok {
 		return false
 	}
+	m.scopes = append(m.scopes, modalScope{scope: scope, previous: m.State.Scope})
 	m.State = next
-	m.scopes = append(m.scopes, scope)
 	return true
 }
 
 // Close restores the initiating target when it survives, otherwise uses Graph's
 // deterministic revision repair. Closing an already closed scope is a no-op.
 func (m *ModalLifecycle) Close(previous, current Graph, scope semantic.NodeID) bool {
-	if m == nil || len(m.scopes) == 0 || m.scopes[len(m.scopes)-1] != scope {
+	if m == nil || len(m.scopes) == 0 || m.scopes[len(m.scopes)-1].scope != scope {
 		return false
 	}
 	var restore semantic.Target
@@ -36,13 +41,12 @@ func (m *ModalLifecycle) Close(previous, current Graph, scope semantic.NodeID) b
 	if !ok {
 		return false
 	}
+	frame := m.scopes[len(m.scopes)-1]
 	m.scopes = m.scopes[:len(m.scopes)-1]
 	if restore.NodeID != "" {
 		next.Active = restore
 	}
-	if len(m.scopes) > 0 {
-		next.Scope = m.scopes[len(m.scopes)-1]
-	}
+	next.Scope = frame.previous
 	m.State = current.RepairFrom(previous, next)
 	return true
 }
