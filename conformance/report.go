@@ -96,8 +96,7 @@ func ParseJSONReport(data []byte) (JSONReport, error) {
 	if err := decoder.Decode(&wire); err != nil {
 		return JSONReport{}, fmt.Errorf("decode conformance report: %w", err)
 	}
-	var extra any
-	if err := decoder.Decode(&extra); err != io.EOF {
+	if decoder.Decode(new(any)) != io.EOF {
 		return JSONReport{}, fmt.Errorf("trailing conformance report JSON")
 	}
 	if wire.SchemaVersion == nil || wire.Failures == nil {
@@ -129,8 +128,7 @@ func rejectDuplicateJSONFields(data []byte) error {
 	if err := readJSONValue(decoder); err != nil {
 		return fmt.Errorf("decode conformance report: %w", err)
 	}
-	var extra any
-	if err := decoder.Decode(&extra); err != io.EOF {
+	if decoder.Decode(new(any)) != io.EOF {
 		return fmt.Errorf("trailing conformance report JSON")
 	}
 	return nil
@@ -205,8 +203,7 @@ func decodeJSONFailure(data json.RawMessage) (JSONFailure, error) {
 	if err := decoder.Decode(&wire); err != nil {
 		return JSONFailure{}, err
 	}
-	var extra any
-	if err := decoder.Decode(&extra); err != io.EOF {
+	if decoder.Decode(new(any)) != io.EOF {
 		return JSONFailure{}, fmt.Errorf("trailing failure JSON")
 	}
 	if wire.Path == nil || wire.Rule == nil || wire.Detail == nil || wire.Documentation == nil {
