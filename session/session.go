@@ -247,7 +247,7 @@ func (s *Session[M]) WaitForPublication(ctx context.Context, predicate func(stat
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-s.ctx.Done():
-			return ErrSessionClosed
+			return publicationWaitCloseError(ctx)
 		default:
 		}
 		s.mu.RLock()
@@ -266,10 +266,17 @@ func (s *Session[M]) WaitForPublication(ctx context.Context, predicate func(stat
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-s.ctx.Done():
-			return ErrSessionClosed
+			return publicationWaitCloseError(ctx)
 		case <-publication:
 		}
 	}
+}
+
+func publicationWaitCloseError(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return ErrSessionClosed
 }
 
 func (s *Session[M]) Cancel() {

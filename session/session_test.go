@@ -72,17 +72,15 @@ func TestSessionWaitKeepsPollingTimeVaryingPredicate(t *testing.T) {
 	})
 	defer s.Close()
 
-	deadline := time.Now().Add(5 * time.Millisecond)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	var evaluations atomic.Int32
 	if err := s.Wait(ctx, func(state.State[model]) bool {
-		evaluations.Add(1)
-		return !time.Now().Before(deadline)
+		return evaluations.Add(1) == 2
 	}); err != nil {
 		t.Fatalf("Wait() error = %v", err)
 	}
-	if got := evaluations.Load(); got < 2 {
+	if got := evaluations.Load(); got != 2 {
 		t.Fatalf("Wait predicate evaluations = %d, want polling to re-evaluate time-varying predicate", got)
 	}
 }
@@ -190,6 +188,67 @@ func TestSessionWaitForPublicationAvoidsIdleClonePolling(t *testing.T) {
 	if got := clones.Load(); got != 1 {
 		t.Fatalf("idle WaitForPublication clones = %d, want 1", got)
 	}
+}
+
+func TestSessionWaitForPublicationCallerCancellationPrecedesClosedSession(t *testing.T) {
+	for range 32 {
+		parent, cancel := context.WithCancel(context.Background())
+		s := newPublicationWaitTestSession(t, parent)
+		cancel()
+		err := s.WaitForPublication(parent, func(state.State[model]) bool { return false })
+		s.Close()
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("WaitForPublication() error = %v, want context.Canceled", err)
+		}
+	}
+}
+
+func TestSessionWaitForPublicationCallerCancellationPrecedesClosedSessionWhileWaiting(t *testing.T) {
+	for range 32 {
+		assertPublicationCallerCancellationWhileWaiting(t)
+	}
+}
+
+func assertPublicationCallerCancellationWhileWaiting(t *testing.T) {
+	t.Helper()
+	parent, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s := newPublicationWaitTestSession(t, parent)
+	defer s.Close()
+	entered := make(chan struct{})
+	result := make(chan error, 1)
+	go func() {
+		result <- s.WaitForPublication(parent, func(state.State[model]) bool {
+			close(entered)
+			return false
+		})
+	}()
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("WaitForPublication did not evaluate its predicate")
+	}
+	cancel()
+	select {
+	case err := <-result:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("WaitForPublication() error = %v, want context.Canceled", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("WaitForPublication did not return after cancellation")
+	}
+}
+
+func newPublicationWaitTestSession(t *testing.T, ctx context.Context) *Session[model] {
+	t.Helper()
+	s, err := New(ctx, Options[model]{
+		Reduce: func(context.Context, model, event.Event) (model, []effect.Request, error) { return model{}, nil, nil },
+		View:   testView,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
 }
 
 func TestSessionWaitForPublicationWakesConcurrentWaitersAndClose(t *testing.T) {
