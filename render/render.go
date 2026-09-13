@@ -151,6 +151,9 @@ func RenderSelected(r Request, outputs Outputs) (Result, error) {
 			return Result{}, err
 		}
 	}
+	if outputs&OutputPlain == 0 {
+		plain = ""
+	}
 	terminal := ""
 	if outputs&OutputTerminal != 0 {
 		writer := Writer{Manifest: r.Capabilities, ByteLimit: budgets.MaxBytes}
