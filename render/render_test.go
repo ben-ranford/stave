@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -253,6 +254,64 @@ func TestRenderRequestIsExplicitAndDeterministic(t *testing.T) {
 	}
 }
 
+func TestRenderSelectedPreservesDefaultAndOmitsUnselectedProducts(t *testing.T) {
+	t.Parallel()
+	root := testNode(t, "application", "App", nil, testNode(t, "text", "hello", nil))
+	tree, err := semantic.NewTree(1, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := Request{Context: context.Background(), Tree: tree, Theme: testTheme(t, capability.ColorTrueColor, capability.UnicodeFull), Capabilities: capability.Manifest{TTY: true, Color: capability.ColorTrueColor, Unicode: capability.UnicodeFull, Width: 20, Height: 4, Limits: capability.Limits{MaxTreeNodes: 64, MaxMessageBytes: 1 << 20}}, Viewport: layout.Size{Width: 20, Height: 4}}
+	all, err := Render(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selected, err := RenderSelected(req, OutputAll)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(all, selected) {
+		t.Fatal("Render default differs from OutputAll")
+	}
+	for _, tc := range []struct {
+		name    string
+		outputs Outputs
+		check   func(Result) bool
+	}{
+		{"patch", OutputPatch, func(result Result) bool {
+			return result.Patch.ToHash != ([32]byte{}) && result.Plain == "" && result.Machine == nil && result.Terminal == ""
+		}},
+		{"plain", OutputPlain, func(result Result) bool {
+			return result.Patch.ToHash == ([32]byte{}) && result.Plain != "" && result.Machine == nil && result.Terminal == ""
+		}},
+		{"machine", OutputMachine, func(result Result) bool {
+			return result.Patch.ToHash == ([32]byte{}) && result.Plain == "" && len(result.Machine) != 0 && result.Terminal == ""
+		}},
+		{"terminal", OutputTerminal, func(result Result) bool {
+			return result.Patch.ToHash == ([32]byte{}) && result.Plain == "" && result.Machine == nil && result.Terminal != ""
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := RenderSelected(req, tc.outputs)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !tc.check(result) {
+				t.Fatalf("selection materialized unexpected products: %#v", result)
+			}
+		})
+	}
+	if _, err := RenderSelected(req, 0); err == nil {
+		t.Fatal("zero output selection accepted")
+	}
+	if _, err := RenderSelected(req, Outputs(128)); err == nil {
+		t.Fatal("unknown output selection accepted")
+	}
+	if _, err := RenderSelected(req, OutputTerminal|Outputs(128)); err == nil {
+		t.Fatal("mixed known and unknown output selection accepted")
+	}
+}
+
 func TestMachineAndPlainOutputsAvoidANSIAndPreserveSemantics(t *testing.T) {
 	t.Parallel()
 	root := testNode(t, "application", "Status", map[string]string{"layout.kind": "stack"},
@@ -489,22 +548,53 @@ func TestDefaultRenderByteBudgetSupportsSemanticSnapshots(t *testing.T) {
 }
 
 func BenchmarkRender120x40(b *testing.B) {
+	req := benchmarkRenderRequest(b)
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		if _, err := Render(req); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkRenderSelected120x40(b *testing.B) {
+	req := benchmarkRenderRequest(b)
+	for _, tc := range []struct {
+		name    string
+		outputs Outputs
+	}{
+		{"all", OutputAll},
+		{"terminal_only", OutputTerminal},
+	} {
+		b.Run(tc.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				if _, err := RenderSelected(req, tc.outputs); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func benchmarkRenderRequest(tb testing.TB) Request {
+	tb.Helper()
 	children := make([]semantic.Node, 0, 2000)
 	for i := 0; i < 2000; i++ {
 		role := semantic.Role("text")
 		if i%20 == 0 {
 			role = "status"
 		}
-		children = append(children, testNodeBench(b, role, fmt.Sprintf("leaf-%04d", i), nil))
+		children = append(children, testNodeBench(tb, role, fmt.Sprintf("leaf-%04d", i), nil))
 	}
-	root := testNodeBench(b, "application", "Root", map[string]string{"layout.kind": "records", "layout.gap": "0"}, children...)
+	root := testNodeBench(tb, "application", "Root", map[string]string{"layout.kind": "records", "layout.gap": "0"}, children...)
 	tree, err := semantic.NewTree(1, root)
 	if err != nil {
-		b.Fatal(err)
+		tb.Fatal(err)
 	}
-	req := Request{
+	return Request{
 		Tree:  tree,
-		Theme: testTheme(b, capability.ColorANSI256, capability.UnicodeFull),
+		Theme: testTheme(tb, capability.ColorANSI256, capability.UnicodeFull),
 		Capabilities: capability.Manifest{
 			TTY:        true,
 			Color:      capability.ColorANSI256,
@@ -518,12 +608,6 @@ func BenchmarkRender120x40(b *testing.B) {
 			},
 		},
 		Viewport: layout.Size{Width: 120, Height: 40},
-	}
-	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
-		if _, err := Render(req); err != nil {
-			b.Fatal(err)
-		}
 	}
 }
 
