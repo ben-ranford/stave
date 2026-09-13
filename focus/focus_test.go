@@ -198,6 +198,38 @@ func TestModalLifecycleRestoresOuterScopeAfterNestedClose(t *testing.T) {
 	}
 }
 
+func TestModalLifecyclePreservesOuterReturnFrameAfterRemovedInnerOpener(t *testing.T) {
+	inner := testNode(t, "inner", "dialog", "Inner", semantic.Flags{Visible: true}, []semantic.Node{
+		testNode(t, "inner.ok", "button", "OK", semantic.Flags{Visible: true, Focusable: true}, nil),
+	})
+	outer := testNode(t, "outer", "dialog", "Outer", semantic.Flags{Visible: true}, []semantic.Node{
+		testNode(t, "outer.opener", "button", "Open inner", semantic.Flags{Visible: true, Focusable: true}, nil), inner,
+	})
+	background := testNode(t, "background", "button", "Open outer", semantic.Flags{Visible: true, Focusable: true}, nil)
+	previous := NewGraph(testTree(t, testNode(t, "app", "application", "App", semantic.Flags{Visible: true}, []semantic.Node{background, outer})))
+	m := NewModalLifecycle(State{Active: previous.Focusable()[0]})
+	if !m.Open(previous, outer.ID()) || !m.Open(previous, inner.ID()) {
+		t.Fatal("nested open failed")
+	}
+
+	currentInner := testNode(t, "inner", "dialog", "Inner", semantic.Flags{Visible: true}, []semantic.Node{
+		testNode(t, "inner.ok", "button", "OK", semantic.Flags{Visible: true, Focusable: true}, nil),
+	})
+	currentOuter := testNode(t, "outer", "dialog", "Outer", semantic.Flags{Visible: true}, []semantic.Node{
+		testNode(t, "outer.cancel", "button", "Cancel", semantic.Flags{Visible: true, Focusable: true}, nil), currentInner,
+	})
+	current := NewGraph(testTree(t, testNode(t, "app", "application", "App", semantic.Flags{Visible: true}, []semantic.Node{background, currentOuter})))
+	if !m.Close(previous, current, inner.ID()) || !m.Close(previous, current, outer.ID()) {
+		t.Fatal("nested close failed")
+	}
+	if m.State.Active.NodeID != previous.Focusable()[0].NodeID {
+		t.Fatalf("outer opener lost: got %s, want %s", m.State.Active.NodeID, previous.Focusable()[0].NodeID)
+	}
+	if err := current.Validate(m.State); err != nil {
+		t.Fatalf("nested repaired state is invalid: %v", err)
+	}
+}
+
 func TestModalLifecycleRestoresPreExistingScope(t *testing.T) {
 	inner := testNode(t, "inner", "dialog", "Inner", semantic.Flags{Visible: true}, []semantic.Node{
 		testNode(t, "inner.ok", "button", "OK", semantic.Flags{Visible: true, Focusable: true}, nil),
