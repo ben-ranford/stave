@@ -82,6 +82,27 @@ func TestCompareInventoriesRejectsStructFieldReordering(t *testing.T) {
 	}
 }
 
+func TestCompareInventoriesRejectsEmbeddedFieldAddition(t *testing.T) {
+	baseline := "# Public API inventory\nmodule example.com/api\n\n[example.com/api]\ntype A struct {  }\ntype B struct {  }\ntype Options struct { A }\n"
+	withEmbeddedAddition := "# Public API inventory\nmodule example.com/api\n\n[example.com/api]\ntype A struct {  }\ntype B struct {  }\ntype Options struct { A; B `json:\"b\"` }\n"
+	if err := compareInventories(baseline, withEmbeddedAddition); err == nil {
+		t.Fatal("tagged embedded field addition was accepted")
+	}
+	withNamedAddition := "# Public API inventory\nmodule example.com/api\n\n[example.com/api]\ntype A struct {  }\ntype B struct {  }\ntype Options struct { A; Enabled bool }\n"
+	if err := compareInventories(baseline, withNamedAddition); err == nil {
+		t.Fatal("named field addition to an embedded-field struct was accepted")
+	}
+}
+
+func TestEmbeddedStructFieldParsesCanonicalImportPaths(t *testing.T) {
+	if embeddedStructField("Handle github.com/ben-ranford/stave/secret.Handle") {
+		t.Fatal("named field with a canonical import path was classified as embedded")
+	}
+	if !embeddedStructField("github.com/ben-ranford/stave/secret.Handle `json:\"handle\"`") {
+		t.Fatal("tagged embedded field with a canonical import path was not classified as embedded")
+	}
+}
+
 func TestCompareInventoriesPreservesStructComparability(t *testing.T) {
 	baseline := "# Public API inventory\nmodule example.com/api\n\n[example.com/api]\ntype Key struct { ID int }\nstruct-comparable Key true\n"
 	withNonComparableField := "# Public API inventory\nmodule example.com/api\n\n[example.com/api]\ntype Key struct { ID int; Values []string }\nstruct-comparable Key false\n"
@@ -178,8 +199,12 @@ func TestConsumerCompilerFixtures(t *testing.T) {
 	baseline := `package api
 
 type Contract interface { Keep() string }
+type A struct{}
+func (A) Run() {}
+type B struct{}
+func (B) Run() {}
 type Key struct { ID int }
-type Options struct { Name string }
+type Options struct { Name string; A }
 var Limit int
 func Keep(value string) string { return value }
 `
@@ -193,9 +218,11 @@ func Keep(value string) string { return value }
 		{name: "signature change", api: strings.Replace(baseline, "func Keep(value string) string", "func Keep(value int) string", 1), passes: false},
 		{name: "interface method addition", api: strings.Replace(baseline, "type Contract interface { Keep() string }", "type Contract interface { Keep() string; Extra() }", 1), passes: false},
 		{name: "variable type change", api: strings.Replace(baseline, "var Limit int", "var Limit string", 1), passes: false},
-		{name: "additive function and keyed field", api: strings.Replace(strings.Replace(baseline, "type Options struct { Name string }", "type Options struct { Name string; Enabled bool }", 1), "func Keep(value string) string { return value }", "func Keep(value string) string { return value }\nfunc Extra() error { return nil }", 1), passes: true},
+		{name: "additive function and keyed field", api: strings.Replace(strings.Replace(baseline, "type Key struct { ID int }", "type Key struct { ID int; Enabled bool }", 1), "func Keep(value string) string { return value }", "func Keep(value string) string { return value }\nfunc Extra() error { return nil }", 1), passes: true},
 		{name: "non-comparable additive field", api: strings.Replace(baseline, "type Key struct { ID int }", "type Key struct { ID int; Values []string }", 1), passes: false},
 		{name: "non-comparable private field", api: strings.Replace(baseline, "type Key struct { ID int }", "type Key struct { ID int; values []string }", 1), passes: false},
+		{name: "ambiguous promoted method", api: strings.Replace(baseline, "type Options struct { Name string; A }", "type Options struct { Name string; A; B `json:\"b\"` }", 1), passes: false},
+		{name: "shadowed promoted method", api: strings.Replace(baseline, "type Options struct { Name string; A }", "type Options struct { Name string; A; Run string }", 1), passes: false},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -230,6 +257,7 @@ func TestConsumerSurface(t *testing.T) {
 	var _ int = api.Limit
 	if api.Keep("ok") != "ok" { t.Fatal("unexpected result") }
 	_ = api.Options{Name: "keyed"}
+	api.Options{}.Run()
 	_ = map[api.Key]struct{}{api.Key{ID: 1}: {}}
 }
 `,

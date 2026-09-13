@@ -401,6 +401,31 @@ func TestPublicAPIInventorySelectsRequestedBuildTarget(t *testing.T) {
 	}
 }
 
+func TestPublicAPIInventoryRejectsCgoSources(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := renderPublicAPI("example.com/api", []goListPackage{{ImportPath: "example.com/api", Dir: dir, CgoFiles: []string{"api_cgo.go"}}}); err == nil || !strings.Contains(err.Error(), "example.com/api") || !strings.Contains(err.Error(), "api_cgo.go") {
+		t.Fatalf("public cgo source error = %v", err)
+	}
+}
+
+func TestPublicAPIInventoryRejectsCgoLocalDependency(t *testing.T) {
+	dir := t.TempDir()
+	apiDir := filepath.Join(dir, "api")
+	if err := os.MkdirAll(apiDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(apiDir, "api.go"), []byte("package api\nimport \"example.com/api/internal/hidden\"\ntype Public = hidden.Value\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := renderPublicAPI("example.com/api", []goListPackage{
+		{ImportPath: "example.com/api", Dir: apiDir, GoFiles: []string{"api.go"}},
+		{ImportPath: "example.com/api/internal/hidden", Dir: filepath.Join(dir, "hidden"), CgoFiles: []string{"hidden_cgo.go"}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "example.com/api/internal/hidden") || !strings.Contains(err.Error(), "hidden_cgo.go") {
+		t.Fatalf("local cgo dependency error = %v", err)
+	}
+}
+
 func TestPublicAPIInventoryPreservesImportedTypePackageIdentity(t *testing.T) {
 	dir := t.TempDir()
 	write := func(relative, source string) {

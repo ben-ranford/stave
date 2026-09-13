@@ -529,6 +529,8 @@
         "errors",
         "flag",
         "fmt",
+        "go/ast",
+        "go/parser",
         "go/token",
         "io",
         "os",

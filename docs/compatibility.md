@@ -78,13 +78,18 @@ interface method addition, or exported variable type change.
 Adding an exported function or a field while retaining existing keyed fields
 and struct comparability is accepted. Adding a field can still break consumers
 using unkeyed composite literals, so those consumers should use keyed literals
-and maintainers must call out that caveat during compatibility review.
+and maintainers must call out that caveat during compatibility review. The
+baseline rejects every field addition to a struct that already embeds a field,
+as well as embedded-field additions to a plain struct, because either can
+change promoted selectors. The source inventory also fails closed when selected
+public packages or their root-local source dependencies use cgo; cgo-aware
+inventory support is tracked separately in issue #109.
 
-There is currently no stable v1 tag. Until issue #2 provides one,
-`make release-baseline` fails deliberately and a GA release cannot pass it.
-`make release-baseline-development` is an opt-in, explicitly labelled
-comparison with `v1.0.0-rc.2`; it is development evidence only and cannot
-serve as a GA baseline.
+`make release-baseline` requires an earlier stable v1 tag. When only
+prereleases exist, it fails deliberately; until issue #2 provides a stable
+baseline, a GA release cannot pass it. `make release-baseline-development` is
+an opt-in, explicitly labelled comparison with `v1.0.0-rc.2`; it is
+development evidence only and cannot serve as a GA baseline.
 
 The baseline applies to v1 GA minor releases only. A future major release must
 introduce its own major-version compatibility policy rather than reuse v1.

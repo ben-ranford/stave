@@ -9,6 +9,8 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"go/ast"
+	"go/parser"
 	"go/token"
 	"io"
 	"os"
@@ -26,8 +28,9 @@ const (
 )
 
 var (
-	stableV1Tag     = regexp.MustCompile(`^v1\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$`)
-	prereleaseV1Tag = regexp.MustCompile(`^v1\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-((0|[1-9][0-9]*)|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(\.((0|[1-9][0-9]*)|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$`)
+	stableV1Tag         = regexp.MustCompile(`^v1\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$`)
+	prereleaseV1Tag     = regexp.MustCompile(`^v1\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-((0|[1-9][0-9]*)|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(\.((0|[1-9][0-9]*)|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$`)
+	canonicalImportPath = regexp.MustCompile(`(?:[[:alnum:]_.-]+/)+[[:alpha:]_][[:alnum:]_]*\.([[:alpha:]_][[:alnum:]_]*)`)
 )
 
 type baseline struct {
@@ -350,9 +353,17 @@ func compatibleStructFieldAddition(baselineDeclaration, candidateDeclaration str
 	if len(candidateFields) < len(baselineFields) {
 		return false
 	}
+	for _, field := range baselineFields {
+		if embeddedStructField(field) {
+			return false
+		}
+	}
 	candidateIndex := 0
 	for _, field := range baselineFields {
 		for candidateIndex < len(candidateFields) && candidateFields[candidateIndex] != field {
+			if embeddedStructField(candidateFields[candidateIndex]) {
+				return false
+			}
 			candidateIndex++
 		}
 		if candidateIndex == len(candidateFields) {
@@ -360,7 +371,37 @@ func compatibleStructFieldAddition(baselineDeclaration, candidateDeclaration str
 		}
 		candidateIndex++
 	}
+	for ; candidateIndex < len(candidateFields); candidateIndex++ {
+		if embeddedStructField(candidateFields[candidateIndex]) {
+			return false
+		}
+	}
 	return true
+}
+
+func embeddedStructField(field string) bool {
+	// Inventory types use package paths rather than Go import names. Replace
+	// those paths only for parsing so Field.Names reliably distinguishes an
+	// embedded field from a named field, including when an embedded field has a
+	// tag.
+	source := "package inventory\ntype value struct { " + canonicalImportPath.ReplaceAllString(field, "pkg.$1") + " }"
+	parsed, err := parser.ParseFile(token.NewFileSet(), "inventory.go", source, parser.SkipObjectResolution)
+	if err != nil || len(parsed.Decls) != 1 {
+		return true
+	}
+	declaration, ok := parsed.Decls[0].(*ast.GenDecl)
+	if !ok || len(declaration.Specs) != 1 {
+		return true
+	}
+	typeDeclaration, ok := declaration.Specs[0].(*ast.TypeSpec)
+	if !ok {
+		return true
+	}
+	structDeclaration, ok := typeDeclaration.Type.(*ast.StructType)
+	if !ok || structDeclaration.Fields == nil || len(structDeclaration.Fields.List) != 1 {
+		return true
+	}
+	return len(structDeclaration.Fields.List[0].Names) == 0
 }
 
 func structFields(declaration string) []string {

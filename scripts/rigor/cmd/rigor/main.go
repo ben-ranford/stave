@@ -42,6 +42,7 @@ type goListPackage struct {
 	ImportPath string
 	Dir        string
 	GoFiles    []string
+	CgoFiles   []string
 	Imports    []string
 	Standard   bool
 	Module     *goListModule
@@ -63,6 +64,9 @@ func (i *sourceImporter) Import(path string) (*types.Package, error) {
 	source, ok := i.packages[path]
 	if !ok {
 		return i.standard.Import(path)
+	}
+	if err := rejectCgoSource(source); err != nil {
+		return nil, err
 	}
 
 	files := make([]*ast.File, 0, len(source.GoFiles))
@@ -261,6 +265,9 @@ func renderPublicAPIForTarget(ctx context.Context, modulePath string, pkgs []goL
 		if !publicAPIPackage(modulePath, pkg.ImportPath) {
 			continue
 		}
+		if err := rejectCgoSource(pkg); err != nil {
+			return "", err
+		}
 		entries, err := publicAPIEntries(fset, pkg, importer)
 		if err != nil {
 			return "", err
@@ -268,6 +275,13 @@ func renderPublicAPIForTarget(ctx context.Context, modulePath string, pkgs []goL
 		exported[pkg.ImportPath] = entries
 	}
 	return formatPublicAPI(modulePath, exported), nil
+}
+
+func rejectCgoSource(pkg goListPackage) error {
+	if len(pkg.CgoFiles) == 0 {
+		return nil
+	}
+	return fmt.Errorf("public API inventory does not support cgo source in package %s: %s", pkg.ImportPath, strings.Join(pkg.CgoFiles, ", "))
 }
 
 func newSourceImporter(ctx context.Context, fset *token.FileSet, pkgs []goListPackage, goos, goarch string) *sourceImporter {
