@@ -90,6 +90,13 @@ case "$1 $2" in
 	if [[ -s "${bin_dir}/origin-override" ]]; then origin_sha="$(<"${bin_dir}/origin-override")"; fi
 	printf '{"Path":"github.com/ben-ranford/stave","Version":"%s","Sum":"h1:publicsum","Origin":{"Hash":"%s"}}\n' "${module_version}" "${origin_sha}"
 	;;
+'mod download')
+	bin_dir="$(dirname "$0")"
+	module_version="${4#github.com/ben-ranford/stave@}"
+	origin_sha=source-commit
+	if [[ -s "${bin_dir}/origin-override" ]]; then origin_sha="$(<"${bin_dir}/origin-override")"; fi
+	printf '{"Path":"github.com/ben-ranford/stave","Version":"%s","Sum":"h1:publicsum","Origin":{"Hash":"%s"}}\n' "${module_version}" "${origin_sha}"
+	;;
 'run .') printf 'text: public module\n' ;;
 *) printf 'unexpected go invocation: %s %s\n' "$1" "$2" >&2; exit 1 ;;
 esac

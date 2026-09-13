@@ -209,6 +209,8 @@ mkdir "${workdir}/home"
 	resolution_json="$(env -i "${go_environment[@]}" go list -m -json "github.com/ben-ranford/stave@${tag}")"
 	printf '%s\n' "${resolution_json}" >"${workdir}/resolution.json"
 	module_json="$(env -i "${go_environment[@]}" go list -m -json github.com/ben-ranford/stave)"
+	module_version="$(jq -er '.Version' <<<"${module_json}")"
+	module_json="$(env -i "${go_environment[@]}" go mod download -json "github.com/ben-ranford/stave@${module_version}")"
 	printf '%s\n' "${module_json}" >"${workdir}/module.json"
 	env -i "${go_environment[@]}" go run . >"${workdir}/consumer-output.txt"
 )
