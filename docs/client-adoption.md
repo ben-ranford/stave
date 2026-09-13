@@ -5,11 +5,11 @@ theme, actions, and effects. Stave provides the semantic UI and runtime
 contracts that let those choices work consistently across human and automated
 interfaces.
 
-The held root module release target is `v1.0.0-rc.2` <!-- x-release-please-version -->, awaiting
-its tag gate. It is not a GA promise; published Lopper parity and rollback evidence remains
-the promotion gate. Begin with the root module only. The nested SSH, Bubble Tea,
-and Lip Gloss modules are internal and are not yet supported consumer
-dependencies. Pin this target after its release tag is published.
+This guide tracks root module version `v1.0.0-rc.2` <!-- x-release-please-version -->.
+Begin with the root module only. The nested SSH, Bubble Tea, and Lip Gloss
+modules are internal and are not yet supported consumer dependencies. Pin a
+published release tag before deployment. For Lopper promotion, verify the
+published parity and rollback evidence described in the [release runbook](releasing.md).
 
 For a compiled first semantic tree, use the [root quick start](../README.md#quick-start).
 

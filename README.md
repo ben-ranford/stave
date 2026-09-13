@@ -34,7 +34,7 @@ Stave is created by [Ben Ranford](https://github.com/ben-ranford) and is
 
 ## Installation
 
-Requires **Go 1.22 or later**. In your Go module, install the release candidate:
+Requires **Go 1.22 or later**. In your Go module, install the documented version:
 
 <!-- v1.0.0-rc.2 x-release-please-version -->
 <!-- x-release-please-start-version -->
