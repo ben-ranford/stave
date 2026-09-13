@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -34,6 +35,9 @@ func TestBindSessionServesValidatedFullAndPatchAndPreservesAuthority(t *testing.
 	if err != nil || full.Snapshot == nil || full.Patch != nil || full.Snapshot.Validate() != nil || full.Snapshot.TreeHash != full.TreeHash {
 		t.Fatalf("invalid full envelope: %#v, %v", full, err)
 	}
+	if full.Sequence != 1 {
+		t.Fatalf("initial agent sequence = %d, want one-based 1", full.Sequence)
+	}
 	if err := s.Send(bridgeEvent(t)); err != nil {
 		t.Fatal(err)
 	}
@@ -54,8 +58,14 @@ func TestBindSessionServesValidatedFullAndPatchAndPreservesAuthority(t *testing.
 	bound.CompatibilityMode = true
 	server := New(bound)
 	var output bytes.Buffer
-	requests := "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"stave.initialize\"}\n{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"stave.initialized\"}\n{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"stave.session.cancel\"}\n{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"stave.session.cancel\"}\n"
+	requests := "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"stave.initialize\"}\n{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"stave.initialized\"}\n{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"stave.snapshot\"}\n"
 	if err := server.Serve(context.Background(), input(requests), &output); err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(output.Bytes(), []byte("\"error\"")) || !bytes.Contains(output.Bytes(), []byte("\"sequence\":2")) {
+		t.Fatalf("initial bound snapshot was rejected: %s", output.String())
+	}
+	if err := bound.CancelSession(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if s.Lifecycle() != session.LifecycleClosed {
@@ -69,7 +79,9 @@ func TestBindSessionServesValidatedFullAndPatchAndPreservesAuthority(t *testing.
 func bridgeSession(t *testing.T, sessionID string) *session.Session[int] {
 	t.Helper()
 	s, err := session.New(context.Background(), session.Options[int]{
-		SessionID: sessionID,
+		SessionID:  sessionID,
+		ConfigHash: strings.Repeat("a", 64),
+		ThemeHash:  strings.Repeat("b", 64),
 		Reduce: func(_ context.Context, current int, _ event.Event) (int, []effect.Request, error) {
 			return current + 1, nil, nil
 		},
