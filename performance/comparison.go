@@ -236,16 +236,27 @@ func absoluteDelta(metric, unit string, baseline, candidate, tolerance float64) 
 }
 
 func validateJSONKeys(data []byte, depth int) error {
-	if depth > 64 {
-		return errors.New("performance report JSON nesting exceeds limit")
-	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	if err := validateJSONValue(decoder, depth); err != nil {
+		return err
+	}
+	return ensureReportEOF(decoder)
+}
+
+func validateJSONValue(decoder *json.Decoder, depth int) error {
 	token, err := decoder.Token()
 	if err != nil {
 		return err
 	}
-	delim, ok := token.(json.Delim)
-	if !ok || (delim != '{' && delim != '[') {
+	delim, container := token.(json.Delim)
+	if !container {
+		return nil
+	}
+	if depth > 64 {
+		return errors.New("performance report JSON nesting exceeds limit")
+	}
+	if delim != '{' && delim != '[' {
 		return errors.New("invalid performance report JSON")
 	}
 	seen := map[string]struct{}{}
@@ -255,21 +266,12 @@ func validateJSONKeys(data []byte, depth int) error {
 				return err
 			}
 		}
-		var raw json.RawMessage
-		if err := decoder.Decode(&raw); err != nil {
+		if err := validateJSONValue(decoder, depth+1); err != nil {
 			return err
 		}
-		trimmed := bytes.TrimSpace(raw)
-		if len(trimmed) > 0 && (trimmed[0] == '{' || trimmed[0] == '[') {
-			if err := validateJSONKeys(trimmed, depth+1); err != nil {
-				return err
-			}
-		}
 	}
-	if _, err := decoder.Token(); err != nil {
-		return err
-	}
-	return ensureReportEOF(decoder)
+	_, err = decoder.Token()
+	return err
 }
 
 func validateJSONObjectKey(decoder *json.Decoder, seen map[string]struct{}) error {
