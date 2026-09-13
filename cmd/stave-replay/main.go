@@ -16,6 +16,7 @@ import (
 
 const (
 	exitSuccess  = 0
+	exitOutput   = 1
 	exitMismatch = 2
 	exitInvalid  = 3
 	exitUsage    = 64
@@ -45,11 +46,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 			return usage(stderr)
 		}
 		if _, err := load(*input); err != nil {
-			writeReport(stdout, report{Status: "invalid", Evidence: evidenceLabel, Error: invalidInputMessage})
-			return exitInvalid
+			return writeReport(stdout, stderr, report{Status: "invalid", Evidence: evidenceLabel, Error: invalidInputMessage}, exitInvalid)
 		}
-		writeReport(stdout, report{Status: "valid", Evidence: evidenceLabel})
-		return exitSuccess
+		return writeReport(stdout, stderr, report{Status: "valid", Evidence: evidenceLabel}, exitSuccess)
 	case "compare":
 		flags := flag.NewFlagSet("compare", flag.ContinueOnError)
 		flags.SetOutput(stderr)
@@ -60,26 +59,20 @@ func run(args []string, stdout, stderr io.Writer) int {
 		}
 		expected, err := load(*expectedPath)
 		if err != nil {
-			writeReport(stdout, report{Status: "invalid", Evidence: evidenceLabel, Error: invalidInputMessage})
-			return exitInvalid
+			return writeReport(stdout, stderr, report{Status: "invalid", Evidence: evidenceLabel, Error: invalidInputMessage}, exitInvalid)
 		}
 		actual, err := load(*actualPath)
 		if err != nil {
-			writeReport(stdout, report{Status: "invalid", Evidence: evidenceLabel, Error: invalidInputMessage})
-			return exitInvalid
+			return writeReport(stdout, stderr, report{Status: "invalid", Evidence: evidenceLabel, Error: invalidInputMessage}, exitInvalid)
 		}
 		if err := replay.Validate(expected, actual); err != nil {
 			var divergence *replay.Divergence
 			if errors.As(err, &divergence) {
-				writeReport(stdout, report{Status: "mismatch", Evidence: evidenceLabel, Divergence: replay.RedactedDivergence(divergence)})
-			} else {
-				writeReport(stdout, report{Status: "invalid", Evidence: evidenceLabel, Error: invalidInputMessage})
-				return exitInvalid
+				return writeReport(stdout, stderr, report{Status: "mismatch", Evidence: evidenceLabel, Divergence: replay.RedactedDivergence(divergence)}, exitMismatch)
 			}
-			return exitMismatch
+			return writeReport(stdout, stderr, report{Status: "invalid", Evidence: evidenceLabel, Error: invalidInputMessage}, exitInvalid)
 		}
-		writeReport(stdout, report{Status: "match", Evidence: evidenceLabel})
-		return exitSuccess
+		return writeReport(stdout, stderr, report{Status: "match", Evidence: evidenceLabel}, exitSuccess)
 	default:
 		return usage(stderr)
 	}
@@ -101,13 +94,12 @@ func load(path string) (replay.Transcript, error) {
 	return replay.DecodeTranscript(data)
 }
 
-func writeReport(writer io.Writer, value report) {
-	data, err := json.Marshal(value)
-	if err != nil {
-		fmt.Fprintf(writer, "{\"status\":\"invalid\",\"error\":%q}\n", err.Error())
-		return
+func writeReport(stdout, stderr io.Writer, value report, status int) int {
+	if err := json.NewEncoder(stdout).Encode(value); err != nil {
+		fmt.Fprintln(stderr, "cannot write replay report")
+		return exitOutput
 	}
-	fmt.Fprintln(writer, string(data))
+	return status
 }
 
 func usage(stderr io.Writer) int {
