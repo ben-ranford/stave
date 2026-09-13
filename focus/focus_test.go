@@ -254,6 +254,39 @@ func TestModalLifecyclePreservesOuterReturnFrameAfterRemovedInnerOpener(t *testi
 	}
 }
 
+func TestModalLifecyclePreservesEnclosingReturnFrameWhenOpeningRenderDeletesOpener(t *testing.T) {
+	modal := testNode(t, "modal", "dialog", "Modal", semantic.Flags{Visible: true}, []semantic.Node{
+		testNode(t, "modal.ok", "button", "OK", semantic.Flags{Visible: true, Focusable: true}, nil),
+	})
+	background := testNode(t, "background", "button", "Background", semantic.Flags{Visible: true, Focusable: true}, nil)
+	opener := testNode(t, "outer.opener", "button", "Open", semantic.Flags{Visible: true, Focusable: true}, nil)
+	previousOuter := testNode(t, "outer", "dialog", "Outer", semantic.Flags{Visible: true}, []semantic.Node{opener, modal})
+	previous := NewGraph(testTree(t, testNode(t, "app", "application", "App", semantic.Flags{Visible: true}, []semantic.Node{background, previousOuter})))
+	initial := State{Active: previous.Focusable()[1], Scope: previousOuter.ID(), Stack: []semantic.Target{previous.Focusable()[0]}}
+
+	currentOuter := testNode(t, "outer", "dialog", "Outer", semantic.Flags{Visible: true}, []semantic.Node{
+		testNode(t, "outer.cancel", "button", "Cancel", semantic.Flags{Visible: true, Focusable: true}, nil),
+	})
+	current := NewGraph(testTree(t, testNode(t, "app", "application", "App", semantic.Flags{Visible: true}, []semantic.Node{background, currentOuter})))
+	introducedOuter := testNode(t, "outer", "dialog", "Outer", semantic.Flags{Visible: true}, []semantic.Node{
+		modal,
+		testNode(t, "outer.cancel", "button", "Cancel", semantic.Flags{Visible: true, Focusable: true}, nil),
+	})
+	introduced := NewGraph(testTree(t, testNode(t, "app", "application", "App", semantic.Flags{Visible: true}, []semantic.Node{background, introducedOuter})))
+
+	m := NewModalLifecycle(initial)
+	if !m.Open(introduced, modal.ID()) || !m.Close(previous, current, modal.ID()) {
+		t.Fatal("modal lifecycle failed")
+	}
+	if m.State.Scope != currentOuter.ID() || len(m.State.Stack) != 1 {
+		t.Fatalf("enclosing return frame lost: %+v", m.State)
+	}
+	popped, ok := current.PopScope(m.State)
+	if !ok || popped.Active.NodeID != background.ID() || popped.Scope != "" {
+		t.Fatalf("outer scope did not restore background: %+v", popped)
+	}
+}
+
 func TestModalLifecycleRestoresPreExistingScope(t *testing.T) {
 	inner := testNode(t, "inner", "dialog", "Inner", semantic.Flags{Visible: true}, []semantic.Node{
 		testNode(t, "inner.ok", "button", "OK", semantic.Flags{Visible: true, Focusable: true}, nil),
