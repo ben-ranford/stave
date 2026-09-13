@@ -220,13 +220,23 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 				if current == nil {
 					continue
 				}
+				if reason, terminal := current.takeTerminal(); terminal {
+					b, _ := json.Marshal(protocol.Notification{JSONRPC: protocol.JSONRPC, Method: "stave.snapshot.subscription", Params: mustJSON(map[string]string{"state": "terminated", "reason": reason})})
+					if len(b) <= s.outputLimit() {
+						writeMu.Lock()
+						_, e := out.Write(append(b, '\n'))
+						setWriteErr(e)
+						writeMu.Unlock()
+					}
+					continue
+				}
 				result, ok := current.take()
 				if !ok {
 					continue
 				}
 				b, e := json.Marshal(protocol.Notification{JSONRPC: protocol.JSONRPC, Method: "stave.snapshot.subscription", Params: mustJSON(protocol.SnapshotSubscriptionNotification{Snapshot: result})})
 				if e != nil || len(b) > s.outputLimit() {
-					current.close()
+					current.fail("output_limit")
 					continue
 				}
 				writeMu.Lock()

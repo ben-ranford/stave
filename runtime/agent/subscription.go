@@ -14,6 +14,7 @@ type snapshotSubscription struct {
 	active   bool
 	sequence uint64
 	pending  *protocol.SnapshotResult
+	terminal string
 	wake     chan struct{}
 	cancel   context.CancelFunc
 	done     chan struct{}
@@ -26,15 +27,33 @@ func newSnapshotSubscription(parent context.Context, baseline uint64, wake chan 
 		defer close(s.done)
 		for {
 			if wait(ctx, s.currentSequence()) != nil {
+				s.fail("session_closed")
 				return
 			}
 			result, ok := snapshot(ctx)
-			if !ok || !s.replace(result) {
+			if !ok {
+				s.fail("provider_failed")
+				return
+			}
+			if !s.replace(result) {
 				return
 			}
 		}
 	}()
 	return s
+}
+func (s *snapshotSubscription) fail(reason string) {
+	s.mu.Lock()
+	if s.active {
+		s.active = false
+		s.pending = nil
+		s.terminal = reason
+		select {
+		case s.wake <- struct{}{}:
+		default:
+		}
+	}
+	s.mu.Unlock()
 }
 
 func (s *snapshotSubscription) currentSequence() uint64 {
@@ -66,6 +85,16 @@ func (s *snapshotSubscription) take() (protocol.SnapshotResult, bool) {
 	result := *s.pending
 	s.pending = nil
 	return result, true
+}
+func (s *snapshotSubscription) takeTerminal() (string, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.terminal == "" {
+		return "", false
+	}
+	reason := s.terminal
+	s.terminal = ""
+	return reason, true
 }
 func (s *snapshotSubscription) close() {
 	s.mu.Lock()
