@@ -124,6 +124,10 @@ func TestCompareRequiresEqualAttemptCounts(t *testing.T) {
 	}
 	baseline.IdleCPU.Attempts = []float64{0.01, 0.02}
 	candidate.IdleCPU.Attempts = []float64{0.03, 0.04}
+	baseline.Measurements[0].P50, baseline.Measurements[0].P95, baseline.Measurements[0].P99 = time.Nanosecond, 2*time.Nanosecond, 3*time.Nanosecond
+	candidate.Measurements[0].P50, candidate.Measurements[0].P95, candidate.Measurements[0].P99 = 7*time.Nanosecond, 8*time.Nanosecond, 9*time.Nanosecond
+	baseline.IdleCPU.Value = 0.01
+	candidate.IdleCPU.Value = 0.03
 	if _, err := Compare(baseline, candidate); err != nil {
 		t.Fatalf("Compare() rejected equal attempt counts with different timings: %v", err)
 	}
@@ -133,7 +137,7 @@ func TestCompareRequiresEqualAttemptCounts(t *testing.T) {
 		apply func(*Report)
 	}{
 		{"measurement", func(report *Report) {
-			report.Measurements[0].Attempts = append(report.Measurements[0].Attempts, Attempt{})
+			report.Measurements[0].Attempts = append(report.Measurements[0].Attempts, Attempt{P50: 12 * time.Nanosecond, P95: 13 * time.Nanosecond, P99: 14 * time.Nanosecond})
 		}},
 		{"idle CPU", func(report *Report) {
 			report.IdleCPU.Attempts = append(report.IdleCPU.Attempts, 0.05)
@@ -147,6 +151,75 @@ func TestCompareRequiresEqualAttemptCounts(t *testing.T) {
 			mutate.apply(&mismatched)
 			if _, err := Compare(baseline, mismatched); err == nil {
 				t.Fatal("Compare() accepted mismatched attempt counts")
+			}
+		})
+	}
+}
+
+func TestCompareRejectsDifferentDeclaredInvariantsAndDisposition(t *testing.T) {
+	baseline := comparisonFixture()
+	for _, mutate := range []struct {
+		name  string
+		apply func(*Report)
+	}{
+		{"invariants", func(report *Report) { report.Invariants = []string{"fixture", "changed"} }},
+		{"measurement disposition", func(report *Report) { report.Measurements[0].Disposition = "median retained attempt" }},
+		{"idle CPU disposition", func(report *Report) { report.IdleCPU.Disposition = "mean retained window" }},
+	} {
+		t.Run(mutate.name, func(t *testing.T) {
+			candidate := comparisonFixture()
+			mutate.apply(&candidate)
+			if _, err := Compare(baseline, candidate); err == nil {
+				t.Fatal("Compare() accepted incompatible declared collection contract")
+			}
+		})
+	}
+}
+
+func TestValidateReportRetainedAttemptsMatchCollectorSelection(t *testing.T) {
+	valid := comparisonFixture()
+	valid.Measurements[0].Attempts = []Attempt{
+		{P50: 0, P95: 0, P99: 0},
+		{P50: 4 * time.Nanosecond, P95: 5 * time.Nanosecond, P99: 6 * time.Nanosecond},
+		{P50: 3 * time.Nanosecond, P95: 4 * time.Nanosecond, P99: 7 * time.Nanosecond},
+	}
+	// The collector's zero-P95 sentinel replaces the initial zero attempt, then
+	// picks the lowest following P95.
+	valid.Measurements[0].P50, valid.Measurements[0].P95, valid.Measurements[0].P99 = 3*time.Nanosecond, 4*time.Nanosecond, 7*time.Nanosecond
+	valid.IdleCPU.Attempts = []float64{0.4, 0.2, 0.3}
+	valid.IdleCPU.Value = 0.2
+	if err := ValidateReport(valid); err != nil {
+		t.Fatalf("ValidateReport() rejected collector-selected attempts: %v", err)
+	}
+
+	tie := comparisonFixture()
+	tie.Measurements[0].Attempts = []Attempt{
+		{P50: time.Nanosecond, P95: 2 * time.Nanosecond, P99: 3 * time.Nanosecond},
+		{P50: 0, P95: 2 * time.Nanosecond, P99: 4 * time.Nanosecond},
+	}
+	tie.Measurements[0].P50, tie.Measurements[0].P95, tie.Measurements[0].P99 = time.Nanosecond, 2*time.Nanosecond, 3*time.Nanosecond
+	if err := ValidateReport(tie); err != nil {
+		t.Fatalf("ValidateReport() rejected first retained tie: %v", err)
+	}
+
+	for _, mutate := range []struct {
+		name  string
+		apply func(*Report)
+	}{
+		{"wrong selected aggregate", func(report *Report) { report.Measurements[0].P95 = 5 * time.Nanosecond }},
+		{"unordered attempt", func(report *Report) {
+			report.Measurements[0].Attempts[0] = Attempt{P50: 3 * time.Nanosecond, P95: 2 * time.Nanosecond, P99: 4 * time.Nanosecond}
+		}},
+		{"idle CPU not minimum", func(report *Report) { report.IdleCPU.Value = 0.3 }},
+	} {
+		t.Run(mutate.name, func(t *testing.T) {
+			invalid := valid
+			invalid.Measurements = append([]Measurement(nil), valid.Measurements...)
+			invalid.Measurements[0].Attempts = append([]Attempt(nil), valid.Measurements[0].Attempts...)
+			invalid.IdleCPU.Attempts = append([]float64(nil), valid.IdleCPU.Attempts...)
+			mutate.apply(&invalid)
+			if err := ValidateReport(invalid); err == nil {
+				t.Fatal("ValidateReport() accepted inconsistent retained attempts")
 			}
 		})
 	}
