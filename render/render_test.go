@@ -199,6 +199,13 @@ func TestRenderFailsClosedOnZeroTheme(t *testing.T) {
 	}
 }
 
+func TestRenderFailsClosedOnInvalidTree(t *testing.T) {
+	_, err := Render(Request{Tree: semantic.Tree{}})
+	if err == nil || err.Error() != "invalid node id" {
+		t.Fatalf("Render() error = %v, want invalid tree error", err)
+	}
+}
+
 func TestRenderRequestIsExplicitAndDeterministic(t *testing.T) {
 	t.Parallel()
 	root := testNode(t, "application", "App", map[string]string{"layout.kind": "stack"},
