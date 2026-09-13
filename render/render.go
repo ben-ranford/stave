@@ -58,8 +58,8 @@ type Result struct {
 	Terminal     string
 }
 
-// Outputs selects optional render products. A zero value preserves Render's
-// compatibility behavior by producing every product.
+// Outputs selects optional render products for RenderSelected. A selection must
+// be nonzero and contain only the defined output bits. Render produces OutputAll.
 type Outputs uint8
 
 const (
