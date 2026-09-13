@@ -6,6 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
+	"reflect"
+	"strings"
+	"sync"
 	"unicode/utf8"
 
 	"github.com/ben-ranford/stave/event"
@@ -42,6 +46,9 @@ func DecodeTranscript(data []byte) (Transcript, error) {
 		return Transcript{}, fmt.Errorf("decode replay transcript: %w", err)
 	}
 	if err := validateRawEventPayloads(data); err != nil {
+		return Transcript{}, fmt.Errorf("decode replay transcript: %w", err)
+	}
+	if err := validateCanonicalTypedKeys(data); err != nil {
 		return Transcript{}, fmt.Errorf("decode replay transcript: %w", err)
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
@@ -165,8 +172,185 @@ func validateRawEventPayloads(data []byte) error {
 		if payloadlessEvent(eventWire.Kind) && len(bytes.TrimSpace(eventWire.Payload)) > 0 && !bytes.Equal(bytes.TrimSpace(eventWire.Payload), []byte("null")) {
 			return fmt.Errorf("replay record %d event %q must not have a payload", index, eventWire.Kind)
 		}
+		if err := validateSensitiveRawPayload(index, eventWire.Kind, eventWire.Payload); err != nil {
+			return err
+		}
 	}
 	return nil
+}
+
+// validateCanonicalTypedKeys rejects case-folded aliases only for the
+// framework-owned wire objects. Checkpoint Model and Tree, action arguments,
+// effect values, and diagnostic context remain opaque application data.
+func validateCanonicalTypedKeys(data []byte) error {
+	return validateTypedJSON(data, reflect.TypeOf(Transcript{}))
+}
+
+var (
+	eventType           = reflect.TypeOf(event.Event{})
+	rawMessageType      = reflect.TypeOf(json.RawMessage(nil))
+	typedJSONFieldCache sync.Map // map[reflect.Type]map[string]reflect.Type
+)
+
+// validateTypedJSON checks canonical field spelling from the actual framework
+// types. It stops at application-owned interfaces and maps, which keeps model
+// data and arbitrary action/effect values opaque to the inspector.
+func validateTypedJSON(raw []byte, typ reflect.Type) error {
+	if typ == nil || typ == rawMessageType || len(bytes.TrimSpace(raw)) == 0 || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return nil
+	}
+	for typ.Kind() == reflect.Pointer {
+		typ = typ.Elem()
+	}
+	switch typ.Kind() {
+	case reflect.Interface, reflect.Map:
+		return nil
+	case reflect.Slice, reflect.Array:
+		var values []json.RawMessage
+		if err := json.Unmarshal(raw, &values); err != nil {
+			return err
+		}
+		for _, value := range values {
+			if err := validateTypedJSON(value, typ.Elem()); err != nil {
+				return err
+			}
+		}
+		return nil
+	case reflect.Struct:
+		object, err := rawObject(raw)
+		if err != nil {
+			return err
+		}
+		if object == nil {
+			return nil
+		}
+		fields := typedJSONFields(typ)
+		if err := rejectTypedAliases(object, fields); err != nil {
+			return err
+		}
+		for name, fieldType := range fields {
+			if err := validateTypedJSON(object[name], fieldType); err != nil {
+				return err
+			}
+		}
+		if typ == eventType {
+			var decoded event.Event
+			if err := json.Unmarshal(raw, &decoded); err != nil {
+				return err
+			}
+			if payload := object["payload"]; len(payload) != 0 {
+				return validateTypedJSON(payload, reflect.TypeOf(decoded.Payload))
+			}
+		}
+	}
+	return nil
+}
+
+func typedJSONFields(typ reflect.Type) map[string]reflect.Type {
+	if cached, ok := typedJSONFieldCache.Load(typ); ok {
+		return cached.(map[string]reflect.Type)
+	}
+	fields := make(map[string]reflect.Type)
+	for index := range typ.NumField() {
+		field := typ.Field(index)
+		if field.PkgPath != "" {
+			continue
+		}
+		tag := field.Tag.Get("json")
+		name := strings.Split(tag, ",")[0]
+		if name == "-" {
+			continue
+		}
+		if name == "" {
+			name = field.Name
+		}
+		fields[name] = field.Type
+	}
+	actual, _ := typedJSONFieldCache.LoadOrStore(typ, fields)
+	return actual.(map[string]reflect.Type)
+}
+
+func rawObject(raw []byte) (map[string]json.RawMessage, error) {
+	if len(bytes.TrimSpace(raw)) == 0 || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return nil, nil
+	}
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &object); err != nil {
+		return nil, err
+	}
+	return object, nil
+}
+
+func rejectTypedAliases(object map[string]json.RawMessage, fields map[string]reflect.Type) error {
+	for key := range object {
+		for field := range fields {
+			if key != field && strings.EqualFold(key, field) {
+				return fmt.Errorf("noncanonical typed key %q, want %q", key, field)
+			}
+		}
+	}
+	return nil
+}
+
+func validateSensitiveRawPayload(index int, kind event.Kind, raw []byte) error {
+	switch kind {
+	case event.ActionInvoked:
+		var payload struct {
+			Sensitive bool            `json:"sensitive"`
+			Arguments json.RawMessage `json:"arguments"`
+		}
+		if err := json.Unmarshal(raw, &payload); err != nil {
+			return err
+		}
+		if payload.Sensitive && (!hasOnlyTypedFields(raw, reflect.TypeOf(event.ActionInvokedPayload{})) || !isSensitiveRedaction(payload.Arguments)) {
+			return fmt.Errorf("replay record %d sensitive action payload is not redacted", index)
+		}
+	case event.EffectResult:
+		var payload struct {
+			Sensitive bool            `json:"sensitive"`
+			Value     json.RawMessage `json:"value"`
+			Error     string          `json:"error"`
+		}
+		if err := json.Unmarshal(raw, &payload); err != nil {
+			return err
+		}
+		if payload.Sensitive && (!hasOnlyTypedFields(raw, reflect.TypeOf(event.EffectResultPayload{})) || !isSensitiveRedaction(payload.Value) || payload.Error != "effect execution failed") {
+			return fmt.Errorf("replay record %d sensitive effect payload is not redacted", index)
+		}
+	}
+	return nil
+}
+
+func hasOnlyTypedFields(raw []byte, typ reflect.Type) bool {
+	object, err := rawObject(raw)
+	if err != nil {
+		return false
+	}
+	fields := typedJSONFields(typ)
+	for key := range object {
+		if _, ok := fields[key]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func isSensitiveRedaction(raw []byte) bool {
+	object, err := rawObject(raw)
+	if err != nil || len(object) != 2 {
+		return false
+	}
+	if _, ok := object["redacted"]; !ok {
+		return false
+	}
+	if _, ok := object["reason"]; !ok {
+		return false
+	}
+	if err := validateTypedJSON(raw, reflect.TypeOf(event.Redaction{})); err != nil {
+		return false
+	}
+	var redaction event.Redaction
+	return json.Unmarshal(raw, &redaction) == nil && redaction == (event.Redaction{Redacted: true, Reason: "sensitive"})
 }
 
 func payloadlessEvent(kind event.Kind) bool {
@@ -216,6 +400,9 @@ func validateInspectorRecord(index int, record Record) error {
 	}
 	if err := record.Event.Validate(); err != nil {
 		return fmt.Errorf("replay record %d: %w", index, err)
+	}
+	if record.Prior.Sequence == math.MaxUint64 {
+		return &Divergence{Code: DivergenceSequence, Index: index, Field: "prior.sequence", Expected: "sequence below maximum", Actual: record.Prior.Sequence}
 	}
 	if record.Result.Revision < record.Prior.Revision || record.Result.Revision-record.Prior.Revision > 1 {
 		return &Divergence{Code: DivergenceRevision, Index: index, Field: "result.revision", Expected: "prior revision or one greater", Actual: record.Result.Revision}

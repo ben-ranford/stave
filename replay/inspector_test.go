@@ -140,3 +140,192 @@ func TestValidateInspectorRecordAllowsUnchangedMaximumRevision(t *testing.T) {
 		t.Fatalf("unchanged maximum revision rejected: %v", err)
 	}
 }
+
+func TestDecodeTranscriptRejectsCaseFoldedTypedAliases(t *testing.T) {
+	transcript := mustTranscript(t)
+	data, err := transcript.CanonicalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name string
+		old  []byte
+		new  []byte
+	}{
+		{"transcript", []byte(`"schemaVersion":"stave.replay/v1"`), []byte(`"SchemaVersion":"stave.replay/v1"`)},
+		{"record", []byte(`"schemaVersion":"stave.replay/v1","event"`), []byte(`"SchemaVersion":"stave.replay/v1","event"`)},
+		{"event", []byte(`"sequence":2,"revision":1,"timestamp"`), []byte(`"Sequence":2,"revision":1,"timestamp"`)},
+		{"checkpoint", []byte(`"checksum"`), []byte(`"Checksum"`)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			aliased := bytes.Replace(data, tc.old, tc.new, 1)
+			if bytes.Equal(aliased, data) {
+				t.Fatal("test fixture did not replace a typed key")
+			}
+			if _, err := DecodeTranscript(aliased); err == nil {
+				t.Fatalf("DecodeTranscript() accepted a case-folded %s typed alias", tc.name)
+			}
+		})
+	}
+}
+
+func TestDecodeTranscriptPreservesApplicationModelKeyCase(t *testing.T) {
+	transcript := mustTranscript(t)
+	transcript.Initial.Model = map[string]any{"APIKey": "value"}
+	transcript.Records[0].Event = event.Event{
+		SchemaVersion: event.SchemaVersion,
+		Kind:          event.ActionInvoked,
+		Sequence:      transcript.Records[0].Prior.Sequence + 1,
+		Revision:      transcript.Records[0].Result.Revision,
+		Payload: event.ActionInvokedPayload{
+			CallID: "call-1", ActionID: "example.action", Arguments: map[string]any{"APIKey": "value"},
+		},
+	}
+	refreshInspectorCheckpointChecksum(t, &transcript.Initial)
+	data, err := transcript.CanonicalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := DecodeTranscript(data)
+	if err != nil {
+		t.Fatalf("DecodeTranscript() error = %v", err)
+	}
+	model, ok := decoded.Initial.Model.(map[string]any)
+	if !ok || model["APIKey"] != "value" {
+		t.Fatalf("application model key case changed: %#v", decoded.Initial.Model)
+	}
+	payload, ok := decoded.Records[0].Event.Payload.(event.ActionInvokedPayload)
+	arguments, argumentsOK := payload.Arguments.(map[string]any)
+	if !ok || !argumentsOK || arguments["APIKey"] != "value" {
+		t.Fatalf("application action argument key case changed: %#v", decoded.Records[0].Event.Payload)
+	}
+}
+
+func TestDecodeTranscriptRejectsUnsanitizedSensitivePayloadBeforeClone(t *testing.T) {
+	transcript := mustTranscript(t)
+	transcript.Records[0].Event = event.Event{
+		SchemaVersion: event.SchemaVersion,
+		Kind:          event.ActionInvoked,
+		Sequence:      transcript.Records[0].Prior.Sequence + 1,
+		Revision:      transcript.Records[0].Result.Revision,
+		Payload: event.ActionInvokedPayload{
+			CallID: "call-1", ActionID: "example.secret", Sensitive: true,
+		},
+	}
+	data, err := transcript.CanonicalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := append([]byte(nil), data...)
+	data = bytes.Replace(data, []byte(`"arguments":{"redacted":true,"reason":"sensitive"}`), []byte(`"arguments":{"token":"do-not-disclose"}`), 1)
+	if bytes.Equal(data, original) {
+		t.Fatal("test fixture did not replace the redaction representation")
+	}
+	if _, err := DecodeTranscript(data); err == nil {
+		t.Fatal("DecodeTranscript() accepted an unsanitized sensitive action payload")
+	} else if strings.Contains(err.Error(), "do-not-disclose") {
+		t.Fatalf("DecodeTranscript() exposed sensitive payload: %v", err)
+	}
+}
+
+func TestDecodeTranscriptAcceptsAlreadyRedactedSensitivePayload(t *testing.T) {
+	transcript := mustTranscript(t)
+	transcript.Records[0].Event = event.Event{
+		SchemaVersion: event.SchemaVersion,
+		Kind:          event.EffectResult,
+		Sequence:      transcript.Records[0].Prior.Sequence + 1,
+		Revision:      transcript.Records[0].Result.Revision,
+		Payload: event.EffectResultPayload{
+			CallID: "call-1", Status: "ok", Sensitive: true,
+		},
+	}
+	data, err := transcript.CanonicalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := DecodeTranscript(data); err != nil {
+		t.Fatalf("DecodeTranscript() rejected an already redacted sensitive payload: %v", err)
+	}
+}
+
+func TestValidateInspectorRecordRejectsSequenceWrap(t *testing.T) {
+	record := mustTranscript(t).Records[0]
+	record.Prior.Sequence = ^uint64(0)
+	record.Event.Sequence = 0
+	record.Result.Sequence = 0
+	var divergence *Divergence
+	if err := validateInspectorRecord(0, record); !errors.As(err, &divergence) || divergence.Code != DivergenceSequence {
+		t.Fatalf("sequence wrap error = %v, want sequence divergence", err)
+	}
+}
+
+func TestDecodeTranscriptRejectsSensitiveRedactionWithExtraFields(t *testing.T) {
+	transcript := mustTranscript(t)
+	transcript.Records[0].Event = event.Event{
+		SchemaVersion: event.SchemaVersion,
+		Kind:          event.ActionInvoked,
+		Sequence:      transcript.Records[0].Prior.Sequence + 1,
+		Revision:      transcript.Records[0].Result.Revision,
+		Payload: event.ActionInvokedPayload{
+			CallID: "call-1", ActionID: "example.secret", Sensitive: true,
+		},
+	}
+	data, err := transcript.CanonicalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := append([]byte(nil), data...)
+	data = bytes.Replace(data, []byte(`"arguments":{"redacted":true,"reason":"sensitive"}`), []byte(`"arguments":{"redacted":true,"reason":"sensitive","secret":"do-not-disclose"}`), 1)
+	if bytes.Equal(data, original) {
+		t.Fatal("test fixture did not add the plaintext field")
+	}
+	if _, err := DecodeTranscript(data); err == nil {
+		t.Fatal("DecodeTranscript() accepted a sensitive redaction with plaintext extras")
+	} else if strings.Contains(err.Error(), "do-not-disclose") {
+		t.Fatalf("DecodeTranscript() exposed sensitive payload: %v", err)
+	}
+}
+
+func TestDecodeTranscriptRejectsCaseFoldedEventMetadataAlias(t *testing.T) {
+	transcript := mustTranscript(t)
+	transcript.Records[0].Event.Meta.Source = "test"
+	data, err := transcript.CanonicalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := append([]byte(nil), data...)
+	data = bytes.Replace(data, []byte(`"meta":{"source":"test"}`), []byte(`"meta":{"Source":"test"}`), 1)
+	if bytes.Equal(data, original) {
+		t.Fatal("test fixture did not replace event metadata")
+	}
+	if _, err := DecodeTranscript(data); err == nil {
+		t.Fatal("DecodeTranscript() accepted a case-folded event metadata alias")
+	}
+}
+
+func TestDecodeTranscriptRejectsUnknownSensitivePayloadFieldWithoutLeakingValue(t *testing.T) {
+	transcript := mustTranscript(t)
+	transcript.Records[0].Event = event.Event{
+		SchemaVersion: event.SchemaVersion,
+		Kind:          event.ActionInvoked,
+		Sequence:      transcript.Records[0].Prior.Sequence + 1,
+		Revision:      transcript.Records[0].Result.Revision,
+		Payload: event.ActionInvokedPayload{
+			CallID: "call-1", ActionID: "example.secret", Sensitive: true,
+		},
+	}
+	data, err := transcript.CanonicalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := append([]byte(nil), data...)
+	data = bytes.Replace(data, []byte(`"sensitive":true}`), []byte(`"sensitive":true,"unexpected":"do-not-disclose"}`), 1)
+	if bytes.Equal(data, original) {
+		t.Fatal("test fixture did not add the unknown sensitive field")
+	}
+	if _, err := DecodeTranscript(data); err == nil {
+		t.Fatal("DecodeTranscript() accepted an unknown sensitive payload field")
+	} else if strings.Contains(err.Error(), "do-not-disclose") {
+		t.Fatalf("DecodeTranscript() exposed sensitive payload: %v", err)
+	}
+}
