@@ -3,6 +3,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 script="${repo_root}/scripts/rigor/verify-published-release.sh"
+selected_provenance_mismatch="selected module provenance mismatch"
 workdir="$(mktemp -d "${TMPDIR:-/tmp}/stave-release-probe-test.XXXXXX")"
 trap 'rm -rf "${workdir}"' EXIT
 
@@ -238,7 +239,7 @@ if PATH="${workdir}/bin:${PATH}" "${script}" v1.0.0-rc.2 >"${workdir}/selected-o
 	printf 'expected selected module provenance mismatch\n' >&2
 	exit 1
 fi
-grep -q 'selected module provenance mismatch' "${workdir}/selected-origin-mismatch.err"
+grep -q "${selected_provenance_mismatch}" "${workdir}/selected-origin-mismatch.err"
 : >"${workdir}/bin/selected-origin-override"
 
 printf '1\n' >"${workdir}/bin/omit-selected-origin"
@@ -246,7 +247,7 @@ if PATH="${workdir}/bin:${PATH}" "${script}" v1.0.0-rc.2 >"${workdir}/selected-o
 	printf 'expected selected module provenance absence failure\n' >&2
 	exit 1
 fi
-grep -q 'selected module provenance mismatch' "${workdir}/selected-origin-missing.err"
+grep -q "${selected_provenance_mismatch}" "${workdir}/selected-origin-missing.err"
 : >"${workdir}/bin/omit-selected-origin"
 
 printf 'v9.9.9\n' >"${workdir}/bin/selected-version-override"
@@ -254,7 +255,7 @@ if PATH="${workdir}/bin:${PATH}" "${script}" v1.0.0-rc.2 >"${workdir}/selected-v
 	printf 'expected selected module version mismatch\n' >&2
 	exit 1
 fi
-grep -q 'selected module provenance mismatch' "${workdir}/selected-version-mismatch.err"
+grep -q "${selected_provenance_mismatch}" "${workdir}/selected-version-mismatch.err"
 : >"${workdir}/bin/selected-version-override"
 
 printf 'example.com/wrong\n' >"${workdir}/bin/selected-path-override"
@@ -262,7 +263,7 @@ if PATH="${workdir}/bin:${PATH}" "${script}" v1.0.0-rc.2 >"${workdir}/selected-p
 	printf 'expected selected module path mismatch\n' >&2
 	exit 1
 fi
-grep -q 'selected module provenance mismatch' "${workdir}/selected-path-mismatch.err"
+grep -q "${selected_provenance_mismatch}" "${workdir}/selected-path-mismatch.err"
 : >"${workdir}/bin/selected-path-override"
 
 printf '1\n' >"${workdir}/bin/fail-first-go-provenance"
