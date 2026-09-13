@@ -623,6 +623,21 @@ func (r *Registry) IssueConfirmation(c Confirmation) error {
 	return nil
 }
 
+// CancelConfirmation removes an issued grant without invoking its action.
+// It only accepts the exact grant issued by this registry, so cancellation
+// cannot be used to alter a different confirmation's lifecycle.
+func (r *Registry) CancelConfirmation(c Confirmation) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.pruneConfirmationsLocked(time.Now())
+	grant, ok := r.grants[c.Token]
+	if !ok || !reflect.DeepEqual(grant, c) {
+		return false
+	}
+	delete(r.grants, c.Token)
+	return true
+}
+
 func (r *Registry) pruneConfirmationsLocked(now time.Time) {
 	for token, grant := range r.grants {
 		if grant.ExpiresAt.IsZero() || !grant.ExpiresAt.After(now) {

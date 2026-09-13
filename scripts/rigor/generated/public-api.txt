@@ -50,6 +50,7 @@ func NewConfirmationE(session string, d Definition, target semantic.Target, args
 func NewRegistry() *Registry
 func Register[In, Out any](r *Registry, d Definition, decode func(json.RawMessage) (In, error), encode func(Out) (json.RawMessage, error), h func(context.Context, Call, In) (Out, error)) error
 method (*Error) Error() string
+method (*Registry) CancelConfirmation(c Confirmation) bool
 method (*Registry) Definition(id ID) (Definition, bool)
 method (*Registry) Invoke(ctx context.Context, c Call) Result
 method (*Registry) IssueConfirmation(c Confirmation) error
@@ -615,6 +616,8 @@ var ErrBackpressure
 var ErrOutputLimit
 
 [github.com/ben-ranford/stave/runtime/human]
+const ConfirmationCancelled
+const ConfirmationConfirmed
 const ProfileAccessibleLine
 const ProfileFullScreen
 const ProfileLine
@@ -636,7 +639,12 @@ method (*Runtime) Profile() Profile
 method (*Runtime) ReadSecret(ctx context.Context, prompt input.SecretPrompt) (secret.Handle, error)
 method (*Runtime) Run(ctx context.Context) (err error)
 method (*Runtime) String() string
+method (ConfirmationFlow) Resolve(ctx context.Context, grant action.Confirmation, call action.Call) action.Result
 type Backend = Driver
+type ConfirmationDecision string
+type ConfirmationFlow struct { Registry *action.Registry; Presenter ConfirmationPresenter }
+type ConfirmationPresenter interface { PresentConfirmation(context.Context, ConfirmationView) (ConfirmationDecision, error) }
+type ConfirmationView struct { ActionID action.ID `json:"actionId"`; ActionVersion string `json:"actionVersion"`; Safety action.Safety `json:"safety"`; ExpiresAt time.Time `json:"expiresAt"` }
 type Driver interface { Open(context.Context, capability.Policy) (capability.Manifest, error); Events() <-chan event.Event; Draw(context.Context, surface.Surface, surface.Patch) error; ReadSecret(context.Context, input.SecretPrompt) (secret.Handle, error); Restore(context.Context) error; Close() error }
 type EventSource interface { Events() <-chan event.Event }
 type LineDriver struct {  }
@@ -647,6 +655,8 @@ type Profile string
 type Runtime struct {  }
 type SecretProvider interface { ReadSecret(context.Context, input.SecretPrompt) (secret.Handle, error) }
 var ErrBackpressure
+var ErrConfirmationPresenterRequired
+var ErrConfirmationRegistryRequired
 var ErrEventSourceClosed
 var ErrInvalidEvent
 var ErrNoDriver

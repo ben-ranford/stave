@@ -68,6 +68,15 @@ authorization policy ID and epoch, and expiry. Retained active grants and replay
 tombstones share a 1,024-entry limit; expired entries are pruned. Grants are single-use by default and become invalid after any
 target, argument, expiry, or policy change.
 
+Human hosts can opt into `runtime/human.ConfirmationFlow` to present a
+renderer-neutral `ConfirmationView`. The view contains only action identity,
+safety class, and expiry; it excludes tokens, sessions, targets, arguments,
+argument hashes, and policy bindings. A host must explicitly return `confirm`.
+The flow routes confirmation through `action.Registry` and cancels the issued
+grant for cancellation or presenter failure. Hosts that render it as a modal
+should compose their existing `focus.ModalLifecycle` around the host dialog so
+focus is restored when the decision completes.
+
 ## Public CI launch prerequisite
 
 Before enabling external pull requests, establish and verify isolation between
