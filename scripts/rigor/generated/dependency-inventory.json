@@ -438,6 +438,7 @@
         "runtime/metrics",
         "sort",
         "strings",
+        "sync",
         "time",
         "unicode/utf8"
       ]
