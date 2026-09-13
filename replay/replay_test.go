@@ -192,6 +192,37 @@ func TestTranscriptRoundTrip(t *testing.T) {
 	}
 }
 
+func TestTranscriptClonePreservesCanonicalBytesAndIsolation(t *testing.T) {
+	tr := mustTranscript(t)
+	want, err := tr.CanonicalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cloned, err := tr.Clone()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := cloned.CanonicalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(want) {
+		t.Fatalf("clone canonical JSON changed:\nwant %s\ngot  %s", want, got)
+	}
+	tr.Records[0].Prior.Hashes.Model = "mutated"
+	if got := cloned.Records[0].Prior.Hashes.Model; got == "mutated" {
+		t.Fatal("clone retained source alias")
+	}
+}
+
+func TestTranscriptCloneRejectsMalformedEvent(t *testing.T) {
+	tr := mustTranscript(t)
+	tr.Records[0].Event.Kind = "unknown"
+	if _, err := tr.Clone(); err == nil {
+		t.Fatal("Clone accepted malformed event")
+	}
+}
+
 func mustTranscript(t *testing.T) Transcript {
 	t.Helper()
 	tree := mustTree(t)

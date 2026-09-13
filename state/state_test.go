@@ -1,11 +1,13 @@
 package state
 
 import (
+	"bytes"
 	"encoding/json"
 	"strings"
 	"testing"
 
 	"github.com/ben-ranford/stave/capability"
+	"github.com/ben-ranford/stave/internal/canonical"
 	"github.com/ben-ranford/stave/semantic"
 )
 
@@ -92,6 +94,35 @@ func TestStateCloneProtectsAgainstLaterMutation(t *testing.T) {
 	}
 	if got := cloned.Model.Tags["a"]; got != "1" {
 		t.Fatalf("stored model mutated through external alias: %q", got)
+	}
+}
+
+func TestClonePreservesCanonicalBytesAndIsolation(t *testing.T) {
+	value := map[string]any{"nested": map[string]any{"n": json.Number("9007199254740993")}}
+	want, err := canonical.Encode(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cloned, err := Clone(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := canonical.Encode(cloned)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("clone canonical JSON changed:\nwant %s\ngot  %s", want, got)
+	}
+	value["nested"].(map[string]any)["n"] = json.Number("1")
+	if got := cloned["nested"].(map[string]any)["n"]; got != json.Number("9007199254740993") {
+		t.Fatalf("clone retained source alias: %#v", got)
+	}
+}
+
+func TestCloneRejectsMalformedValue(t *testing.T) {
+	if _, err := Clone(func() {}); err == nil {
+		t.Fatal("Clone accepted an unsupported JSON value")
 	}
 }
 
