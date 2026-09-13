@@ -5,6 +5,11 @@ Keep a Changelog and Stave uses Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- Add an opt-in, renderer-neutral human confirmation presenter backed by the
+  existing single-use action registry.
+
 ## [1.0.0-rc.2] - 2026-09-10
 
 ### Security

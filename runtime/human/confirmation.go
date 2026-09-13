@@ -56,6 +56,9 @@ func (f ConfirmationFlow) Resolve(ctx context.Context, grant action.Confirmation
 	if f.Presenter == nil {
 		return confirmationRejected(call, action.ConfirmationInvalid, ErrConfirmationPresenterRequired.Error())
 	}
+	if grant.ActionID != call.ActionID {
+		return confirmationRejected(call, action.ConfirmationInvalid, "confirmation action mismatch")
+	}
 	if err := f.Registry.IssueConfirmation(grant); err != nil {
 		if errors.Is(err, action.ErrConfirmationLimit) {
 			return confirmationRejected(call, action.ResourceLimit, "confirmation capacity reached")
@@ -69,13 +72,19 @@ func (f ConfirmationFlow) Resolve(ctx context.Context, grant action.Confirmation
 		Safety:        grant.Safety,
 		ExpiresAt:     grant.ExpiresAt,
 	})
-	if err != nil || decision != ConfirmationConfirmed {
+	if err != nil {
+		f.Registry.CancelConfirmation(grant)
+		return confirmationRejected(call, action.Internal, "confirmation presentation failed")
+	}
+	if decision != ConfirmationConfirmed {
 		f.Registry.CancelConfirmation(grant)
 		return confirmationRejected(call, action.ConfirmationInvalid, "confirmation cancelled")
 	}
 
 	call.Confirmation = &action.Confirmation{Token: grant.Token, SessionID: grant.SessionID}
-	return f.Registry.Invoke(ctx, call)
+	result := f.Registry.Invoke(ctx, call)
+	f.Registry.CancelConfirmation(grant)
+	return result
 }
 
 func confirmationRejected(call action.Call, code action.Code, message string) action.Result {

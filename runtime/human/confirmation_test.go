@@ -3,6 +3,7 @@ package human
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -63,6 +64,51 @@ func TestConfirmationFlowCancelRevokesIssuedGrant(t *testing.T) {
 	call.Confirmation = &action.Confirmation{Token: grant.Token, SessionID: grant.SessionID}
 	if replay := registry.Invoke(context.Background(), call); replay.Error == nil || replay.Error.Code != action.ConfirmationInvalid {
 		t.Fatalf("cancelled grant was accepted: %+v", replay)
+	}
+	if err := registry.IssueConfirmation(grant); err == nil {
+		t.Fatal("cancelled token was reissued")
+	}
+}
+
+func TestConfirmationFlowRejectsActionMismatchAndPresenterFailure(t *testing.T) {
+	registry, definition, invoked := confirmationRegistry(t)
+	grant := confirmationGrant(t, definition, time.Now().Add(time.Minute))
+	presented := false
+	flow := ConfirmationFlow{Registry: registry, Presenter: confirmationPresenterFunc(func(context.Context, ConfirmationView) (ConfirmationDecision, error) {
+		presented = true
+		return ConfirmationConfirmed, nil
+	})}
+	call := confirmationCall(definition)
+	call.ActionID = "other.v1"
+	if result := flow.Resolve(context.Background(), grant, call); result.Error == nil || result.Error.Code != action.ConfirmationInvalid || presented || *invoked != 0 {
+		t.Fatalf("mismatch result = %+v presented=%t invoked=%d", result, presented, *invoked)
+	}
+	secret := "presenter-secret"
+	flow.Presenter = confirmationPresenterFunc(func(context.Context, ConfirmationView) (ConfirmationDecision, error) {
+		return ConfirmationCancelled, errors.New(secret)
+	})
+	result := flow.Resolve(context.Background(), grant, confirmationCall(definition))
+	if result.Error == nil || result.Error.Code != action.Internal || strings.Contains(result.Error.Message, secret) {
+		t.Fatalf("presenter error result = %+v", result)
+	}
+	if err := registry.IssueConfirmation(grant); err == nil {
+		t.Fatal("presenter failure token was reissued")
+	}
+}
+
+func TestConfirmationFlowRevokesUnconsumedGrantAfterInvoke(t *testing.T) {
+	registry, definition, _ := confirmationRegistry(t)
+	grant := confirmationGrant(t, definition, time.Now().Add(time.Minute))
+	flow := ConfirmationFlow{Registry: registry, Presenter: confirmationPresenterFunc(func(context.Context, ConfirmationView) (ConfirmationDecision, error) {
+		return ConfirmationConfirmed, nil
+	})}
+	call := confirmationCall(definition)
+	call.Arguments = json.RawMessage(`[]`)
+	if result := flow.Resolve(context.Background(), grant, call); result.Error == nil || result.Error.Code != action.InvalidArgument {
+		t.Fatalf("invalid invocation result = %+v", result)
+	}
+	if err := registry.IssueConfirmation(grant); err == nil {
+		t.Fatal("unconsumed grant was reissued")
 	}
 }
 
