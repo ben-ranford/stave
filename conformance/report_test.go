@@ -109,3 +109,14 @@ func TestJSONReportRejectsMalformedUTF8(t *testing.T) {
 		}
 	}
 }
+
+func TestParseJSONReportRejectsCanonicalExpansionBeyondLimit(t *testing.T) {
+	failure := `{"path":"p","rule":"unknown","detail":"` + strings.Repeat("<", 3900) + `","documentation":""}`
+	report := `{"schemaVersion":"` + ReportSchemaVersion + `","failures":[` + strings.Join([]string{failure, failure, failure}, ",") + `]}`
+	if len(report) >= MaxReportBytes {
+		t.Fatalf("source report length = %d, want less than %d", len(report), MaxReportBytes)
+	}
+	if _, err := ParseJSONReport([]byte(report)); err == nil {
+		t.Fatal("report exceeding the canonical byte limit was accepted")
+	}
+}

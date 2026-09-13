@@ -249,7 +249,7 @@ func runReportMode(args []string, stdin io.Reader, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintln(stdout, string(data))
+	_, err = stdout.Write(data)
 	return err
 }
 

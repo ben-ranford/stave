@@ -55,6 +55,10 @@ func NewJSONReport(failures []Failure) (JSONReport, error) {
 
 // MarshalJSONReport returns the canonical JSON encoding of a report.
 func MarshalJSONReport(report JSONReport) ([]byte, error) {
+	return marshalJSONReport(report)
+}
+
+func marshalJSONReport(report JSONReport) ([]byte, error) {
 	if err := validateJSONReport(report); err != nil {
 		return nil, err
 	}
@@ -114,7 +118,7 @@ func ParseJSONReport(data []byte) (JSONReport, error) {
 		}
 		report.Failures = append(report.Failures, failure)
 	}
-	if err := validateJSONReport(report); err != nil {
+	if _, err := marshalJSONReport(report); err != nil {
 		return JSONReport{}, err
 	}
 	return report, nil
