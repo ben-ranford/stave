@@ -34,6 +34,7 @@ type SnapshotEnvelope struct {
 	Diagnostics                                                                    []diag.Diagnostic
 }
 type SnapshotEnvelopeProvider func(context.Context, string, uint64) (SnapshotEnvelope, error)
+type SnapshotPublicationWaiter func(context.Context, uint64) error
 
 // AuthorizeCall runs before Registry.Invoke.
 // It is the authority boundary for target generation/revision, capabilities,
@@ -47,15 +48,16 @@ type AuthorizePreparedCall func(context.Context, action.Call) (action.Call, *act
 type ConfirmCall func(context.Context, action.Call) (action.Confirmation, error)
 type CapabilityNegotiator func(context.Context, map[string]any) (capability.Manifest, error)
 type Options struct {
-	MaxMessageBytes  int
-	MaxOutputBytes   int
-	MaxTreeNodes     int
-	MaxInFlight      int
-	Queue            int
-	Snapshot         SnapshotProvider
-	SnapshotPatch    SnapshotPatchProvider
-	SnapshotEnvelope SnapshotEnvelopeProvider
-	Actions          *action.Registry
+	MaxMessageBytes           int
+	MaxOutputBytes            int
+	MaxTreeNodes              int
+	MaxInFlight               int
+	Queue                     int
+	Snapshot                  SnapshotProvider
+	SnapshotPatch             SnapshotPatchProvider
+	SnapshotEnvelope          SnapshotEnvelopeProvider
+	SnapshotPublicationWaiter SnapshotPublicationWaiter
+	Actions                   *action.Registry
 	// Deprecated: custom invoke handlers are unsupported because they bypass
 	// registry validation. Use Actions as the execution authority.
 	Invoke            func(context.Context, action.Call) action.Result
@@ -180,6 +182,9 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 	}
 	writes := make(chan outbound, s.opt.Queue)
 	notifications := s.notify
+	subscriptionWake := make(chan struct{}, 1)
+	var subscription *snapshotSubscription
+	var subscriptionMu sync.Mutex
 	writerDone := make(chan struct{})
 	var writeErr error
 	var writeMu sync.Mutex
@@ -208,6 +213,26 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 		}()
 		for {
 			select {
+			case <-subscriptionWake:
+				subscriptionMu.Lock()
+				current := subscription
+				subscriptionMu.Unlock()
+				if current == nil {
+					continue
+				}
+				result, ok := current.take()
+				if !ok {
+					continue
+				}
+				b, e := json.Marshal(protocol.Notification{JSONRPC: protocol.JSONRPC, Method: "stave.snapshot.subscription", Params: mustJSON(protocol.SnapshotSubscriptionNotification{Snapshot: result})})
+				if e != nil || len(b) > s.outputLimit() {
+					current.close()
+					continue
+				}
+				writeMu.Lock()
+				_, e = out.Write(append(b, '\n'))
+				setWriteErr(e)
+				writeMu.Unlock()
 			case n, ok := <-notifications:
 				if ok {
 					b, e := json.Marshal(n)
@@ -326,6 +351,48 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 			_ = write(protocol.Response{JSONRPC: protocol.JSONRPC, Error: protocol.Errorf(protocol.ParseError, "%v", err)})
 			continue
 		}
+		if r.Method == "stave.snapshot.subscribe" {
+			subscriptionMu.Lock()
+			exists := subscription != nil
+			subscriptionMu.Unlock()
+			if exists {
+				if len(r.ID) > 0 {
+					_ = write(protocol.Response{JSONRPC: protocol.JSONRPC, ID: r.ID, Error: protocol.Errorf(protocol.InvalidRequest, "snapshot subscription already exists")})
+				}
+				continue
+			}
+			response, baseline := s.snapshotSubscribe(ctx, r)
+			if len(r.ID) > 0 {
+				if err := write(response); err != nil {
+					setWriteErr(err)
+					break
+				}
+			}
+			if response.Error == nil && baseline != nil {
+				subscriptionMu.Lock()
+				subscription = newSnapshotSubscription(ctx, baseline.Sequence, subscriptionWake, s.opt.SnapshotPublicationWaiter, func(waitCtx context.Context) (protocol.SnapshotResult, bool) {
+					result, err := s.subscriptionSnapshot(waitCtx)
+					return result, err == nil
+				})
+				subscriptionMu.Unlock()
+			}
+			continue
+		}
+		if r.Method == "stave.snapshot.unsubscribe" {
+			subscriptionMu.Lock()
+			if subscription != nil {
+				subscription.close()
+				subscription = nil
+			}
+			subscriptionMu.Unlock()
+			if len(r.ID) > 0 {
+				if err := write(protocol.Response{JSONRPC: protocol.JSONRPC, ID: r.ID, Result: map[string]any{"ok": true}}); err != nil {
+					setWriteErr(err)
+					break
+				}
+			}
+			continue
+		}
 		if control(r.Method) {
 			resp := s.handleSafely(ctx, r)
 			if len(r.ID) > 0 {
@@ -366,6 +433,12 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 			}
 		}
 	}
+	subscriptionMu.Lock()
+	if subscription != nil {
+		subscription.close()
+		subscription = nil
+	}
+	subscriptionMu.Unlock()
 	close(jobs)
 	wg.Wait()
 	close(writes)
@@ -374,6 +447,58 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 		return err
 	}
 	return nil
+}
+
+func mustJSON(value any) json.RawMessage { b, _ := json.Marshal(value); return b }
+
+func (s *Server) snapshotSubscriptionAllowed() bool {
+	s.mu.Lock()
+	resolved, ready := s.negotiated, s.ready
+	s.mu.Unlock()
+	if !ready || s.opt.SnapshotEnvelope == nil || s.opt.SnapshotPublicationWaiter == nil || !s.snapshotModeAllowed("full") {
+		return false
+	}
+	manifest, ok := resolved.(capability.Manifest)
+	if !ok {
+		return false
+	}
+	for _, version := range manifest.SnapshotSubscriptionVersions {
+		if version == protocol.SnapshotSubscriptionVersion {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Server) subscriptionSnapshot(ctx context.Context) (protocol.SnapshotResult, error) {
+	response := s.handle(ctx, protocol.Request{JSONRPC: protocol.JSONRPC, Method: "stave.snapshot", Params: json.RawMessage(`{"mode":"full"}`)})
+	if response.Error != nil {
+		return protocol.SnapshotResult{}, errors.New("snapshot subscription failed")
+	}
+	result, ok := response.Result.(protocol.SnapshotResult)
+	if !ok || result.Mode != "full" {
+		return protocol.SnapshotResult{}, errors.New("snapshot subscription did not produce full result")
+	}
+	return result, nil
+}
+
+func (s *Server) snapshotSubscribe(ctx context.Context, request protocol.Request) (protocol.Response, *protocol.SnapshotResult) {
+	response := protocol.Response{JSONRPC: protocol.JSONRPC, ID: request.ID}
+	if len(request.Params) > 0 && string(request.Params) != "{}" && string(request.Params) != "null" {
+		response.Error = protocol.Errorf(protocol.InvalidParams, "snapshot subscription takes no parameters")
+		return response, nil
+	}
+	if !s.snapshotSubscriptionAllowed() {
+		response.Error = protocol.Errorf(protocol.CapabilityMismatch, "snapshot subscriptions were not negotiated")
+		return response, nil
+	}
+	result, err := s.subscriptionSnapshot(ctx)
+	if err != nil {
+		response.Error = protocol.Errorf(protocol.InternalError, "snapshot subscription unavailable")
+		return response, nil
+	}
+	response.Result = protocol.SnapshotSubscribeResult{Snapshot: result}
+	return response, &result
 }
 
 func (s *Server) outputLimit() int {

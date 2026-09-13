@@ -31,8 +31,13 @@ func BindSession[M any](s *session.Session[M], options Options) (Options, error)
 	bridge := &sessionBridge[M]{session: s, actions: options.Actions}
 	options.SessionID = current.SessionID
 	options.SnapshotEnvelope = bridge.snapshot
+	options.SnapshotPublicationWaiter = bridge.waitForPublication
 	options.CancelSession = bridge.cancel
 	return options, nil
+}
+
+func (b *sessionBridge[M]) waitForPublication(ctx context.Context, after uint64) error {
+	return b.session.WaitForPublication(ctx, func(snapshot state.State[M]) bool { return snapshot.Sequence > after })
 }
 
 type sessionBridge[M any] struct {
