@@ -177,6 +177,7 @@ func TestDecodeTranscriptPreservesApplicationModelKeyCase(t *testing.T) {
 		Kind:          event.ActionInvoked,
 		Sequence:      transcript.Records[0].Prior.Sequence + 1,
 		Revision:      transcript.Records[0].Result.Revision,
+		Timestamp:     event.LogicalTime{Tick: transcript.Records[0].Prior.Sequence + 1},
 		Payload: event.ActionInvokedPayload{
 			CallID: "call-1", ActionID: "example.action", Arguments: map[string]any{"APIKey": "value"},
 		},
@@ -208,6 +209,7 @@ func TestDecodeTranscriptRejectsUnsanitizedSensitivePayloadBeforeClone(t *testin
 		Kind:          event.ActionInvoked,
 		Sequence:      transcript.Records[0].Prior.Sequence + 1,
 		Revision:      transcript.Records[0].Result.Revision,
+		Timestamp:     event.LogicalTime{Tick: transcript.Records[0].Prior.Sequence + 1},
 		Payload: event.ActionInvokedPayload{
 			CallID: "call-1", ActionID: "example.secret", Sensitive: true,
 		},
@@ -235,6 +237,7 @@ func TestDecodeTranscriptAcceptsAlreadyRedactedSensitivePayload(t *testing.T) {
 		Kind:          event.EffectResult,
 		Sequence:      transcript.Records[0].Prior.Sequence + 1,
 		Revision:      transcript.Records[0].Result.Revision,
+		Timestamp:     event.LogicalTime{Tick: transcript.Records[0].Prior.Sequence + 1},
 		Payload: event.EffectResultPayload{
 			CallID: "call-1", Status: "ok", Sensitive: true,
 		},
@@ -267,6 +270,7 @@ func TestDecodeTranscriptRejectsSensitiveRedactionWithExtraFields(t *testing.T) 
 		Kind:          event.ActionInvoked,
 		Sequence:      transcript.Records[0].Prior.Sequence + 1,
 		Revision:      transcript.Records[0].Result.Revision,
+		Timestamp:     event.LogicalTime{Tick: transcript.Records[0].Prior.Sequence + 1},
 		Payload: event.ActionInvokedPayload{
 			CallID: "call-1", ActionID: "example.secret", Sensitive: true,
 		},
@@ -311,6 +315,7 @@ func TestDecodeTranscriptRejectsUnknownSensitivePayloadFieldWithoutLeakingValue(
 		Kind:          event.ActionInvoked,
 		Sequence:      transcript.Records[0].Prior.Sequence + 1,
 		Revision:      transcript.Records[0].Result.Revision,
+		Timestamp:     event.LogicalTime{Tick: transcript.Records[0].Prior.Sequence + 1},
 		Payload: event.ActionInvokedPayload{
 			CallID: "call-1", ActionID: "example.secret", Sensitive: true,
 		},
