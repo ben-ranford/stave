@@ -441,8 +441,15 @@ func ValidateTranscript(transcript Transcript) error {
 	if err := compareVersions(-1, transcript.Versions, transcript.Initial.Versions); err != nil {
 		return err
 	}
+	if err := validateTranscriptProducerRecords(transcript.Records); err != nil {
+		return err
+	}
+	return Validate(transcript, transcript)
+}
+
+func validateTranscriptProducerRecords(records []Record) error {
 	delivery := ""
-	for i, record := range transcript.Records {
+	for i, record := range records {
 		if err := validateInspectorRecord(i, record); err != nil {
 			return err
 		}
@@ -459,7 +466,7 @@ func ValidateTranscript(transcript Transcript) error {
 			delivery = record.Delivery
 		}
 	}
-	return Validate(transcript, transcript)
+	return nil
 }
 
 func validateEffectLedger(index int, prior, result Digest, accepted event.Event) error {
