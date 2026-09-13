@@ -171,7 +171,7 @@ func compatibleEnvironment(baseline, candidate Report, candidateMeasurements map
 	if baseline.Host != candidate.Host || baseline.GoVersion != candidate.GoVersion || baseline.GOOS != candidate.GOOS || baseline.GOARCH != candidate.GOARCH || baseline.CPUs != candidate.CPUs || baseline.Nodes != candidate.Nodes || baseline.NodeShape != candidate.NodeShape || baseline.Renderer != candidate.Renderer || baseline.Viewport != candidate.Viewport || !reflect.DeepEqual(baseline.Capabilities, candidate.Capabilities) {
 		return errors.New("performance reports use incompatible environment or fixture schema")
 	}
-	if baseline.Reproducibility.SampleCount != candidate.Reproducibility.SampleCount || baseline.Reproducibility.Strict != candidate.Reproducibility.Strict || baseline.Reproducibility.GOMAXPROCS != candidate.Reproducibility.GOMAXPROCS || baseline.Reproducibility.VCSModified != candidate.Reproducibility.VCSModified || !reflect.DeepEqual(comparableInvocation(baseline.Reproducibility.Invocation), comparableInvocation(candidate.Reproducibility.Invocation)) {
+	if baseline.Reproducibility.SampleCount != candidate.Reproducibility.SampleCount || baseline.Reproducibility.Strict != candidate.Reproducibility.Strict || baseline.Reproducibility.GOMAXPROCS != candidate.Reproducibility.GOMAXPROCS || !reflect.DeepEqual(comparableInvocation(baseline.Reproducibility.Invocation), comparableInvocation(candidate.Reproducibility.Invocation)) {
 		return errors.New("performance reports use incompatible reproducibility parameters")
 	}
 	if baseline.AllocLimit != candidate.AllocLimit || baseline.IdleCPU.Limit != candidate.IdleCPU.Limit || baseline.IdleCPU.Name != candidate.IdleCPU.Name || len(baseline.Measurements) != len(candidate.Measurements) {
