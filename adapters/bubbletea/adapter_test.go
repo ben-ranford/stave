@@ -6,7 +6,6 @@ import (
 	"errors"
 	"io"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -354,12 +353,12 @@ func TestProgramCancellationCancelsRunningEffects(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	var started atomic.Bool
-	var cancelled atomic.Bool
+	started := make(chan struct{})
+	cancelled := make(chan struct{})
 	app := makeApp(t, Hooks[fixtureState]{}, effect.PortFunc(func(ctx context.Context, call effect.Call) (any, error) {
-		started.Store(true)
+		close(started)
 		<-ctx.Done()
-		cancelled.Store(true)
+		close(cancelled)
 		return nil, ctx.Err()
 	}))
 
@@ -376,11 +375,9 @@ func TestProgramCancellationCancelsRunningEffects(t *testing.T) {
 
 	program.Send(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 
-	deadline := time.Now().Add(2 * time.Second)
-	for !started.Load() && time.Now().Before(deadline) {
-		time.Sleep(10 * time.Millisecond)
-	}
-	if !started.Load() {
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
 		t.Fatal("effect did not start")
 	}
 
@@ -395,7 +392,9 @@ func TestProgramCancellationCancelsRunningEffects(t *testing.T) {
 		t.Fatal("program did not exit after cancellation")
 	}
 
-	if !cancelled.Load() {
+	select {
+	case <-cancelled:
+	case <-time.After(2 * time.Second):
 		t.Fatal("effect did not observe context cancellation")
 	}
 }
