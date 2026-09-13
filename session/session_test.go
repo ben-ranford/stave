@@ -277,6 +277,161 @@ func TestSessionRecordsCompletionOrderWhenConfigured(t *testing.T) {
 	}
 }
 
+func TestSessionEffectAdmissionKeepsLoopResponsiveAndDeliversBatches(t *testing.T) {
+	firstStarted := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	var delivered atomic.Int32
+
+	s := newSession(t, Options[model]{
+		QueueCapacity:    1,
+		MaxActiveBatches: 1,
+		EffectPorts: map[string]effect.Port{
+			"blocked": effect.PortFunc(func(ctx context.Context, call effect.Call) (any, error) {
+				if call.Sequence == 1 {
+					close(firstStarted)
+					<-releaseFirst
+				}
+				delivered.Add(1)
+				return nil, nil
+			}),
+		},
+		Reduce: func(ctx context.Context, current model, ev event.Event) (model, []effect.Request, error) {
+			switch ev.Kind {
+			case event.Key:
+				current.Count++
+				if current.Count <= 2 {
+					return current, []effect.Request{{Spec: effect.Spec{Kind: "blocked"}}}, nil
+				}
+			}
+			return current, nil, nil
+		},
+		View: testView,
+	})
+	defer s.Close()
+
+	if err := s.Send(mustEvent(t, event.Key, event.KeyPayload{Key: "enter"})); err != nil {
+		t.Fatal(err)
+	}
+	<-firstStarted
+	if err := s.Send(mustEvent(t, event.Key, event.KeyPayload{Key: "tab"})); err != nil {
+		t.Fatal(err)
+	}
+	waitSnapshot(t, s, func(snapshot state.State[model]) bool { return snapshot.Sequence == 2 })
+	if err := s.Send(mustEvent(t, event.Key, event.KeyPayload{Key: "escape"})); err != nil {
+		t.Fatal(err)
+	}
+	waitSnapshot(t, s, func(snapshot state.State[model]) bool {
+		return snapshot.Sequence == 3 && snapshot.Model.Count == 3
+	})
+
+	close(releaseFirst)
+	waitSnapshot(t, s, func(snapshot state.State[model]) bool { return delivered.Load() == 2 })
+}
+
+func TestSessionEffectAdmissionSaturationRejectsProducerWithoutStarvingInput(t *testing.T) {
+	firstStarted := make(chan struct{})
+	releaseFirst := make(chan struct{})
+
+	s := newSession(t, Options[model]{
+		QueueCapacity:    1,
+		MaxActiveBatches: 1,
+		EffectPorts: map[string]effect.Port{
+			"blocked": effect.PortFunc(func(ctx context.Context, call effect.Call) (any, error) {
+				if call.Sequence == 1 {
+					close(firstStarted)
+					<-releaseFirst
+				}
+				return nil, nil
+			}),
+		},
+		Reduce: func(ctx context.Context, current model, ev event.Event) (model, []effect.Request, error) {
+			if ev.Kind != event.Key {
+				return current, nil, nil
+			}
+			current.Count++
+			if ev.Payload.(event.KeyPayload).Key != "space" {
+				return current, []effect.Request{{Spec: effect.Spec{Kind: "blocked"}}}, nil
+			}
+			return current, nil, nil
+		},
+		View: testView,
+	})
+	defer func() {
+		close(releaseFirst)
+		s.Close()
+	}()
+
+	if err := s.Send(mustEvent(t, event.Key, event.KeyPayload{Key: "enter"})); err != nil {
+		t.Fatal(err)
+	}
+	<-firstStarted
+	if err := s.Send(mustEvent(t, event.Key, event.KeyPayload{Key: "tab"})); err != nil {
+		t.Fatal(err)
+	}
+	waitSnapshot(t, s, func(snapshot state.State[model]) bool { return snapshot.Sequence == 2 })
+	if err := s.Send(mustEvent(t, event.Key, event.KeyPayload{Key: "escape"})); err != nil {
+		t.Fatal(err)
+	}
+	waitSnapshot(t, s, func(snapshot state.State[model]) bool { return snapshot.Sequence == 3 })
+	if err := s.Send(mustEvent(t, event.Key, event.KeyPayload{Key: "space"})); err != nil {
+		t.Fatal(err)
+	}
+	waitSnapshot(t, s, func(snapshot state.State[model]) bool {
+		return snapshot.Sequence == 4 && snapshot.Model.Count == 3
+	})
+	assertDiagnostic(t, s.Diagnostics(), "EFFECT_ADMISSION_BACKPRESSURE")
+}
+
+func TestSessionShutdownCancelsPendingEffectAdmission(t *testing.T) {
+	firstStarted := make(chan struct{})
+	firstCancelled := make(chan struct{})
+	secondStarted := make(chan struct{})
+
+	s := newSession(t, Options[model]{
+		QueueCapacity:    1,
+		MaxActiveBatches: 1,
+		EffectPorts: map[string]effect.Port{
+			"blocked": effect.PortFunc(func(ctx context.Context, call effect.Call) (any, error) {
+				if call.Sequence == 1 {
+					close(firstStarted)
+					<-ctx.Done()
+					close(firstCancelled)
+					return nil, ctx.Err()
+				}
+				close(secondStarted)
+				return nil, nil
+			}),
+		},
+		Reduce: func(ctx context.Context, current model, ev event.Event) (model, []effect.Request, error) {
+			if ev.Kind == event.Key {
+				current.Count++
+				return current, []effect.Request{{Spec: effect.Spec{Kind: "blocked"}}}, nil
+			}
+			return current, nil, nil
+		},
+		View: testView,
+	})
+
+	if err := s.Send(mustEvent(t, event.Key, event.KeyPayload{Key: "enter"})); err != nil {
+		t.Fatal(err)
+	}
+	<-firstStarted
+	if err := s.Send(mustEvent(t, event.Key, event.KeyPayload{Key: "tab"})); err != nil {
+		t.Fatal(err)
+	}
+	waitSnapshot(t, s, func(snapshot state.State[model]) bool { return snapshot.Sequence == 2 })
+	if err := s.Send(mustEvent(t, event.Shutdown, nil)); err != nil {
+		t.Fatal(err)
+	}
+	<-s.loopDone
+	<-firstCancelled
+	select {
+	case <-secondStarted:
+		t.Fatal("pending batch started after shutdown")
+	default:
+	}
+}
+
 func TestSessionCancellationDiscardsLateEffectResults(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
