@@ -476,13 +476,19 @@ func (s *Session[M]) admitEffects() {
 		if !ok {
 			return
 		}
+		resultHandoff := make(chan struct{})
+		enqueueResult := func(ev event.Event) error {
+			<-resultHandoff
+			return s.enqueueInternalEvent(ev)
+		}
 		for {
 			if s.ctx.Err() != nil {
 				return
 			}
-			err := s.effects.Deliver(s.ctx, calls, s.enqueueInternalEvent)
+			err := s.effects.Deliver(s.ctx, calls, enqueueResult)
 			if err == nil {
 				s.effectAdmissions.release()
+				close(resultHandoff)
 				break
 			}
 			if errors.Is(err, effect.ErrBackpressure) {
