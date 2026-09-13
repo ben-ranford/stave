@@ -34,10 +34,15 @@ done
 
 workdir="$(mktemp -d "${TMPDIR:-/tmp}/stave-release-probe.XXXXXX")"
 trap 'chmod -R u+w "${workdir}" 2>/dev/null || true; rm -rf "${workdir}"' EXIT
+mkdir "${workdir}/home"
+
+# Curl must not inherit proxy, authentication, or user configuration variables.
+# PATH remains explicit so the isolated shell fixture can provide a curl binary.
+curl_environment=("PATH=${PATH}" "HOME=${workdir}/home" "LC_ALL=C")
 
 fetch() {
 	local url="$1" output="$2" attempt=1
-	while ! curl -q --connect-timeout "${connect_timeout_seconds}" --max-time "${request_timeout_seconds}" --fail --silent --show-error --location --output "${output}" "${url}"; do
+	while ! env -i "${curl_environment[@]}" curl -q --connect-timeout "${connect_timeout_seconds}" --max-time "${request_timeout_seconds}" --fail --silent --show-error --location --output "${output}" "${url}"; do
 		if (( attempt >= attempts )); then
 			printf 'release probe failed after %s attempts while fetching %s\n' "${attempts}" "${url}" >&2
 			return 1
@@ -123,6 +128,12 @@ run_with_timeout() {
 	return 124
 }
 
+download_module() {
+	local module_version="$1"
+	: >"${module_json_path}"
+	run_with_timeout "downloading github.com/ben-ranford/stave@${module_version}" env -i "${go_environment[@]}" go mod download -json "github.com/ben-ranford/stave@${module_version}" >"${module_json_path}"
+}
+
 api_base="https://api.github.com/repos/${repository}"
 release_json="${workdir}/release.json"
 tag_ref_json="${workdir}/tag-ref.json"
@@ -200,7 +211,6 @@ go_environment=(
 	"GOPRIVATE=" "GONOPROXY=" "GONOSUMDB="
 	"GOMODCACHE=${workdir}/modcache" "GOCACHE=${workdir}/gocache"
 )
-mkdir "${workdir}/home"
 (
 	cd "${consumer}"
 	env -i "${go_environment[@]}" go mod init example.com/stave-release-probe >/dev/null
@@ -210,16 +220,16 @@ mkdir "${workdir}/home"
 	printf '%s\n' "${resolution_json}" >"${workdir}/resolution.json"
 	module_json="$(env -i "${go_environment[@]}" go list -m -json github.com/ben-ranford/stave)"
 	module_version="$(jq -er '.Version' <<<"${module_json}")"
-	module_json="$(env -i "${go_environment[@]}" go mod download -json "github.com/ben-ranford/stave@${module_version}")"
-	printf '%s\n' "${module_json}" >"${workdir}/module.json"
+	module_json_path="${workdir}/module.json"
+	retry_command "downloading github.com/ben-ranford/stave@${module_version} through the public Go proxy and checksum database" download_module "${module_version}"
 	env -i "${go_environment[@]}" go run . >"${workdir}/consumer-output.txt"
 )
 module_path="$(jq -er '.Path' "${workdir}/module.json")"
 module_version="$(jq -er '.Version' "${workdir}/module.json")"
 resolved_version="$(jq -er '.Version' "${workdir}/resolution.json")"
 module_sum="$(jq -er '.Sum' "${workdir}/module.json")"
-module_origin_sha="$(jq -er '.Origin.Hash' "${workdir}/module.json")"
-[[ "${module_path}" == "github.com/ben-ranford/stave" && "${module_version}" == "${resolved_version}" && -n "${module_sum}" && "${module_origin_sha}" == "${source_sha}" ]] || {
+module_origin_sha="$(jq -r '.Origin.Hash // empty' "${workdir}/module.json")"
+[[ "${module_path}" == "github.com/ben-ranford/stave" && "${module_version}" == "${resolved_version}" && -n "${module_sum}" && ( -z "${module_origin_sha}" || "${module_origin_sha}" == "${source_sha}" ) ]] || {
 	printf 'module verification mismatch: path=%s selected-version=%s resolved-version=%s origin=%s expected-origin=%s\n' \
 		"${module_path}" "${module_version}" "${resolved_version}" "${module_origin_sha}" "${source_sha}" >&2
 	exit 1

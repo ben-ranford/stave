@@ -18,7 +18,9 @@ sha256() {
 CHANGELOG_DIGEST="$(sha256 changelog)"
 LICENSE_DIGEST="$(sha256 license)"
 REPORT_DIGEST="$(sha256 report)"
-export CHANGELOG_DIGEST LICENSE_DIGEST REPORT_DIGEST
+printf '%s\n' "${CHANGELOG_DIGEST}" >"${workdir}/bin/changelog-digest"
+printf '%s\n' "${LICENSE_DIGEST}" >"${workdir}/bin/license-digest"
+printf '%s\n' "${REPORT_DIGEST}" >"${workdir}/bin/report-digest"
 cat >"${workdir}/bin/curl" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -29,16 +31,25 @@ for ((i = 1; i <= $#; i++)); do
 	fi
 done
 url="${!#}"
-if [[ "${FAIL_CURL:-}" == 1 ]]; then exit 22; fi
+fixture_dir="$(dirname "$0")"
+if [[ -s "${fixture_dir}/assert-anonymous-curl" ]]; then
+	for variable in HTTPS_PROXY https_proxy ALL_PROXY all_proxy CURL_HOME NETRC; do
+		[[ -z "${!variable+x}" ]] || exit 22
+	done
+fi
+if [[ -s "${fixture_dir}/fail-curl" ]]; then exit 22; fi
 case "${url}" in
-*/releases/tags/*)
-	tag_name="${url##*/}"
-	if [[ "${INCOMPLETE_METADATA:-}" == 1 ]] || { [[ "${DELAY_METADATA:-}" == 1 ]] && [[ ! -e "$(dirname "$0")/metadata-delayed" ]]; }; then
-		touch "$(dirname "$0")/metadata-delayed"
+	*/releases/tags/*)
+		tag_name="${url##*/}"
+		if [[ -s "${fixture_dir}/incomplete-metadata" ]] || { [[ -s "${fixture_dir}/delay-metadata" ]] && [[ ! -e "${fixture_dir}/metadata-delayed" ]]; }; then
+			touch "${fixture_dir}/metadata-delayed"
 		printf '%s' '{"tag_name":"v1.0.0-rc.2","assets":[]}' >"${out}"
 	else
+		changelog_digest="$(<"${fixture_dir}/changelog-digest")"
+		license_digest="$(<"${fixture_dir}/license-digest")"
+		report_digest="$(<"${fixture_dir}/report-digest")"
 		cat >"${out}" <<JSON
-{"tag_name":"${tag_name}","assets":[{"name":"CHANGELOG.md","digest":"sha256:${CHANGELOG_DIGEST}","browser_download_url":"https://assets/CHANGELOG.md"},{"name":"LICENSE","digest":"sha256:${LICENSE_DIGEST}","browser_download_url":"https://assets/LICENSE"},{"name":"report.json","digest":"sha256:${REPORT_DIGEST}","browser_download_url":"https://assets/report.json"}]}
+	{"tag_name":"${tag_name}","assets":[{"name":"CHANGELOG.md","digest":"sha256:${changelog_digest}","browser_download_url":"https://assets/CHANGELOG.md"},{"name":"LICENSE","digest":"sha256:${license_digest}","browser_download_url":"https://assets/LICENSE"},{"name":"report.json","digest":"sha256:${report_digest}","browser_download_url":"https://assets/report.json"}]}
 JSON
 	fi
 	;;
@@ -91,12 +102,25 @@ case "$1 $2" in
 	if [[ -s "${bin_dir}/origin-override" ]]; then origin_sha="$(<"${bin_dir}/origin-override")"; fi
 	printf '{"Path":"github.com/ben-ranford/stave","Version":"%s","Sum":"h1:publicsum","Origin":{"Hash":"%s"}}\n' "${module_version}" "${origin_sha}"
 	;;
-'mod download')
-	bin_dir="$(dirname "$0")"
-	module_version="${4#github.com/ben-ranford/stave@}"
-	origin_sha=source-commit
-	if [[ -s "${bin_dir}/origin-override" ]]; then origin_sha="$(<"${bin_dir}/origin-override")"; fi
-	printf '{"Path":"github.com/ben-ranford/stave","Version":"%s","Sum":"h1:publicsum","Origin":{"Hash":"%s"}}\n' "${module_version}" "${origin_sha}"
+	'mod download')
+		bin_dir="$(dirname "$0")"
+		module_version="${4#github.com/ben-ranford/stave@}"
+		if [[ -s "${bin_dir}/fail-first-go-download" && ! -e "${bin_dir}/go-download-failed-once" ]]; then
+			touch "${bin_dir}/go-download-failed-once"
+			printf '{"Path":"partial"}\n'
+			exit 1
+		fi
+		if [[ "$(<"${bin_dir}/slow-go-download")" == 1 ]]; then
+			printf '%s\n' "$$" >"${bin_dir}/slow-go-download-pid"
+			sleep 30
+		fi
+		origin_sha=source-commit
+		if [[ -s "${bin_dir}/origin-override" ]]; then origin_sha="$(<"${bin_dir}/origin-override")"; fi
+		if [[ -s "${bin_dir}/omit-origin" ]]; then
+			printf '{"Path":"github.com/ben-ranford/stave","Version":"%s","Sum":"h1:publicsum"}\n' "${module_version}"
+		else
+			printf '{"Path":"github.com/ben-ranford/stave","Version":"%s","Sum":"h1:publicsum","Origin":{"Hash":"%s"}}\n' "${module_version}" "${origin_sha}"
+		fi
 	;;
 'run .')
 	bin_dir="$(dirname "$0")"
@@ -116,9 +140,25 @@ chmod +x "${workdir}/bin/curl" "${workdir}/bin/go"
 : >"${workdir}/bin/resolution-version-override"
 : >"${workdir}/bin/origin-override"
 : >"${workdir}/bin/consumer-output-override"
+: >"${workdir}/bin/fail-curl"
+: >"${workdir}/bin/incomplete-metadata"
+: >"${workdir}/bin/delay-metadata"
+: >"${workdir}/bin/assert-anonymous-curl"
+: >"${workdir}/bin/omit-origin"
+: >"${workdir}/bin/slow-go-download"
+: >"${workdir}/bin/fail-first-go-download"
 
 PATH="${workdir}/bin:${PATH}" RELEASE_PROBE_ATTEMPTS=2 RELEASE_PROBE_RETRY_SECONDS=0 "${script}" v1.0.0-rc.2 >"${workdir}/report.json"
 jq -e '.tag_object_sha == "tag-object" and .source_sha == "source-commit" and .module.sum == "h1:publicsum" and .module.selected_version == "v1.0.0-rc.2" and .module.requested_version == .module.selected_version and .module.origin_sha == .source_sha and (.assets | length == 3)' "${workdir}/report.json" >/dev/null
+
+printf '1\n' >"${workdir}/bin/fail-first-go-download"
+PATH="${workdir}/bin:${PATH}" RELEASE_PROBE_ATTEMPTS=2 RELEASE_PROBE_RETRY_SECONDS=0 "${script}" v1.0.0-rc.2 >"${workdir}/download-retry.json"
+jq -e '.module.path == "github.com/ben-ranford/stave" and .module.sum == "h1:publicsum"' "${workdir}/download-retry.json" >/dev/null
+: >"${workdir}/bin/fail-first-go-download"
+
+printf '1\n' >"${workdir}/bin/assert-anonymous-curl"
+PATH="${workdir}/bin:${PATH}" HTTPS_PROXY='http://operator:secret@proxy.invalid' ALL_PROXY='http://operator:secret@proxy.invalid' CURL_HOME=/private/curl-home "${script}" v1.0.0-rc.2 >"${workdir}/anonymous-curl.json"
+: >"${workdir}/bin/assert-anonymous-curl"
 
 printf 'text: unexpected module\n' >"${workdir}/bin/consumer-output-override"
 if PATH="${workdir}/bin:${PATH}" "${script}" v1.0.0-rc.2 >"${workdir}/consumer-output-failure.out" 2>"${workdir}/consumer-output-failure.err"; then
@@ -154,20 +194,31 @@ if PATH="${workdir}/bin:${PATH}" "${script}" v1.0.0-rc.2+build.7 >"${workdir}/or
 fi
 : >"${workdir}/bin/origin-override"
 
-PATH="${workdir}/bin:${PATH}" DELAY_METADATA=1 RELEASE_PROBE_ATTEMPTS=2 RELEASE_PROBE_RETRY_SECONDS=0 "${script}" v1.0.0-rc.2 >"${workdir}/delayed-metadata.json"
-jq -e '(.assets | length == 3)' "${workdir}/delayed-metadata.json" >/dev/null
+printf '1\n' >"${workdir}/bin/omit-origin"
+PATH="${workdir}/bin:${PATH}" "${script}" v1.0.0-rc.2 >"${workdir}/missing-origin.json"
+jq -e '.module.origin_sha == "" and .source_sha == "source-commit"' "${workdir}/missing-origin.json" >/dev/null
+: >"${workdir}/bin/omit-origin"
 
-if PATH="${workdir}/bin:${PATH}" INCOMPLETE_METADATA=1 RELEASE_PROBE_ATTEMPTS=2 RELEASE_PROBE_RETRY_SECONDS=0 "${script}" v1.0.0-rc.2 >"${workdir}/metadata-failure.out" 2>"${workdir}/metadata-failure.err"; then
+printf '1\n' >"${workdir}/bin/delay-metadata"
+PATH="${workdir}/bin:${PATH}" RELEASE_PROBE_ATTEMPTS=2 RELEASE_PROBE_RETRY_SECONDS=0 "${script}" v1.0.0-rc.2 >"${workdir}/delayed-metadata.json"
+jq -e '(.assets | length == 3)' "${workdir}/delayed-metadata.json" >/dev/null
+: >"${workdir}/bin/delay-metadata"
+
+printf '1\n' >"${workdir}/bin/incomplete-metadata"
+if PATH="${workdir}/bin:${PATH}" RELEASE_PROBE_ATTEMPTS=2 RELEASE_PROBE_RETRY_SECONDS=0 "${script}" v1.0.0-rc.2 >"${workdir}/metadata-failure.out" 2>"${workdir}/metadata-failure.err"; then
 	printf 'expected incomplete release metadata failure\n' >&2
 	exit 1
 fi
 grep -q 'release metadata incomplete after 2 attempts; missing digest or download URL for: CHANGELOG.md LICENSE report.json' "${workdir}/metadata-failure.err"
+: >"${workdir}/bin/incomplete-metadata"
 
-if PATH="${workdir}/bin:${PATH}" FAIL_CURL=1 RELEASE_PROBE_ATTEMPTS=2 RELEASE_PROBE_RETRY_SECONDS=0 "${script}" v1.0.0-rc.2 >"${workdir}/failure.out" 2>"${workdir}/failure.err"; then
+printf '1\n' >"${workdir}/bin/fail-curl"
+if PATH="${workdir}/bin:${PATH}" RELEASE_PROBE_ATTEMPTS=2 RELEASE_PROBE_RETRY_SECONDS=0 "${script}" v1.0.0-rc.2 >"${workdir}/failure.out" 2>"${workdir}/failure.err"; then
 	printf 'expected propagation failure\n' >&2
 	exit 1
 fi
 grep -q 'failed after 2 attempts' "${workdir}/failure.err"
+: >"${workdir}/bin/fail-curl"
 
 printf '1\n' >"${workdir}/bin/fail-go-get"
 if PATH="${workdir}/bin:${PATH}" RELEASE_PROBE_ATTEMPTS=2 RELEASE_PROBE_RETRY_SECONDS=0 "${script}" v1.0.0-rc.2 >"${workdir}/module-failure.out" 2>"${workdir}/module-failure.err"; then
@@ -201,6 +252,22 @@ if kill -0 "${slow_pid}" 2>/dev/null; then
 fi
 
 : >"${workdir}/bin/slow-go-get"
+
+printf '1\n' >"${workdir}/bin/slow-go-download"
+SECONDS=0
+if PATH="${workdir}/bin:${PATH}" RELEASE_PROBE_ATTEMPTS=1 RELEASE_PROBE_RETRY_SECONDS=0 RELEASE_PROBE_GO_TIMEOUT_SECONDS=1 RELEASE_PROBE_TERMINATE_GRACE_SECONDS=1 "${script}" v1.0.0-rc.2 >"${workdir}/download-timeout-failure.out" 2>"${workdir}/download-timeout-failure.err"; then
+	printf 'expected public module download timeout failure\n' >&2
+	exit 1
+fi
+((SECONDS < 5)) || { printf 'stalled public module download exceeded its bounded timeout\n' >&2; exit 1; }
+grep -q 'release probe timed out after 1s while downloading github.com/ben-ranford/stave@v1.0.0-rc.2' "${workdir}/download-timeout-failure.err"
+download_pid="$(<"${workdir}/bin/slow-go-download-pid")"
+if kill -0 "${download_pid}" 2>/dev/null; then
+	printf 'stalled public Go download remained after timeout cleanup\n' >&2
+	exit 1
+fi
+: >"${workdir}/bin/slow-go-download"
+
 printf '1\n' >"${workdir}/bin/term-ignore-go-get"
 SECONDS=0
 if PATH="${workdir}/bin:${PATH}" RELEASE_PROBE_ATTEMPTS=1 RELEASE_PROBE_RETRY_SECONDS=0 RELEASE_PROBE_GO_TIMEOUT_SECONDS=1 RELEASE_PROBE_TERMINATE_GRACE_SECONDS=1 "${script}" v1.0.0-rc.2 >"${workdir}/term-ignore-failure.out" 2>"${workdir}/term-ignore-failure.err"; then

@@ -15,6 +15,7 @@ func TestPublishedReleaseProbeIsAnonymousAndWorkflowGated(t *testing.T) {
 	}
 	for _, fragment := range []string{
 		"env -i \"${go_environment[@]}\" go get",
+		"env -i \"${curl_environment[@]}\" curl",
 		"GOWORK=off",
 		"GOPROXY=https://proxy.golang.org",
 		"GOSUMDB=sum.golang.org",
@@ -31,6 +32,8 @@ func TestPublishedReleaseProbeIsAnonymousAndWorkflowGated(t *testing.T) {
 		"wait_for_release_metadata",
 		"release metadata incomplete after %s attempts",
 		"retry_command \"resolving github.com/ben-ranford/stave@${tag}",
+		"retry_command \"downloading github.com/ben-ranford/stave@${module_version}",
+		".Origin.Hash // empty",
 		"release probe failed after %s attempts",
 		"CHANGELOG.md LICENSE report.json",
 		"tag_object_sha",
