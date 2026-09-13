@@ -152,7 +152,7 @@ func subscriptionEnvelope(t *testing.T) SnapshotEnvelope {
 func TestSnapshotSubscriptionRejectsLegacyAndCompatibilityMode(t *testing.T) {
 	envelope := subscriptionEnvelope(t)
 	for _, options := range []Options{
-		{CompatibilityMode: true, SubscriptionSnapshotEnvelope: func(context.Context, string, uint64) (SnapshotEnvelope, error) { return envelope, nil }, SnapshotPublicationWaiter: func(context.Context, uint64) error { return nil }},
+		{CompatibilityMode: true, Negotiate: subscriptionNegotiator, SubscriptionSnapshotEnvelope: func(context.Context, string, uint64) (SnapshotEnvelope, error) { return envelope, nil }, SnapshotPublicationWaiter: func(context.Context, uint64) error { return nil }},
 		{Negotiate: func(context.Context, map[string]any) (capability.Manifest, error) {
 			return capability.Manifest{ProtocolVersions: []string{protocol.Version}, SnapshotModes: []string{"full"}}, nil
 		}, SubscriptionSnapshotEnvelope: func(context.Context, string, uint64) (SnapshotEnvelope, error) { return envelope, nil }, SnapshotPublicationWaiter: func(context.Context, uint64) error { return nil }},

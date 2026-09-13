@@ -496,6 +496,187 @@ func TestSnapshotSubscriptionNotificationWriteFailureStopsPump(t *testing.T) {
 	}
 }
 
+func TestSnapshotSubscriptionResponseAndNotifyWriteFailuresStopPump(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		failure string
+		trigger func(*Server, *io.PipeWriter)
+	}{
+		{name: "duplicate subscribe", failure: `"id":4`, trigger: func(_ *Server, input *io.PipeWriter) {
+			_, _ = io.WriteString(input, `{"jsonrpc":"2.0","id":4,"method":"stave.snapshot.subscribe"}`+"\n")
+		}},
+		{name: "invalid unsubscribe", failure: `"id":4`, trigger: func(_ *Server, input *io.PipeWriter) {
+			_, _ = io.WriteString(input, `{"jsonrpc":"2.0","id":4,"method":"stave.snapshot.unsubscribe","params":{"unexpected":true}}`+"\n")
+		}},
+		{name: "ordinary notify", failure: `"method":"stave.progress"`, trigger: func(server *Server, _ *io.PipeWriter) {
+			_ = server.Notify(protocol.Notification{JSONRPC: protocol.JSONRPC, Method: "stave.progress"})
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			stopped := make(chan struct{})
+			entered := make(chan struct{})
+			want := errors.New("write failed")
+			output := &subscriptionSelectiveFailWriter{err: want, failure: []byte(test.failure)}
+			options := Options{Negotiate: subscriptionNegotiator, SubscriptionSnapshotEnvelope: func(context.Context, string, uint64) (SnapshotEnvelope, error) {
+				return subscriptionEnvelope(t), nil
+			}, SnapshotPublicationWaiter: func(ctx context.Context, _ uint64) error {
+				select {
+				case <-entered:
+				default:
+					close(entered)
+				}
+				<-ctx.Done()
+				close(stopped)
+				return ctx.Err()
+			}}
+			server := New(options)
+			reader, input := io.Pipe()
+			done := make(chan error, 1)
+			go func() { done <- server.Serve(context.Background(), reader, output) }()
+			writeSubscriptionHandshake(t, input)
+			select {
+			case <-entered:
+			case <-time.After(time.Second):
+				t.Fatal("subscription waiter did not start")
+			}
+			output.armed.Store(true)
+			test.trigger(server, input)
+			select {
+			case err := <-done:
+				if !errors.Is(err, want) {
+					t.Fatalf("Serve error = %v, want %v", err, want)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("Serve did not return after write failure")
+			}
+			if _, err := io.WriteString(input, "{}\n"); err == nil {
+				t.Fatal("writer failure did not close the owned input")
+			}
+			select {
+			case <-stopped:
+			case <-time.After(time.Second):
+				t.Fatal("write failure left subscription waiter running")
+			}
+		})
+	}
+}
+
+func TestSnapshotSubscriptionWriterPanicStopsPumpAndClosesInput(t *testing.T) {
+	stopped := make(chan struct{})
+	entered := make(chan struct{})
+	output := &subscriptionPanicWriter{failure: []byte(`"method":"stave.progress"`)}
+	options := Options{Negotiate: subscriptionNegotiator, SubscriptionSnapshotEnvelope: func(context.Context, string, uint64) (SnapshotEnvelope, error) {
+		return subscriptionEnvelope(t), nil
+	}, SnapshotPublicationWaiter: func(ctx context.Context, _ uint64) error {
+		close(entered)
+		<-ctx.Done()
+		close(stopped)
+		return ctx.Err()
+	}}
+	server := New(options)
+	reader, input := io.Pipe()
+	done := make(chan error, 1)
+	go func() { done <- server.Serve(context.Background(), reader, output) }()
+	writeSubscriptionHandshake(t, input)
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("subscription waiter did not start")
+	}
+	output.armed.Store(true)
+	if err := server.Notify(protocol.Notification{JSONRPC: protocol.JSONRPC, Method: "stave.progress"}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "protocol writer panic") {
+			t.Fatalf("Serve error = %v, want writer panic", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Serve did not return after writer panic")
+	}
+	if _, err := io.WriteString(input, "{}\n"); err == nil {
+		t.Fatal("writer panic did not close the owned input")
+	}
+	select {
+	case <-stopped:
+	case <-time.After(time.Second):
+		t.Fatal("writer panic left subscription waiter running")
+	}
+}
+
+func TestSnapshotSubscriptionSessionCancelStopsPumpWithoutClosingSession(t *testing.T) {
+	stopped := make(chan struct{})
+	entered := make(chan struct{})
+	options := Options{Negotiate: subscriptionNegotiator, CancelSession: func(context.Context) error { return nil }, SubscriptionSnapshotEnvelope: func(context.Context, string, uint64) (SnapshotEnvelope, error) {
+		return subscriptionEnvelope(t), nil
+	}, SnapshotPublicationWaiter: func(ctx context.Context, _ uint64) error {
+		close(entered)
+		<-ctx.Done()
+		close(stopped)
+		return ctx.Err()
+	}}
+	reader, input := io.Pipe()
+	done := make(chan error, 1)
+	go func() { done <- New(options).Serve(context.Background(), reader, io.Discard) }()
+	writeSubscriptionHandshake(t, input)
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("subscription waiter did not start")
+	}
+	_, _ = io.WriteString(input, `{"jsonrpc":"2.0","id":4,"method":"stave.session.cancel","params":{}}`+"\n")
+	select {
+	case <-stopped:
+	case <-time.After(time.Second):
+		t.Fatal("session cancellation left subscription waiter running")
+	}
+	_ = input.Close()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSnapshotSubscriptionServerCloseDuringBaselineWriteStopsPump(t *testing.T) {
+	entered, stopped := make(chan struct{}), make(chan struct{})
+	gate, blocked := make(chan struct{}), make(chan struct{})
+	writer := &baselineGateWriter{gate: gate, blocked: blocked, notification: make(chan struct{}, 1)}
+	options := Options{Negotiate: subscriptionNegotiator, SubscriptionSnapshotEnvelope: func(context.Context, string, uint64) (SnapshotEnvelope, error) {
+		return subscriptionEnvelope(t), nil
+	}, SnapshotPublicationWaiter: func(ctx context.Context, _ uint64) error {
+		close(entered)
+		<-ctx.Done()
+		close(stopped)
+		return ctx.Err()
+	}}
+	server := New(options)
+	reader, input := io.Pipe()
+	done := make(chan error, 1)
+	go func() { done <- server.Serve(context.Background(), reader, writer) }()
+	_, _ = io.WriteString(input, `{"jsonrpc":"2.0","id":1,"method":"stave.initialize","params":{"protocolVersions":["1.0"],"capabilities":{"snapshotSubscriptionVersions":["stave.snapshot.subscribe/v1"]}}}`+"\n"+`{"jsonrpc":"2.0","id":2,"method":"stave.initialized"}`+"\n"+`{"jsonrpc":"2.0","id":3,"method":"stave.snapshot.subscribe"}`+"\n")
+	select {
+	case <-blocked:
+	case <-time.After(time.Second):
+		t.Fatal("baseline write did not block")
+	}
+	server.Close()
+	close(gate)
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("subscription waiter was not installed")
+	}
+	select {
+	case <-stopped:
+	case <-time.After(time.Second):
+		t.Fatal("Server.Close left subscription waiter running")
+	}
+	_ = input.Close()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}
+
 func lifecycleEnvelope(t *testing.T, revision uint64, nameSize int) SnapshotEnvelope {
 	t.Helper()
 	root, err := semantic.NewNode(semantic.NodeSpec{Key: &semantic.NodeKey{AppNamespace: "test", View: "lifecycle", Kind: "root", Entity: string(rune('0' + revision)), Slot: "main"}, Generation: uint32(revision), Role: "application", Name: strings.Repeat("x", nameSize)})
@@ -534,6 +715,31 @@ func writeSubscriptionHandshake(t *testing.T, writer *io.PipeWriter) {
 type subscriptionNotificationFailWriter struct {
 	err                error
 	notificationWrites atomic.Int32
+}
+
+type subscriptionSelectiveFailWriter struct {
+	err     error
+	failure []byte
+	armed   atomic.Bool
+}
+
+type subscriptionPanicWriter struct {
+	failure []byte
+	armed   atomic.Bool
+}
+
+func (w *subscriptionPanicWriter) Write(p []byte) (int, error) {
+	if w.armed.Load() && bytes.Contains(p, w.failure) {
+		panic("writer panic")
+	}
+	return len(p), nil
+}
+
+func (w *subscriptionSelectiveFailWriter) Write(p []byte) (int, error) {
+	if w.armed.Load() && bytes.Contains(p, w.failure) {
+		return 0, w.err
+	}
+	return len(p), nil
 }
 
 func equalStrings(got, want []string) bool {

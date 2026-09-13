@@ -182,6 +182,8 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 	if configErr != nil {
 		return configErr
 	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	sc := bufio.NewScanner(in)
 	sc.Buffer(make([]byte, 4096), s.opt.MaxMessageBytes+1)
 	type outbound struct {
@@ -193,6 +195,15 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 	subscriptionWake := make(chan struct{}, 1)
 	var subscription *snapshotSubscription
 	var subscriptionMu sync.Mutex
+	closeSubscription := func() {
+		subscriptionMu.Lock()
+		current := subscription
+		subscription = nil
+		subscriptionMu.Unlock()
+		if current != nil {
+			current.close()
+		}
+	}
 	writerDone := make(chan struct{})
 	var writeErr error
 	var writeMu sync.Mutex
@@ -217,6 +228,8 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 		defer func() {
 			if recover() != nil {
 				setWriteErr(errors.New("protocol writer panic"))
+				closeSubscription()
+				_ = in.Close()
 			}
 		}()
 		for {
@@ -277,14 +290,12 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 					}
 					if e != nil {
 						s.observe(ctx, "protocol.output_error", map[string]string{"cause": "write_failed"})
+						closeSubscription()
+						_ = in.Close()
+						return
 					}
 				} else {
-					subscriptionMu.Lock()
-					if subscription != nil {
-						subscription.close()
-						subscription = nil
-					}
-					subscriptionMu.Unlock()
+					closeSubscription()
 					notifications = nil
 				}
 			case item, ok := <-writes:
@@ -333,6 +344,9 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 				if len(j.request.ID) > 0 {
 					if e := write(resp); e != nil {
 						setWriteErr(e)
+						closeSubscription()
+						_ = in.Close()
+						return
 					}
 				}
 			}
@@ -352,7 +366,9 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 		eof  bool
 	}
 	scanned := make(chan scannedLine)
+	scannerDone := make(chan struct{})
 	go func() {
+		defer close(scannerDone)
 		for sc.Scan() {
 			line := append([]byte(nil), sc.Bytes()...)
 			select {
@@ -365,6 +381,11 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 		case scanned <- scannedLine{err: sc.Err(), eof: true}:
 		case <-ctx.Done():
 		}
+	}()
+	defer func() {
+		_ = in.Close()
+		cancel()
+		<-scannerDone
 	}()
 	reading := true
 	for reading {
@@ -387,7 +408,10 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 		r, err := protocol.DecodeLine(scannedResult.line, s.inputLimit())
 		if err != nil {
 			s.observe(ctx, "protocol.parse_error", map[string]string{"cause": "invalid_jsonrpc"})
-			_ = write(protocol.Response{JSONRPC: protocol.JSONRPC, Error: protocol.Errorf(protocol.ParseError, "%v", err)})
+			if err := write(protocol.Response{JSONRPC: protocol.JSONRPC, Error: protocol.Errorf(protocol.ParseError, "%v", err)}); err != nil {
+				setWriteErr(err)
+				break
+			}
 			continue
 		}
 		if r.Method == "stave.snapshot.subscribe" {
@@ -401,7 +425,10 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 			subscriptionMu.Unlock()
 			if exists {
 				if len(r.ID) > 0 {
-					_ = write(protocol.Response{JSONRPC: protocol.JSONRPC, ID: r.ID, Error: protocol.Errorf(protocol.InvalidRequest, "snapshot subscription already exists")})
+					if err := write(protocol.Response{JSONRPC: protocol.JSONRPC, ID: r.ID, Error: protocol.Errorf(protocol.InvalidRequest, "snapshot subscription already exists")}); err != nil {
+						setWriteErr(err)
+						break
+					}
 				}
 				continue
 			}
@@ -414,11 +441,18 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 			}
 			if response.Error == nil && baseline != nil {
 				subscriptionMu.Lock()
-				subscription = newSnapshotSubscription(ctx, *baseline, subscriptionWake, s.opt.SnapshotPublicationWaiter, func(waitCtx context.Context) (protocol.SnapshotResult, bool) {
+				current := newSnapshotSubscription(ctx, *baseline, subscriptionWake, s.opt.SnapshotPublicationWaiter, func(waitCtx context.Context) (protocol.SnapshotResult, bool) {
 					result, err := s.subscriptionSnapshot(waitCtx)
 					return result, err == nil
 				})
+				subscription = current
 				subscriptionMu.Unlock()
+				s.mu.Lock()
+				closed := s.closed
+				s.mu.Unlock()
+				if closed {
+					closeSubscription()
+				}
 			}
 			continue
 		}
@@ -429,16 +463,14 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 			var empty struct{}
 			if !s.snapshotSubscriptionAllowed() || (len(r.Params) > 0 && decodeStrict(r.Params, &empty) != nil) {
 				if len(r.ID) > 0 {
-					_ = write(protocol.Response{JSONRPC: protocol.JSONRPC, ID: r.ID, Error: protocol.Errorf(protocol.InvalidRequest, "invalid snapshot unsubscribe request")})
+					if err := write(protocol.Response{JSONRPC: protocol.JSONRPC, ID: r.ID, Error: protocol.Errorf(protocol.InvalidRequest, "invalid snapshot unsubscribe request")}); err != nil {
+						setWriteErr(err)
+						break
+					}
 				}
 				continue
 			}
-			subscriptionMu.Lock()
-			if subscription != nil {
-				subscription.close()
-				subscription = nil
-			}
-			subscriptionMu.Unlock()
+			closeSubscription()
 			if len(r.ID) > 0 {
 				if err := write(protocol.Response{JSONRPC: protocol.JSONRPC, ID: r.ID, Result: map[string]any{"ok": true}}); err != nil {
 					setWriteErr(err)
@@ -449,6 +481,9 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 		}
 		if control(r.Method) {
 			resp := s.handleSafely(ctx, r)
+			if r.Method == "stave.session.cancel" && resp.Error == nil {
+				closeSubscription()
+			}
 			if len(r.ID) > 0 {
 				if err := write(resp); err != nil {
 					setWriteErr(err)
@@ -461,7 +496,10 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 		if r.Method == "stave.action.invoke" {
 			if e := s.reserveCall(ctx, r); e != nil {
 				if len(r.ID) > 0 {
-					_ = write(protocol.Response{JSONRPC: protocol.JSONRPC, ID: r.ID, Error: protocol.Errorf(protocol.InvalidParams, "%s", e)})
+					if err := write(protocol.Response{JSONRPC: protocol.JSONRPC, ID: r.ID, Error: protocol.Errorf(protocol.InvalidParams, "%s", e)}); err != nil {
+						setWriteErr(err)
+						break
+					}
 				}
 				continue
 			}
@@ -483,16 +521,15 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 			}
 			s.observe(ctx, "protocol.backpressure", map[string]string{"queue": "requests"})
 			if len(r.ID) > 0 {
-				_ = write(protocol.Response{JSONRPC: protocol.JSONRPC, ID: r.ID, Error: protocol.Errorf(protocol.Backpressure, "request queue is full")})
+				if err := write(protocol.Response{JSONRPC: protocol.JSONRPC, ID: r.ID, Error: protocol.Errorf(protocol.Backpressure, "request queue is full")}); err != nil {
+					setWriteErr(err)
+					reading = false
+					continue
+				}
 			}
 		}
 	}
-	subscriptionMu.Lock()
-	if subscription != nil {
-		subscription.close()
-		subscription = nil
-	}
-	subscriptionMu.Unlock()
+	closeSubscription()
 	close(jobs)
 	wg.Wait()
 	close(writes)
@@ -507,9 +544,9 @@ func mustJSON(value any) json.RawMessage { b, _ := json.Marshal(value); return b
 
 func (s *Server) snapshotSubscriptionAllowed() bool {
 	s.mu.Lock()
-	resolved, ready := s.negotiated, s.ready && !s.closed && !s.cancelling
+	resolved, ready, compatibility := s.negotiated, s.ready && !s.closed && !s.cancelling, s.opt.CompatibilityMode
 	s.mu.Unlock()
-	if !ready || s.opt.SubscriptionSnapshotEnvelope == nil || s.opt.SnapshotPublicationWaiter == nil || !s.snapshotModeAllowed("full") {
+	if compatibility || !ready || s.opt.SubscriptionSnapshotEnvelope == nil || s.opt.SnapshotPublicationWaiter == nil || !s.snapshotModeAllowed("full") {
 		return false
 	}
 	manifest, ok := resolved.(capability.Manifest)

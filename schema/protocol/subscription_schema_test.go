@@ -35,7 +35,7 @@ func TestSnapshotSubscriptionSchemaIsSeparateAndValid(t *testing.T) {
 	requireFragments(t, string(schema.Defs["fullSnapshot"]),
 		`"$ref": "../protocol.json#/$defs/snapshotResult"`,
 		`"required": ["snapshot"]`,
-		`"not": {"required": ["patch"]}`, `"minimum": 1`)
+		`"not": {"anyOf": [{"required": ["actions"]}, {"required": ["patch"]}]}`, `"minimum": 1`)
 	for name, method := range map[string]string{
 		"subscribeRequest":   "stave.snapshot.subscribe",
 		"unsubscribeRequest": "stave.snapshot.unsubscribe",

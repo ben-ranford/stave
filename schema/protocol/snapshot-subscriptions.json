@@ -22,7 +22,7 @@
         {
           "type": "object",
           "required": ["snapshot"],
-          "not": {"required": ["patch"]},
+          "not": {"anyOf": [{"required": ["actions"]}, {"required": ["patch"]}]},
           "properties": {
             "mode": {"const": "full"},
             "sequence": {"type": "integer", "minimum": 1},
