@@ -33,8 +33,10 @@ type incrementInput struct{}
 type incrementOutput struct{}
 
 type Application struct {
-	Prepared *stave.Prepared[Model]
-	Registry *action.Registry
+	Prepared           *stave.Prepared[Model]
+	Registry           *action.Registry
+	incrementGate      chan struct{}
+	nextIncrementCount int
 }
 
 func New(ctx context.Context, runtimeDetected capability.Manifest) (*Application, error) {
@@ -44,16 +46,11 @@ func New(ctx context.Context, runtimeDetected capability.Manifest) (*Application
 		InputSchema: action.Schema{ID: "empty", JSON: []byte(`{}`)}, OutputSchema: action.Schema{ID: "empty", JSON: []byte(`{}`)},
 		Safety: action.Reversible, Idempotency: action.NonIdempotent,
 	}
-	var prepared *stave.Prepared[Model]
-	if err := action.Register(registry, definition, decodeIncrement, encodeIncrement, func(_ context.Context, call action.Call, _ incrementInput) (incrementOutput, error) {
-		ev, err := event.New(event.ActionInvoked, event.ActionInvokedPayload{CallID: call.CallID, ActionID: string(call.ActionID)})
-		if err != nil {
-			return incrementOutput{}, err
-		}
-		if err := prepared.Session.Send(ev); err != nil {
-			return incrementOutput{}, err
-		}
-		return incrementOutput{}, nil
+	incrementGate := make(chan struct{}, 1)
+	incrementGate <- struct{}{}
+	application := &Application{Registry: registry, incrementGate: incrementGate}
+	if err := action.Register(registry, definition, decodeIncrement, encodeIncrement, func(ctx context.Context, call action.Call, _ incrementInput) (incrementOutput, error) {
+		return application.increment(ctx, call)
 	}); err != nil {
 		return nil, err
 	}
@@ -62,7 +59,30 @@ func New(ctx context.Context, runtimeDetected capability.Manifest) (*Application
 	if err != nil {
 		return nil, err
 	}
-	return &Application{Prepared: prepared, Registry: registry}, nil
+	application.Prepared = prepared
+	return application, nil
+}
+
+func (a *Application) increment(ctx context.Context, call action.Call) (incrementOutput, error) {
+	select {
+	case <-ctx.Done():
+		return incrementOutput{}, ctx.Err()
+	case <-a.incrementGate:
+	}
+	defer func() { a.incrementGate <- struct{}{} }()
+	ev, err := event.New(event.ActionInvoked, event.ActionInvokedPayload{CallID: call.CallID, ActionID: string(call.ActionID)})
+	if err != nil {
+		return incrementOutput{}, err
+	}
+	if err := a.Prepared.Session.Send(ev); err != nil {
+		return incrementOutput{}, err
+	}
+	a.nextIncrementCount++
+	target := a.nextIncrementCount
+	if err := a.Prepared.Session.Wait(ctx, func(current state.State[Model]) bool { return current.Model.Count >= target }); err != nil {
+		return incrementOutput{}, err
+	}
+	return incrementOutput{}, nil
 }
 
 func decodeIncrement(raw json.RawMessage) (incrementInput, error) {
@@ -122,6 +142,7 @@ func (a *Application) handleHumanEvent(ctx context.Context, ev event.Event) erro
 			if result := a.invoke(ctx, action.Call{CallID: fmt.Sprintf("human-%d", before.Sequence+1), ActionID: IncrementActionID, Arguments: json.RawMessage(`{}`), SessionID: before.SessionID}); result.Error != nil {
 				return result.Error
 			}
+			return nil
 		} else if err := a.Prepared.Session.Send(ev); err != nil {
 			return err
 		}
