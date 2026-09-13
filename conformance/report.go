@@ -58,7 +58,7 @@ func MarshalJSONReport(report JSONReport) ([]byte, error) {
 	if err := validateJSONReport(report); err != nil {
 		return nil, err
 	}
-	report.Failures = append([]JSONFailure(nil), report.Failures...)
+	report.Failures = append([]JSONFailure{}, report.Failures...)
 	sortJSONFailures(report.Failures)
 	data, err := json.Marshal(report)
 	if err != nil {
@@ -76,6 +76,9 @@ func MarshalJSONReport(report JSONReport) ([]byte, error) {
 func ParseJSONReport(data []byte) (JSONReport, error) {
 	if len(data) > MaxReportBytes {
 		return JSONReport{}, fmt.Errorf("conformance report exceeds %d byte limit", MaxReportBytes)
+	}
+	if !utf8.Valid(data) {
+		return JSONReport{}, fmt.Errorf("conformance report is not valid UTF-8")
 	}
 	if err := rejectDuplicateJSONFields(data); err != nil {
 		return JSONReport{}, err
@@ -142,18 +145,9 @@ func readJSONValue(decoder *json.Decoder) error {
 	case '{':
 		seen := map[string]bool{}
 		for decoder.More() {
-			keyToken, err := decoder.Token()
-			if err != nil {
+			if err := readReportJSONKey(decoder, seen); err != nil {
 				return err
 			}
-			key, ok := keyToken.(string)
-			if !ok {
-				return fmt.Errorf("object key is not a string")
-			}
-			if seen[key] {
-				return fmt.Errorf("duplicate JSON field %q", key)
-			}
-			seen[key] = true
 			if err := readJSONValue(decoder); err != nil {
 				return err
 			}
@@ -171,6 +165,28 @@ func readJSONValue(decoder *json.Decoder) error {
 	default:
 		return fmt.Errorf("unexpected JSON delimiter %q", delimiter)
 	}
+}
+
+func readReportJSONKey(decoder *json.Decoder, seen map[string]bool) error {
+	keyToken, err := decoder.Token()
+	if err != nil {
+		return err
+	}
+	key, ok := keyToken.(string)
+	if !ok {
+		return fmt.Errorf("object key is not a string")
+	}
+	// The typed decoders still enforce where each exact schema key may occur.
+	switch key {
+	case "schemaVersion", "failures", "path", "rule", "detail", "documentation":
+	default:
+		return fmt.Errorf("unknown conformance report field %q", key)
+	}
+	if seen[key] {
+		return fmt.Errorf("duplicate JSON field %q", key)
+	}
+	seen[key] = true
+	return nil
 }
 
 func decodeJSONFailure(data json.RawMessage) (JSONFailure, error) {

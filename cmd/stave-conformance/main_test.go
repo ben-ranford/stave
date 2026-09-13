@@ -158,3 +158,17 @@ func (s stubAdapter) Render(_ semantic.Node, mode conformance.Mode) (string, err
 }
 func (s stubAdapter) ActionRegistry() *action.Registry { return nil }
 func (s stubAdapter) Keymap() keymap.Map               { return keymap.Map{} }
+
+func TestReportModeEmptyReportRoundTrip(t *testing.T) {
+	wire := `{"schemaVersion":"stave.conformance.report.v1","failures":[]}` + "\n"
+	for range 2 {
+		var output bytes.Buffer
+		if err := runReportMode([]string{"--report", "-"}, bytes.NewBufferString(wire), &output); err != nil {
+			t.Fatal(err)
+		}
+		if output.String() != wire {
+			t.Fatalf("empty report changed: %s", output.String())
+		}
+		wire = output.String()
+	}
+}

@@ -64,3 +64,48 @@ func TestReadJSONReportBoundsInput(t *testing.T) {
 		t.Fatal("oversized stream was accepted")
 	}
 }
+
+func TestJSONReportEmptyArrayRoundTrip(t *testing.T) {
+	constructed, err := NewJSONReport(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, report := range []JSONReport{{SchemaVersion: ReportSchemaVersion}, constructed} {
+		data, err := MarshalJSONReport(report)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(data) != `{"schemaVersion":"stave.conformance.report.v1","failures":[]}` {
+			t.Fatalf("empty report = %s", data)
+		}
+		if _, err := ParseJSONReport(data); err != nil {
+			t.Fatalf("empty report did not round trip: %v", err)
+		}
+	}
+}
+
+func TestJSONReportRejectsCaseAliases(t *testing.T) {
+	valid := `{"schemaVersion":"stave.conformance.report.v1","failures":[{"path":"p","rule":"unknown","detail":"d","documentation":""}]}`
+	for _, key := range []string{"schemaVersion", "failures", "path", "rule", "detail", "documentation"} {
+		t.Run(key, func(t *testing.T) {
+			alias := strings.Replace(valid, `"`+key+`":`, `"`+strings.ToUpper(key)+`":`, 1)
+			if _, err := ParseJSONReport([]byte(alias)); err == nil {
+				t.Fatal("case-variant field alias accepted")
+			}
+		})
+	}
+	collision := `{"schemaVersion":"bad","SCHEMAVERSION":"stave.conformance.report.v1","failures":[]}`
+	if _, err := ParseJSONReport([]byte(collision)); err == nil {
+		t.Fatal("case-variant duplicate accepted")
+	}
+}
+
+func TestJSONReportRejectsMalformedUTF8(t *testing.T) {
+	valid := `{"schemaVersion":"stave.conformance.report.v1","failures":[{"path":"p","rule":"unknown","detail":"d","documentation":""}]}`
+	for _, value := range []string{"p", "unknown", "d"} {
+		malformed := strings.Replace(valid, `"`+value+`"`, "\""+string([]byte{0xff})+"\"", 1)
+		if _, err := ParseJSONReport([]byte(malformed)); err == nil {
+			t.Fatalf("malformed UTF8 accepted in %q", value)
+		}
+	}
+}
