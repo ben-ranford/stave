@@ -1,6 +1,7 @@
 package surface
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/ben-ranford/stave/layout"
@@ -112,6 +113,107 @@ func TestSurfaceDeterminismAndMergeDirty(t *testing.T) {
 	if len(merged) != 1 || merged[0].Width != 2 {
 		t.Fatalf("merge mismatch: %#v", merged)
 	}
+}
+
+func TestWithTextMatchesSeededBuilderAndPreservesInput(t *testing.T) {
+	t.Parallel()
+	base := New(12, 2)
+	var err error
+	base, err = base.WithText(0, 0, "seed", ResolvedStyle{Foreground: "#112233"}, "https://seed.example", semantic.NodeID("n1_seeddddddddddddddddddddddd"), 1, layout.Rect{Width: 12, Height: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := base
+
+	builder := seededBuilder(base)
+	style := ResolvedStyle{Foreground: "#abcdef", Background: "#010203", Bold: true}
+	clip := layout.Rect{X: 0, Y: 0, Width: 8, Height: 1}
+	if err := builder.WithText(1, 0, "a\t界z", style, "https://text.example", semantic.NodeID("n1_texttttttttttttttttttttttt"), 2, clip); err != nil {
+		t.Fatal(err)
+	}
+	if err := builder.WithText(6, 1, "ok", ResolvedStyle{Italic: true}, "", semantic.NodeID("n1_seconddddddddddddddddddddd"), 3, layout.Rect{Width: 12, Height: 2}); err != nil {
+		t.Fatal(err)
+	}
+	want := builder.Surface()
+
+	got, err := base.WithText(1, 0, "a\t界z", style, "https://text.example", semantic.NodeID("n1_texttttttttttttttttttttttt"), 2, clip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err = got.WithText(6, 1, "ok", ResolvedStyle{Italic: true}, "", semantic.NodeID("n1_seconddddddddddddddddddddd"), 3, layout.Rect{Width: 12, Height: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Width != want.Width || got.Height != want.Height || got.Hash() != want.Hash() || !slices.Equal(got.Cells(), want.Cells()) || !slices.Equal(got.Styles(), want.Styles()) || !slices.Equal(got.Links(), want.Links()) {
+		t.Fatalf("WithText differs from seeded builder\n got=%#v\nwant=%#v", got, want)
+	}
+	if base.Width != before.Width || base.Height != before.Height || base.Hash() != before.Hash() || !slices.Equal(base.Cells(), before.Cells()) || !slices.Equal(base.Styles(), before.Styles()) || !slices.Equal(base.Links(), before.Links()) {
+		t.Fatalf("WithText mutated input\n got=%#v\nwant=%#v", base, before)
+	}
+	patched, err := base.ApplyPatch(Diff(base, got))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if patched.Hash() != got.Hash() {
+		t.Fatalf("diff/patch hash mismatch: got %x want %x", patched.Hash(), got.Hash())
+	}
+}
+
+func TestWithTextAllocationEnvelopeMatchesBuilder(t *testing.T) {
+	line := stringsRepeat("abc界", 50)
+	style := ResolvedStyle{Foreground: "#abcdef"}
+	clip := layout.Rect{Width: 240, Height: 1}
+	immutableAllocs := testing.AllocsPerRun(10, func() {
+		_, err := New(240, 1).WithText(0, 0, line, style, "https://text.example", semantic.NodeID("n1_alloccccccccccccccccccccccc"), 1, clip)
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+	builderAllocs := testing.AllocsPerRun(10, func() {
+		builder, err := NewBuilder(240, 1, 240)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := builder.WithText(0, 0, line, style, "https://text.example", semantic.NodeID("n1_alloccccccccccccccccccccccc"), 1, clip); err != nil {
+			t.Fatal(err)
+		}
+		_ = builder.Surface()
+	})
+	t.Logf("immutable WithText allocations %.0f; builder allocations %.0f", immutableAllocs, builderAllocs)
+	if immutableAllocs > builderAllocs+8 {
+		t.Fatalf("immutable WithText allocations %.0f exceed builder envelope %.0f", immutableAllocs, builderAllocs)
+	}
+}
+
+func TestWithTextUsesFirstMatchingInternedValues(t *testing.T) {
+	style := ResolvedStyle{Foreground: "#abcdef"}
+	link := "https://text.example"
+	base := Surface{
+		Width:  2,
+		Height: 1,
+		cells:  make([]Cell, 2),
+		styles: []ResolvedStyle{style, style},
+		links:  []string{link, link},
+	}.finalize()
+	got, err := base.WithText(0, 0, "x", style, link, semantic.NodeID("n1_duplicateeeeeeeeeeeeeeeeee"), 1, layout.Rect{Width: 2, Height: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cell := got.At(0, 0); cell.Style != 1 || cell.Link != 1 {
+		t.Fatalf("WithText changed first-match interning: %#v", cell)
+	}
+}
+
+func seededBuilder(s Surface) *Builder {
+	styles := make(map[ResolvedStyle]StyleID, len(s.styles))
+	for i, style := range s.styles {
+		styles[style] = StyleID(i + 1)
+	}
+	links := make(map[string]LinkID, len(s.links))
+	for i, link := range s.links {
+		links[link] = LinkID(i + 1)
+	}
+	return &Builder{surface: s.clone(), styleIndex: styles, linkIndex: links}
 }
 
 func TestDiffRepresentsResize(t *testing.T) {
