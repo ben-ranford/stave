@@ -8,6 +8,10 @@ deterministic `stave.keymap.v1` document. `Decode` rejects unknown document
 fields and versions, then reuses keymap validation for invalid or conflicting
 bindings. Callers supply their action registry manifest to `Decode`; imported
 action routes that are absent from that manifest are rejected.
+Profiles require a non-null `mappings` array. Decode rejects malformed UTF-8
+before parsing and rejects chords outside the normalized input key domain;
+Encode rejects invalid UTF-8 rather than replacing it during JSON
+serialization.
 
 ## Principle
 
