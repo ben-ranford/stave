@@ -3,9 +3,6 @@
   "packages": {
     ".": {
       "release-type": "go",
-      "versioning": "prerelease",
-      "prerelease": true,
-      "prerelease-type": "rc",
       "include-component-in-tag": false,
       "extra-files": [
         "README.md",
