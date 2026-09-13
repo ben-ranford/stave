@@ -30,17 +30,18 @@ done
 url="${!#}"
 if [[ "${FAIL_CURL:-}" == 1 ]]; then exit 22; fi
 case "${url}" in
-*/releases/tags/v1.0.0-rc.2)
+*/releases/tags/*)
+	tag_name="${url##*/}"
 	if [[ "${INCOMPLETE_METADATA:-}" == 1 ]] || { [[ "${DELAY_METADATA:-}" == 1 ]] && [[ ! -e "$(dirname "$0")/metadata-delayed" ]]; }; then
 		touch "$(dirname "$0")/metadata-delayed"
 		printf '%s' '{"tag_name":"v1.0.0-rc.2","assets":[]}' >"${out}"
 	else
 		cat >"${out}" <<JSON
-{"tag_name":"v1.0.0-rc.2","assets":[{"name":"CHANGELOG.md","digest":"sha256:${changelog_digest}","browser_download_url":"https://assets/CHANGELOG.md"},{"name":"LICENSE","digest":"sha256:${license_digest}","browser_download_url":"https://assets/LICENSE"},{"name":"report.json","digest":"sha256:${report_digest}","browser_download_url":"https://assets/report.json"}]}
+{"tag_name":"${tag_name}","assets":[{"name":"CHANGELOG.md","digest":"sha256:${changelog_digest}","browser_download_url":"https://assets/CHANGELOG.md"},{"name":"LICENSE","digest":"sha256:${license_digest}","browser_download_url":"https://assets/LICENSE"},{"name":"report.json","digest":"sha256:${report_digest}","browser_download_url":"https://assets/report.json"}]}
 JSON
 	fi
 	;;
-*/git/ref/tags/v1.0.0-rc.2) printf '%s' '{"object":{"sha":"tag-object","type":"tag"}}' >"${out}" ;;
+*/git/ref/tags/*) printf '%s' '{"object":{"sha":"tag-object","type":"tag"}}' >"${out}" ;;
 */git/tags/tag-object) printf '%s' '{"object":{"sha":"source-commit","type":"commit"}}' >"${out}" ;;
 https://assets/CHANGELOG.md) printf changelog >"${out}" ;;
 https://assets/LICENSE) printf license >"${out}" ;;
@@ -53,8 +54,10 @@ cat >"${workdir}/bin/go" <<'EOF'
 set -euo pipefail
 case "$1 $2" in
 'mod init') printf 'module example.com/stave-release-probe\n' >go.mod ;;
-'get github.com/ben-ranford/stave@v1.0.0-rc.2')
+'get github.com/ben-ranford/stave@'*)
 	bin_dir="$(dirname "$0")"
+	requested_version="${2#github.com/ben-ranford/stave@}"
+	canonical_version="${requested_version%%+*}"
 	[[ "$(<"${bin_dir}/fail-go-get")" != 1 ]] || exit 1
 	if [[ "$(<"${bin_dir}/term-ignore-go-get")" == 1 ]]; then
 		printf '%s\n' "$$" >"${bin_dir}/term-ignore-parent-pid"
@@ -66,9 +69,17 @@ case "$1 $2" in
 		sleep 30
 	fi
 	if [[ "$(<"${bin_dir}/record-fast-go-get")" == 1 ]]; then printf '%s\n' "$$" >"${bin_dir}/fast-go-get-pid"; fi
-	printf '\nrequire github.com/ben-ranford/stave v1.0.0-rc.2\n' >>go.mod
+	printf '%s\n' "${canonical_version}" >"${bin_dir}/module-version"
+	printf '\nrequire github.com/ben-ranford/stave %s\n' "${canonical_version}" >>go.mod
 	;;
-'list -m') printf '%s\n' '{"Path":"github.com/ben-ranford/stave","Version":"v1.0.0-rc.2","Sum":"h1:publicsum","Origin":{"Hash":"source-commit"}}' ;;
+'list -m')
+	bin_dir="$(dirname "$0")"
+	module_version="$(<"${bin_dir}/module-version")"
+	if [[ -s "${bin_dir}/module-version-override" ]]; then module_version="$(<"${bin_dir}/module-version-override")"; fi
+	origin_sha=source-commit
+	if [[ -s "${bin_dir}/origin-override" ]]; then origin_sha="$(<"${bin_dir}/origin-override")"; fi
+	printf '{"Path":"github.com/ben-ranford/stave","Version":"%s","Sum":"h1:publicsum","Origin":{"Hash":"%s"}}\n' "${module_version}" "${origin_sha}"
+	;;
 'run .') printf 'text: public module\n' ;;
 *) printf 'unexpected go invocation: %s %s\n' "$1" "$2" >&2; exit 1 ;;
 esac
@@ -78,9 +89,30 @@ chmod +x "${workdir}/bin/curl" "${workdir}/bin/go"
 : >"${workdir}/bin/slow-go-get"
 : >"${workdir}/bin/term-ignore-go-get"
 : >"${workdir}/bin/record-fast-go-get"
+: >"${workdir}/bin/module-version-override"
+: >"${workdir}/bin/origin-override"
 
 PATH="${workdir}/bin:${PATH}" RELEASE_PROBE_ATTEMPTS=2 RELEASE_PROBE_RETRY_SECONDS=0 "${script}" v1.0.0-rc.2 >"${workdir}/report.json"
-jq -e '.tag_object_sha == "tag-object" and .source_sha == "source-commit" and .module.sum == "h1:publicsum" and .module.origin_sha == .source_sha and (.assets | length == 3)' "${workdir}/report.json" >/dev/null
+jq -e '.tag_object_sha == "tag-object" and .source_sha == "source-commit" and .module.sum == "h1:publicsum" and .module.canonical_version == "v1.0.0-rc.2" and .module.origin_sha == .source_sha and (.assets | length == 3)' "${workdir}/report.json" >/dev/null
+
+for tag_name in v1.0.0+build.7 v1.0.0-rc.2+build.7; do
+	PATH="${workdir}/bin:${PATH}" "${script}" "${tag_name}" >"${workdir}/build-metadata.json"
+	jq -e --arg tag_name "${tag_name}" --arg canonical_version "${tag_name%%+*}" '.tag == $tag_name and .module.canonical_version == $canonical_version and .module.origin_sha == .source_sha' "${workdir}/build-metadata.json" >/dev/null
+done
+
+printf 'v9.9.9\n' >"${workdir}/bin/module-version-override"
+if PATH="${workdir}/bin:${PATH}" "${script}" v1.0.0+build.7 >"${workdir}/canonical-mismatch.out" 2>"${workdir}/canonical-mismatch.err"; then
+	printf 'expected canonical module version mismatch\n' >&2
+	exit 1
+fi
+: >"${workdir}/bin/module-version-override"
+
+printf 'wrong-source\n' >"${workdir}/bin/origin-override"
+if PATH="${workdir}/bin:${PATH}" "${script}" v1.0.0-rc.2+build.7 >"${workdir}/origin-mismatch.out" 2>"${workdir}/origin-mismatch.err"; then
+	printf 'expected module origin mismatch\n' >&2
+	exit 1
+fi
+: >"${workdir}/bin/origin-override"
 
 PATH="${workdir}/bin:${PATH}" DELAY_METADATA=1 RELEASE_PROBE_ATTEMPTS=2 RELEASE_PROBE_RETRY_SECONDS=0 "${script}" v1.0.0-rc.2 >"${workdir}/delayed-metadata.json"
 jq -e '(.assets | length == 3)' "${workdir}/delayed-metadata.json" >/dev/null

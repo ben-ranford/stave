@@ -12,6 +12,9 @@ usage() {
 tag="${1:-}"
 [[ $# -eq 1 && -n "${tag}" ]] || usage
 repository="ben-ranford/stave"
+# Go module versions are canonical SemVer and discard build metadata, while the
+# release API and tag provenance continue to use the requested tag verbatim.
+canonical_module_version="${tag%%+*}"
 
 attempts="${RELEASE_PROBE_ATTEMPTS:-3}"
 retry_seconds="${RELEASE_PROBE_RETRY_SECONDS:-5}"
@@ -219,7 +222,11 @@ module_path="$(jq -er '.Path' "${workdir}/module.json")"
 module_version="$(jq -er '.Version' "${workdir}/module.json")"
 module_sum="$(jq -er '.Sum' "${workdir}/module.json")"
 module_origin_sha="$(jq -er '.Origin.Hash' "${workdir}/module.json")"
-[[ "${module_path}" == "github.com/ben-ranford/stave" && "${module_version}" == "${tag}" && -n "${module_sum}" && "${module_origin_sha}" == "${source_sha}" ]]
+[[ "${module_path}" == "github.com/ben-ranford/stave" && "${module_version}" == "${canonical_module_version}" && -n "${module_sum}" && "${module_origin_sha}" == "${source_sha}" ]] || {
+	printf 'module verification mismatch: path=%s version=%s expected-version=%s origin=%s expected-origin=%s\n' \
+		"${module_path}" "${module_version}" "${canonical_module_version}" "${module_origin_sha}" "${source_sha}" >&2
+	exit 1
+}
 grep -qx 'text: public module' "${workdir}/consumer-output.txt"
 
 sha256() {
@@ -244,6 +251,6 @@ done
 
 jq -n \
 	--arg repository "${repository}" --arg tag "${tag}" --arg tag_object_sha "${tag_object_sha}" \
-	--arg source_sha "${source_sha}" --arg module_sum "${module_sum}" --arg module_origin_sha "${module_origin_sha}" --arg consumer_output "$(<"${workdir}/consumer-output.txt")" \
+	--arg source_sha "${source_sha}" --arg module_sum "${module_sum}" --arg module_origin_sha "${module_origin_sha}" --arg module_version "${module_version}" --arg consumer_output "$(<"${workdir}/consumer-output.txt")" \
 	--argjson assets "${assets_json}" \
-	'{repository: $repository, tag: $tag, tag_object_sha: $tag_object_sha, source_sha: $source_sha, module: {path: "github.com/ben-ranford/stave", version: $tag, sum: $module_sum, origin_sha: $module_origin_sha, proxy: "https://proxy.golang.org", sumdb: "sum.golang.org"}, consumer_output: $consumer_output, assets: $assets}'
+	'{repository: $repository, tag: $tag, tag_object_sha: $tag_object_sha, source_sha: $source_sha, module: {path: "github.com/ben-ranford/stave", canonical_version: $module_version, sum: $module_sum, origin_sha: $module_origin_sha, proxy: "https://proxy.golang.org", sumdb: "sum.golang.org"}, consumer_output: $consumer_output, assets: $assets}'

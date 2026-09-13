@@ -47,7 +47,9 @@ merge commit.
    propagation, then resolves the exact module through `proxy.golang.org` and
    `sum.golang.org`, runs the quick-start consumer, and checks the three release
    asset SHA-256 digests. The job reports the annotated tag object SHA, peeled
-   source commit SHA, module sum, and asset digests. It makes only anonymous
+   source commit SHA, canonical module version, module sum, and asset digests.
+   Build metadata remains part of the requested release tag while Go reports
+   its canonical module version without that metadata. It makes only anonymous
    public reads and never changes tags, releases, or labels.
 5. Change repository visibility only after the scheduler-boundary proof in
    step 1 passes. Then run a controlled real public-fork pull request and
