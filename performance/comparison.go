@@ -238,18 +238,9 @@ func validateJSONKeys(data []byte, depth int) error {
 	seen := map[string]struct{}{}
 	for decoder.More() {
 		if delim == '{' {
-			keyToken, err := decoder.Token()
-			if err != nil {
+			if err := validateJSONObjectKey(decoder, seen); err != nil {
 				return err
 			}
-			key, ok := keyToken.(string)
-			if !ok {
-				return errors.New("invalid performance report object key")
-			}
-			if _, exists := seen[key]; exists {
-				return fmt.Errorf("duplicate performance report key %q", key)
-			}
-			seen[key] = struct{}{}
 		}
 		var raw json.RawMessage
 		if err := decoder.Decode(&raw); err != nil {
@@ -266,6 +257,22 @@ func validateJSONKeys(data []byte, depth int) error {
 		return err
 	}
 	return ensureReportEOF(decoder)
+}
+
+func validateJSONObjectKey(decoder *json.Decoder, seen map[string]struct{}) error {
+	keyToken, err := decoder.Token()
+	if err != nil {
+		return err
+	}
+	key, ok := keyToken.(string)
+	if !ok {
+		return errors.New("invalid performance report object key")
+	}
+	if _, exists := seen[key]; exists {
+		return fmt.Errorf("duplicate performance report key %q", key)
+	}
+	seen[key] = struct{}{}
+	return nil
 }
 
 func ensureReportEOF(decoder *json.Decoder) error {
