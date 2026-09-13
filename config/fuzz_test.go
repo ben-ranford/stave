@@ -16,31 +16,46 @@ func FuzzConfigParseCanonical(f *testing.F) {
 		f.Add(seed)
 	}
 	f.Fuzz(func(t *testing.T, input []byte) {
-		if len(input) > maxConfigFuzzBytes {
-			return
-		}
-		if depth, valid := jsonNesting(input); valid && depth > 64 {
+		if !configFuzzInputInBounds(input) {
 			return
 		}
 		config, err := Parse(input)
 		if err != nil {
-			if strings.Contains(err.Error(), "fuzz-secret") {
-				t.Fatalf("config parser echoed a secret: %v", err)
-			}
+			assertConfigParseErrorSafe(t, err)
 			return
 		}
-		canonical := CanonicalJSON(config)
-		roundTrip, err := decodeCanonicalConfig(canonical)
-		if err != nil {
-			t.Fatalf("accepted config did not round trip: %v", err)
-		}
-		if !bytes.Equal(canonical, CanonicalJSON(roundTrip)) {
-			t.Fatalf("accepted config canonical encoding was unstable")
-		}
-		if HashString(config) != HashString(roundTrip) {
-			t.Fatalf("accepted config canonical hash was unstable")
-		}
+		assertConfigCanonicalRoundTrip(t, config)
 	})
+}
+
+func configFuzzInputInBounds(input []byte) bool {
+	if len(input) > maxConfigFuzzBytes {
+		return false
+	}
+	depth, valid := jsonNesting(input)
+	return !valid || depth <= 64
+}
+
+func assertConfigParseErrorSafe(t *testing.T, err error) {
+	t.Helper()
+	if strings.Contains(err.Error(), "fuzz-secret") {
+		t.Fatalf("config parser echoed a secret: %v", err)
+	}
+}
+
+func assertConfigCanonicalRoundTrip(t *testing.T, config Config) {
+	t.Helper()
+	canonical := CanonicalJSON(config)
+	roundTrip, err := decodeCanonicalConfig(canonical)
+	if err != nil {
+		t.Fatalf("accepted config did not round trip: %v", err)
+	}
+	if !bytes.Equal(canonical, CanonicalJSON(roundTrip)) {
+		t.Fatalf("accepted config canonical encoding was unstable")
+	}
+	if HashString(config) != HashString(roundTrip) {
+		t.Fatalf("accepted config canonical hash was unstable")
+	}
 }
 
 // decodeCanonicalConfig decodes a resolved Config. Parse consumes sparse

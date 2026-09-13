@@ -79,8 +79,7 @@ func decodeJSONValue(value []byte) (any, bool) {
 	if err := decoder.Decode(&decoded); err != nil {
 		return nil, false
 	}
-	var trailing any
-	if err := decoder.Decode(&trailing); err != io.EOF {
+	if decoder.Decode(new(any)) != io.EOF {
 		return nil, false
 	}
 	return decoded, true
