@@ -114,14 +114,8 @@ func validateUniqueJSONValue(decoder *json.Decoder, depth int) error {
 	}
 	switch delim {
 	case '{':
-		seen := map[string]struct{}{}
-		for decoder.More() {
-			if err := validateUniqueJSONObjectKey(decoder, seen); err != nil {
-				return err
-			}
-			if err := validateUniqueJSONValue(decoder, depth+1); err != nil {
-				return err
-			}
+		if err := validateTranscriptObject(decoder, depth); err != nil {
+			return err
 		}
 	case '[':
 		for decoder.More() {
@@ -136,20 +130,69 @@ func validateUniqueJSONValue(decoder *json.Decoder, depth int) error {
 	return err
 }
 
-func validateUniqueJSONObjectKey(decoder *json.Decoder, seen map[string]struct{}) error {
-	keyToken, err := decoder.Token()
+func validateTranscriptObject(decoder *json.Decoder, depth int) error {
+	seen := map[string]struct{}{}
+	for decoder.More() {
+		key, err := validateUniqueJSONObjectKey(decoder, seen)
+		if err != nil {
+			return err
+		}
+		if depth == 0 && key != "records" && strings.EqualFold(key, "records") {
+			return errors.New("noncanonical replay transcript records key")
+		}
+		if depth == 0 && key == "records" {
+			if err := validateTranscriptRecords(decoder, depth+1); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := validateUniqueJSONValue(decoder, depth+1); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateTranscriptRecords(decoder *json.Decoder, depth int) error {
+	token, err := decoder.Token()
 	if err != nil {
 		return err
 	}
+	if token == nil {
+		return nil
+	}
+	if token != json.Delim('[') {
+		return errors.New("replay transcript records must be an array")
+	}
+	if depth > 64 {
+		return errors.New("replay transcript JSON nesting exceeds limit")
+	}
+	for count := 0; decoder.More(); count++ {
+		if count >= MaxTranscriptRecords {
+			return fmt.Errorf("replay transcript exceeds %d-record limit", MaxTranscriptRecords)
+		}
+		if err := validateUniqueJSONValue(decoder, depth+1); err != nil {
+			return err
+		}
+	}
+	_, err = decoder.Token()
+	return err
+}
+
+func validateUniqueJSONObjectKey(decoder *json.Decoder, seen map[string]struct{}) (string, error) {
+	keyToken, err := decoder.Token()
+	if err != nil {
+		return "", err
+	}
 	key, ok := keyToken.(string)
 	if !ok {
-		return errors.New("invalid replay transcript object key")
+		return "", errors.New("invalid replay transcript object key")
 	}
 	if _, exists := seen[key]; exists {
-		return fmt.Errorf("duplicate replay transcript key %q", key)
+		return "", errors.New("duplicate replay transcript key")
 	}
 	seen[key] = struct{}{}
-	return nil
+	return key, nil
 }
 
 func validateRawEventPayloads(data []byte) error {
