@@ -106,8 +106,7 @@ type Server struct {
 	negotiated                             any
 	limits                                 protocol.Limits
 	configErr                              error
-	closedContext                          context.Context
-	cancelClosed                           context.CancelFunc
+	serverDone                             chan struct{}
 }
 
 type callSlot struct {
@@ -117,7 +116,10 @@ type callSlot struct {
 
 const minimumOutputBytes = 128
 
-const sessionCancelMethod = "stave.session.cancel"
+const (
+	sessionCancelMethod   = "stave.session.cancel"
+	sessionShutdownMethod = "stave.session.shutdown"
+)
 
 var (
 	ErrBackpressure = errors.New("protocol request queue full")
@@ -155,7 +157,6 @@ func New(opts Options) *Server {
 	if opts.Application.Version == "" {
 		opts.Application.Version = "development"
 	}
-	closedContext, cancelClosed := context.WithCancel(context.Background())
 	s := &Server{
 		opt:       opts,
 		calls:     map[string]callSlot{},
@@ -166,8 +167,7 @@ func New(opts Options) *Server {
 			MaxOutputBytes:  opts.MaxOutputBytes,
 			MaxTreeNodes:    opts.MaxTreeNodes,
 		},
-		closedContext: closedContext,
-		cancelClosed:  cancelClosed,
+		serverDone: make(chan struct{}),
 	}
 	if opts.MaxOutputBytes < minimumOutputBytes {
 		s.configErr = fmt.Errorf("%w: max output bytes must be at least %d", ErrOutputLimit, minimumOutputBytes)
@@ -192,10 +192,18 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	subscriptionContext, cancelSubscriptions := context.WithCancel(ctx)
-	stopClosedSubscriptionCancellation := context.AfterFunc(s.closedContext, cancelSubscriptions)
+	subscriptionWatcherDone := make(chan struct{})
+	go func() {
+		defer close(subscriptionWatcherDone)
+		select {
+		case <-s.serverDone:
+			cancelSubscriptions()
+		case <-subscriptionContext.Done():
+		}
+	}()
 	defer func() {
-		stopClosedSubscriptionCancellation()
 		cancelSubscriptions()
+		<-subscriptionWatcherDone
 	}()
 	sc := bufio.NewScanner(in)
 	sc.Buffer(make([]byte, 4096), s.opt.MaxMessageBytes+1)
@@ -374,7 +382,7 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 	}
 	control := func(method string) bool {
 		switch method {
-		case "stave.initialize", "initialize", "stave.initialized", "initialized", "stave.action.cancel", sessionCancelMethod, "stave.session.shutdown", "stave.ping":
+		case "stave.initialize", "initialize", "stave.initialized", "initialized", "stave.action.cancel", sessionCancelMethod, sessionShutdownMethod, "stave.ping":
 			return true
 		default:
 			return false
@@ -501,7 +509,7 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 		}
 		if control(r.Method) {
 			resp := s.handleSafely(ctx, r)
-			if (r.Method == sessionCancelMethod || r.Method == "stave.session.shutdown") && resp.Error == nil {
+			if (r.Method == sessionCancelMethod || r.Method == sessionShutdownMethod) && resp.Error == nil {
 				closeSubscription()
 			}
 			if len(r.ID) > 0 {
@@ -756,7 +764,7 @@ func (s *Server) handle(parent context.Context, r protocol.Request, snapshotProv
 	case "stave.ping":
 		resp.Result = map[string]any{"ok": true, "protocolVersion": protocol.Version}
 		return resp
-	case "stave.session.shutdown":
+	case sessionShutdownMethod:
 		s.Close()
 		resp.Result = map[string]any{"ok": true}
 		return resp
@@ -1330,7 +1338,7 @@ func (s *Server) Close() {
 		return
 	}
 	s.closed = true
-	s.cancelClosed()
+	close(s.serverDone)
 	for _, c := range s.calls {
 		c.cancel()
 	}

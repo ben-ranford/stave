@@ -962,14 +962,14 @@ func (w *shutdownAckWriter) Write(p []byte) (int, error) {
 		w.once.Do(func() { close(w.progressBlocked) })
 		<-w.releaseProgress
 	}
-	copy := append([]byte(nil), p...)
+	line := append([]byte(nil), p...)
 	w.mu.Lock()
-	n, err := w.Buffer.Write(copy)
+	n, err := w.Buffer.Write(line)
 	w.mu.Unlock()
 	if err != nil {
 		return n, err
 	}
-	w.lines <- copy
+	w.lines <- line
 	return n, nil
 }
 
