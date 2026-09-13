@@ -66,6 +66,52 @@ type Options struct { Enabled bool; Name string }
 	}
 }
 
+func TestCompareInventoriesRejectsDeletedEmptyPackageAndAllowsFirstField(t *testing.T) {
+	baseline := "# Public API inventory\nmodule example.com/api\n\n[example.com/api]\ntype Empty struct { }\n\n[example.com/api/empty]\n"
+	if err := compareInventories(baseline, "# Public API inventory\nmodule example.com/api\n\n[example.com/api]\ntype Empty struct { Enabled bool }\n"); err == nil {
+		t.Fatal("deleted empty package accepted")
+	}
+	candidate := "# Public API inventory\nmodule example.com/api\n\n[example.com/api]\ntype Empty struct { Enabled bool }\n\n[example.com/api/empty]\n"
+	if err := compareInventories(baseline, candidate); err != nil {
+		t.Fatalf("first keyed field rejected: %v", err)
+	}
+}
+
+func TestReadGoFloorAcceptsInlineCommentAndRejectsMissingDirective(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/api\n\ngo 1.22 // minimum supported Go\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := readGoFloor(dir); err != nil || got != "1.22" {
+		t.Fatalf("floor=%q err=%v", got, err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/api\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readGoFloor(dir); err == nil {
+		t.Fatal("missing Go floor accepted")
+	}
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/api\n\ngo 1.22 extra\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readGoFloor(dir); err == nil {
+		t.Fatal("malformed Go floor accepted")
+	}
+}
+
+func TestPrereleaseV1TagRejectsLeadingZeroNumericIdentifiers(t *testing.T) {
+	for _, tag := range []string{"v1.2.3-01", "v1.2.3-rc.01"} {
+		if prereleaseV1Tag.MatchString(tag) {
+			t.Fatalf("invalid prerelease %q accepted", tag)
+		}
+	}
+	for _, tag := range []string{"v1.2.3-0", "v1.2.3-rc.1", "v1.2.3-rc.1+build.2"} {
+		if !prereleaseV1Tag.MatchString(tag) {
+			t.Fatalf("valid prerelease %q rejected", tag)
+		}
+	}
+}
+
 func TestConsumerCompilerFixtures(t *testing.T) {
 	baseline := `package api
 

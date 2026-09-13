@@ -634,7 +634,7 @@ func listPackagesInDir(ctx context.Context, directory string, withDeps bool) ([]
 	}
 	args = append(args, "./...")
 
-	output, err := execCommandInDir(ctx, directory, "go", args...)
+	output, err := execCommandInDir(ctx, directory, rigorGoBinary(), args...)
 	if err != nil {
 		return nil, err
 	}
@@ -652,6 +652,13 @@ func listPackagesInDir(ctx context.Context, directory string, withDeps bool) ([]
 		packages = append(packages, pkg)
 	}
 	return packages, nil
+}
+
+func rigorGoBinary() string {
+	if selected := os.Getenv("STAVE_RIGOR_GO"); selected != "" {
+		return selected
+	}
+	return "go"
 }
 
 func modulePathFor(pkgs []goListPackage) (string, error) {
@@ -740,9 +747,57 @@ func exprString(fset *token.FileSet, expr any) string {
 }
 
 func funcSignature(fset *token.FileSet, fn *ast.FuncType) string {
-	var buf bytes.Buffer
-	_ = printer.Fprint(&buf, fset, fn)
-	return strings.TrimPrefix(buf.String(), "func")
+	var out strings.Builder
+	if fn.TypeParams != nil {
+		out.WriteString(typeParameterList(fset, fn.TypeParams))
+	}
+	out.WriteString(signatureFields(fset, fn.Params))
+	out.WriteString(signatureResults(fset, fn.Results))
+	return out.String()
+}
+
+func signatureFields(fset *token.FileSet, fields *ast.FieldList) string {
+	if fields == nil || len(fields.List) == 0 {
+		return "()"
+	}
+	values := make([]string, 0, len(fields.List))
+	for _, field := range fields.List {
+		count := len(field.Names)
+		if count == 0 {
+			count = 1
+		}
+		for range count {
+			values = append(values, signatureType(fset, field.Type))
+		}
+	}
+	return "(" + strings.Join(values, ", ") + ")"
+}
+
+func signatureResults(fset *token.FileSet, fields *ast.FieldList) string {
+	if fields == nil || len(fields.List) == 0 {
+		return ""
+	}
+	values := make([]string, 0, len(fields.List))
+	for _, field := range fields.List {
+		count := len(field.Names)
+		if count == 0 {
+			count = 1
+		}
+		for range count {
+			values = append(values, signatureType(fset, field.Type))
+		}
+	}
+	if len(values) == 1 {
+		return " " + values[0]
+	}
+	return " (" + strings.Join(values, ", ") + ")"
+}
+
+func signatureType(fset *token.FileSet, expression ast.Expr) string {
+	if function, ok := expression.(*ast.FuncType); ok {
+		return "func" + funcSignature(fset, function)
+	}
+	return exprString(fset, expression)
 }
 
 func typeDeclaration(fset *token.FileSet, spec *ast.TypeSpec) string {
@@ -799,9 +854,9 @@ func publicInterfaceElements(fset *token.FileSet, fields *ast.FieldList) []strin
 	}
 	out := make([]string, 0, len(fields.List))
 	for _, field := range fields.List {
-		names := exportedFieldNames(field.Names)
-		if len(field.Names) > 0 && len(names) == 0 {
-			continue
+		names := make([]string, 0, len(field.Names))
+		for _, name := range field.Names {
+			names = append(names, name.Name)
 		}
 		declaration := exprString(fset, field.Type)
 		if fn, ok := field.Type.(*ast.FuncType); ok {
@@ -812,6 +867,7 @@ func publicInterfaceElements(fset *token.FileSet, fields *ast.FieldList) []strin
 		}
 		out = append(out, declaration)
 	}
+	sort.Strings(out)
 	return out
 }
 

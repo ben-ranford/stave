@@ -146,14 +146,14 @@ release-contract:
 	STAVE_CANDIDATE_GATE=1 $(GO) test ./requirements -count=1
 
 release-ga-contract:
-	$(GO) run ./scripts/rigor/cmd/releasebaseline
 	STAVE_GA_RELEASE_GATE=1 $(GO) test ./requirements -count=1
 
 release-baseline:
-	$(GO) run ./scripts/rigor/cmd/releasebaseline
+	$(GO) test ./scripts/rigor/cmd/releasebaseline -run '^TestConsumerCompilerFixtures$$' -count=1
+	$(GO) run ./scripts/rigor/cmd/releasebaseline --go "$(GO)"
 
 release-baseline-development:
-	$(GO) run ./scripts/rigor/cmd/releasebaseline --development --baseline-tag v1.0.0-rc.2
+	$(GO) run ./scripts/rigor/cmd/releasebaseline --go "$(GO)" --development --baseline-tag v1.0.0-rc.2
 
 ci: verify release-probe-test govulncheck workflow-validate release-contract
 

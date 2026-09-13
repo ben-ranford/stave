@@ -64,8 +64,9 @@ The following are additive when existing meaning remains intact:
 
 ## Minor-release baseline gate
 
-`make release-baseline` regenerates the candidate public API inventory from
-source and compares it with the newest annotated stable `v1.x.y` tag on a strict
+`make release-baseline` runs the focused consumer fixture matrix, regenerates
+the candidate public API inventory from source, and compares it with the newest
+annotated stable `v1.x.y` tag on a strict
 ancestor of the candidate. Tags on the candidate itself or unrelated/future
 commits cannot serve as its baseline. It
 records the baseline tag, immutable commit, and both Go floors. A regenerated
@@ -82,6 +83,9 @@ There is currently no stable v1 tag. Until issue #2 provides one,
 `make release-baseline-development` is an opt-in, explicitly labelled
 comparison with `v1.0.0-rc.2`; it is development evidence only and cannot
 serve as a GA baseline.
+
+The baseline applies to v1 GA minor releases only. A future major release must
+introduce its own major-version compatibility policy rather than reuse v1.
 
 ## Related guides
 

@@ -31,14 +31,14 @@ type Report[T any] struct {
 	Name string ` + "`json:\"name\"`" + `
 	hidden int
 }
-type Runner[T any] interface { Run(T) error }
+type Runner[T any] interface { Run(value T) error; private() }
 type Label = string
 type ID string
 `)
 	before := render()
 	for _, want := range []string{
 		"type Report[T any] struct { Name string `json:\"name\"` }",
-		"type Runner[T any] interface { Run(T) error }",
+		"type Runner[T any] interface { Run(T) error; private() }",
 		"type Label = string",
 		"type ID string",
 	} {
@@ -62,6 +62,41 @@ type ID string
 	}
 	if !strings.Contains(after, "type Report[T any] struct { Value string }") {
 		t.Fatalf("updated exported field missing from public API inventory:\n%s", after)
+	}
+}
+
+func TestPublicAPIInventoryNormalizesParameterNamesAndInterfaceOrder(t *testing.T) {
+	dir := t.TempDir()
+	render := func(source string) string {
+		t.Helper()
+		path := filepath.Join(dir, "api.go")
+		if err := os.WriteFile(path, []byte(source), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		got, err := renderPublicAPI("example.com/api", []goListPackage{{ImportPath: "example.com/api", Dir: dir, GoFiles: []string{"api.go"}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	before := render("package api\ntype Contract interface { Zebra(value string) error; Alpha() }\nfunc Keep(value string) string { return value }\n")
+	after := render("package api\ntype Contract interface { Alpha(); Zebra(input string) error }\nfunc Keep(input string) string { return input }\n")
+	if before != after {
+		t.Fatalf("semantic-equivalent declarations changed inventory:\n%s\n%s", before, after)
+	}
+	grouped := render("package api\nfunc Keep(first, second string) (left, right string) { return first, second }\n")
+	ungrouped := render("package api\nfunc Keep(string, string) (string, string) { return \"\", \"\" }\n")
+	if grouped != ungrouped {
+		t.Fatalf("grouped parameters or results changed inventory:\n%s\n%s", grouped, ungrouped)
+	}
+	changedArity := render("package api\nfunc Keep(string, string) string { return \"\" }\n")
+	if grouped == changedArity {
+		t.Fatalf("result arity change did not change inventory:\n%s", grouped)
+	}
+	nestedBefore := render("package api\nfunc Keep(callback func(value string) string) {}\n")
+	nestedAfter := render("package api\nfunc Keep(callback func(input string) string) {}\n")
+	if nestedBefore != nestedAfter {
+		t.Fatalf("nested function parameter names changed inventory:\n%s\n%s", nestedBefore, nestedAfter)
 	}
 }
 

@@ -24,7 +24,10 @@ const (
 	structMarker = " struct {"
 )
 
-var stableV1Tag = regexp.MustCompile(`^v1\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
+var (
+	stableV1Tag     = regexp.MustCompile(`^v1\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$`)
+	prereleaseV1Tag = regexp.MustCompile(`^v1\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-((0|[1-9][0-9]*)|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(\.((0|[1-9][0-9]*)|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$`)
+)
 
 type baseline struct {
 	Tag       string
@@ -45,6 +48,7 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 	flags.SetOutput(io.Discard)
 	development := flags.Bool("development", false, "allow an explicitly named prerelease development baseline")
 	baselineTag := flags.String("baseline-tag", "", "baseline tag; required for development mode")
+	goBinary := flags.String("go", "go", "Go executable used for both inventories")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -66,11 +70,14 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 			return err
 		}
 	}
-	base, err := loadBaseline(ctx, tag)
+	if *development && !prereleaseV1Tag.MatchString(tag) {
+		return fmt.Errorf("baseline tag %q is not a v1 prerelease semver tag", tag)
+	}
+	base, err := loadBaseline(ctx, tag, *goBinary)
 	if err != nil {
 		return err
 	}
-	candidate, err := currentInventory(ctx)
+	candidate, err := currentInventory(ctx, *goBinary)
 	if err != nil {
 		return err
 	}
@@ -81,7 +88,11 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 	if *development {
 		mode = "development-prerelease"
 	}
-	_, err = fmt.Fprintf(stdout, "mode=%s\nbaseline_tag=%s\nbaseline_commit=%s\nbaseline_go_floor=%s\ncandidate_go_floor=%s\nstatus=compatible\n", mode, base.Tag, base.Commit, base.GoFloor, readGoFloor(mustRepoRoot()))
+	candidateFloor, err := readGoFloor(mustRepoRoot())
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(stdout, "mode=%s\nbaseline_tag=%s\nbaseline_commit=%s\nbaseline_go_floor=%s\ncandidate_go_floor=%s\nstatus=compatible\n", mode, base.Tag, base.Commit, base.GoFloor, candidateFloor)
 	return err
 }
 
@@ -96,6 +107,10 @@ func latestStableV1Tag(ctx context.Context) (string, error) {
 	}
 	for _, tag := range strings.Fields(string(output)) {
 		if !stableV1Tag.MatchString(tag) {
+			continue
+		}
+		objectType, err := git(ctx, "cat-file", "-t", tag)
+		if err != nil || strings.TrimSpace(string(objectType)) != "tag" {
 			continue
 		}
 		commit, err := git(ctx, gitRevParse, tag+"^{commit}")
@@ -113,8 +128,8 @@ func latestStableV1Tag(ctx context.Context) (string, error) {
 	return "", fmt.Errorf("no earlier stable v1 tag is available for the minor-release compatibility gate; ancestor v1 tags: %s; create the stable baseline through issue #2 before GA", available)
 }
 
-func loadBaseline(ctx context.Context, tag string) (baseline, error) {
-	if !strings.HasPrefix(tag, "v1.") || (!stableV1Tag.MatchString(tag) && !strings.Contains(tag, "-")) {
+func loadBaseline(ctx context.Context, tag, goBinary string) (baseline, error) {
+	if !stableV1Tag.MatchString(tag) && !prereleaseV1Tag.MatchString(tag) {
 		return baseline{}, fmt.Errorf("baseline tag %q is not a v1 semver tag", tag)
 	}
 	objectType, err := git(ctx, "cat-file", "-t", tag)
@@ -133,11 +148,15 @@ func loadBaseline(ctx context.Context, tag string) (baseline, error) {
 		return baseline{}, err
 	}
 	defer os.RemoveAll(directory)
-	inventory, err := inventoryForDir(ctx, directory)
+	inventory, err := inventoryForDir(ctx, directory, goBinary)
 	if err != nil {
 		return baseline{}, fmt.Errorf("inventory baseline tag %q: %w", tag, err)
 	}
-	return baseline{Tag: tag, Commit: strings.TrimSpace(string(commit)), GoFloor: readGoFloor(directory), Inventory: inventory}, nil
+	floor, err := readGoFloor(directory)
+	if err != nil {
+		return baseline{}, err
+	}
+	return baseline{Tag: tag, Commit: strings.TrimSpace(string(commit)), GoFloor: floor, Inventory: inventory}, nil
 }
 
 func archiveTag(ctx context.Context, tag string) (string, error) {
@@ -208,13 +227,14 @@ func archiveEntryTarget(directory, name string) (string, error) {
 	return target, nil
 }
 
-func currentInventory(ctx context.Context) (string, error) {
-	return inventoryForDir(ctx, mustRepoRoot())
+func currentInventory(ctx context.Context, goBinary string) (string, error) {
+	return inventoryForDir(ctx, mustRepoRoot(), goBinary)
 }
 
-func inventoryForDir(ctx context.Context, directory string) (string, error) {
-	command := exec.CommandContext(ctx, "go", "run", "./scripts/rigor/cmd/rigor", "public-api", "--dir", directory)
+func inventoryForDir(ctx context.Context, directory, goBinary string) (string, error) {
+	command := exec.CommandContext(ctx, goBinary, "run", "./scripts/rigor/cmd/rigor", "public-api", "--dir", directory)
 	command.Dir = mustRepoRoot()
+	command.Env = append(os.Environ(), "STAVE_RIGOR_GO="+goBinary)
 	output, err := command.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("generate public API inventory: %w\n%s", err, output)
@@ -222,18 +242,19 @@ func inventoryForDir(ctx context.Context, directory string) (string, error) {
 	return string(output), nil
 }
 
-func readGoFloor(directory string) string {
+func readGoFloor(directory string) (string, error) {
 	data, err := os.ReadFile(filepath.Join(directory, "go.mod"))
 	if err != nil {
-		return "unknown"
+		return "", fmt.Errorf("read Go floor: %w", err)
 	}
 	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(strings.SplitN(line, "//", 2)[0])
 		fields := strings.Fields(line)
 		if len(fields) == 2 && fields[0] == "go" {
-			return fields[1]
+			return fields[1], nil
 		}
 	}
-	return "unknown"
+	return "", errors.New("go floor is missing from go.mod")
 }
 
 func compareInventories(baselineInventory, candidateInventory string) error {
@@ -241,7 +262,11 @@ func compareInventories(baselineInventory, candidateInventory string) error {
 	candidate := parseInventory(candidateInventory)
 	var failures []string
 	for pkg, declarations := range baseline {
-		candidateDeclarations := candidate[pkg]
+		candidateDeclarations, exists := candidate[pkg]
+		if !exists {
+			failures = append(failures, pkg+": removed package")
+			continue
+		}
 		for key, declaration := range declarations {
 			current, ok := candidateDeclarations[key]
 			if !ok {
@@ -320,6 +345,9 @@ func compatibleStructFieldAddition(baselineDeclaration, candidateDeclaration str
 func structFields(declaration string) map[string]bool {
 	body := strings.TrimSuffix(strings.SplitN(declaration, structMarker, 2)[1], " }")
 	fields := map[string]bool{}
+	if body == "" {
+		return fields
+	}
 	for _, field := range strings.Split(body, "; ") {
 		fields[strings.TrimSpace(field)] = true
 	}
