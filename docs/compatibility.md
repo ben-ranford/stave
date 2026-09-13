@@ -9,14 +9,20 @@ environment.
 | Surface | Policy |
 |---|---|
 | Root Go module | Semantic versioning |
-| Semantic snapshot schema | `stave.semantic/v1` |
-| Action definition schema | `stave.action/v1` |
+| Semantic snapshot schema | Schema document ID `stave-semantic-snapshot-v1`; serialized `schemaVersion` `stave-semantic-v1` |
+| Action definition schema | Schema document ID `stave-action-definition-v1`; each action carries its own version |
 | Agent protocol | JSON-RPC `2.0` with Stave protocol `1.0` |
-| Configuration schema | `stave.config/v1` |
+| Configuration schema | Schema document ID and serialized `schemaVersion` `stave.config/v1` |
 | Node ID algorithm | `stave-node-id-v1` |
 | Unicode width policy | Versioned algorithm identifier in snapshot envelopes |
 | Theme/token packs | Semantic versioning and canonical content hash |
 | Optional adapter modules | Independently versioned; third-party types stay out of root APIs |
+
+Schema document IDs identify their JSON Schema artifacts. A serialized version
+discriminant is only shown where the artifact defines one: configuration uses
+the same identifier for both, while semantic snapshots use the shipped
+hyphenated `stave-semantic-v1` value. Action definitions intentionally use
+their per-action `version` field instead of a shared serialized schema version.
 
 ## Compatibility guarantees
 
