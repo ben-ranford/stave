@@ -19,7 +19,8 @@ const (
 	MaxTranscriptRecords = 100_000
 )
 
-// DecodeTranscript decodes one canonical transcript artifact. It rejects
+// DecodeTranscript decodes one saved transcript artifact. JSON whitespace and
+// field order need not match CanonicalJSON output. It rejects
 // unknown JSON fields, trailing values, unsupported versions, malformed
 // records, and artifacts that exceed the inspector bounds. It validates saved
 // evidence only; it never re-executes an application model.
