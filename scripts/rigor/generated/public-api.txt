@@ -680,6 +680,10 @@ const LiveAssertive
 const LiveNone
 const LivePolite
 const NodeIDNormalizationPolicy
+const QueryLimitDepth
+const QueryLimitNone
+const QueryLimitResults
+const QueryLimitVisited
 const SnapshotStability
 const Stable
 func Diff(a, b Tree) Patch
@@ -717,6 +721,7 @@ method (Patch) Validate() error
 method (Snapshot) Validate() error
 method (Tree) Hash() string
 method (Tree) MarshalJSON() ([]byte, error)
+method (Tree) Query(query Query, limits QueryLimits) (QueryResult, error)
 method (Tree) Revision() uint64
 method (Tree) Root() Node
 method (Tree) SchemaVersion() string
@@ -733,6 +738,10 @@ type NodeID string
 type NodeKey struct { AppNamespace string `json:"appNamespace"`; View string `json:"view"`; Kind string `json:"kind"`; Entity string `json:"entity"`; Slot string `json:"slot"` }
 type NodeSpec struct { ID NodeID; Key *NodeKey; Generation uint32; Role Role; Name, Description string; Value Value; States []State; Relations []Relation; Actions []ActionRef; Layout LayoutSpec; Style StyleIntent; Children []Node; Flags Flags; Metadata map[string]string }
 type Patch struct { FromRevision uint64 `json:"fromRevision"`; ToRevision uint64 `json:"toRevision"`; Added []NodeID `json:"added,omitempty"`; Removed []NodeID `json:"removed,omitempty"`; GenerationChanged []NodeID `json:"generationChanged,omitempty"` }
+type Query struct { ID NodeID; Role Role; Action ActionID; Metadata map[string]string }
+type QueryLimit string
+type QueryLimits struct { MaxVisited int; MaxResults int; MaxDepth int }
+type QueryResult struct { Nodes []Node; Visited int; Truncated bool; Limit QueryLimit }
 type Relation struct { Kind RelationKind `json:"kind"`; Target NodeID `json:"target"` }
 type RelationKind string
 type Role string
@@ -745,6 +754,7 @@ type Tombstone struct { ID NodeID `json:"id"`; Generation uint32 `json:"generati
 type Tombstones struct {  }
 type Tree struct {  }
 type Value struct { Text string `json:"text,omitempty"`; Redacted bool `json:"redacted,omitempty"`; HasValue bool `json:"hasValue,omitempty"` }
+var ErrInvalidQuery
 
 [github.com/ben-ranford/stave/session]
 const LifecycleCancelling
