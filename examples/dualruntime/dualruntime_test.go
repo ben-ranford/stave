@@ -64,11 +64,13 @@ func TestHumanLineAndAgentJSONLShareActionTree(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
-	in := strings.NewReader("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"stave.initialize\"}\n{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"stave.initialized\"}\n{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"stave.action.invoke\",\"params\":{\"callId\":\"inc\",\"actionId\":\"example.increment.v1\"}}\n")
+	in := strings.NewReader("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"stave.initialize\"}\n{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"stave.initialized\"}\n{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"stave.snapshot\",\"params\":{\"mode\":\"full\"}}\n{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"stave.action.invoke\",\"params\":{\"callId\":\"inc\",\"actionId\":\"example.increment.v1\"}}\n")
 	if err := agent.New(opts).Serve(context.Background(), ioNopCloser{Reader: in}, &out); err != nil {
 		t.Fatal(err)
 	}
-	t.Log(out.String())
+	if !strings.Contains(out.String(), `"mode":"full"`) || !strings.Contains(out.String(), `"sequence":1`) {
+		t.Fatalf("initial full snapshot missing valid envelope: %s", out.String())
+	}
 	agentHash := waitCount(t, agentApp, 1)
 	if humanHash != agentHash {
 		t.Fatalf("tree hashes differ: human=%s agent=%s", humanHash, agentHash)
