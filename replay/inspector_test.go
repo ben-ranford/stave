@@ -1,11 +1,16 @@
 package replay
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/ben-ranford/stave/event"
+	"github.com/ben-ranford/stave/state"
 )
 
 func TestDecodeTranscriptRoundTripAndRejectsInvalidArtifacts(t *testing.T) {
@@ -71,5 +76,67 @@ func TestRedactedDivergenceDoesNotSerializeSensitiveEventPayload(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "redacted") {
 		t.Fatalf("redacted divergence omitted redaction marker: %s", data)
+	}
+}
+
+func TestValidateTranscriptRejectsUnsupportedCheckpointSchema(t *testing.T) {
+	transcript := mustTranscript(t)
+	transcript.Initial.SchemaVersion = "stave.checkpoint/v99"
+	refreshInspectorCheckpointChecksum(t, &transcript.Initial)
+	if err := ValidateTranscript(transcript); err == nil {
+		t.Fatal("unsupported checkpoint schema accepted")
+	}
+}
+
+func refreshInspectorCheckpointChecksum(t *testing.T, checkpoint *state.Checkpoint) {
+	t.Helper()
+	data, err := checkpoint.CanonicalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	index := bytes.LastIndex(data, []byte(`,"checksum":`))
+	if index < 0 {
+		t.Fatal("checkpoint checksum field missing")
+	}
+	unsigned := append(append([]byte(nil), data[:index]...), '}')
+	digest := sha256.Sum256(unsigned)
+	checkpoint.Checksum = hex.EncodeToString(digest[:])
+	if err := checkpoint.VerifyChecksum(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestValidateTranscriptRejectsInvalidRevisionSteps(t *testing.T) {
+	for _, revision := range []uint64{0, 100} {
+		transcript := mustTranscript(t)
+		transcript.Records[0].Event.Revision = revision
+		transcript.Records[0].Result.Revision = revision
+		var divergence *Divergence
+		if err := ValidateTranscript(transcript); !errors.As(err, &divergence) || divergence.Code != DivergenceRevision {
+			t.Fatalf("revision %d error = %v, want revision divergence", revision, err)
+		}
+	}
+}
+
+func TestRedactedDivergencePreservesLargePayloadNumbers(t *testing.T) {
+	const exact = "9007199254740993"
+	value := event.Event{SchemaVersion: event.SchemaVersion, Kind: event.ActionInvoked,
+		Payload: event.ActionInvokedPayload{CallID: "call-1", ActionID: "example.number", Arguments: map[string]any{"number": json.Number(exact)}}}
+	data, err := json.Marshal(RedactedDivergence(&Divergence{Code: DivergenceEvent, Actual: value}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(data, []byte(exact)) {
+		t.Fatalf("divergence rounded payload number: %s", data)
+	}
+}
+
+func TestValidateInspectorRecordAllowsUnchangedMaximumRevision(t *testing.T) {
+	record := mustTranscript(t).Records[0]
+	record.Prior.Revision = ^uint64(0)
+	record.Result.Revision = record.Prior.Revision
+	record.Event.Revision = record.Prior.Revision
+	if err := validateInspectorRecord(0, record); err != nil {
+		t.Fatalf("unchanged maximum revision rejected: %v", err)
 	}
 }
