@@ -548,36 +548,7 @@ func TestDefaultRenderByteBudgetSupportsSemanticSnapshots(t *testing.T) {
 }
 
 func BenchmarkRender120x40(b *testing.B) {
-	children := make([]semantic.Node, 0, 2000)
-	for i := 0; i < 2000; i++ {
-		role := semantic.Role("text")
-		if i%20 == 0 {
-			role = "status"
-		}
-		children = append(children, testNodeBench(b, role, fmt.Sprintf("leaf-%04d", i), nil))
-	}
-	root := testNodeBench(b, "application", "Root", map[string]string{"layout.kind": "records", "layout.gap": "0"}, children...)
-	tree, err := semantic.NewTree(1, root)
-	if err != nil {
-		b.Fatal(err)
-	}
-	req := Request{
-		Tree:  tree,
-		Theme: testTheme(b, capability.ColorANSI256, capability.UnicodeFull),
-		Capabilities: capability.Manifest{
-			TTY:        true,
-			Color:      capability.ColorANSI256,
-			Unicode:    capability.UnicodeFull,
-			Width:      120,
-			Height:     40,
-			OutputMode: capability.OutputAuto,
-			Limits: capability.Limits{
-				MaxTreeNodes:    4096,
-				MaxMessageBytes: 1 << 20,
-			},
-		},
-		Viewport: layout.Size{Width: 120, Height: 40},
-	}
+	req := benchmarkRenderRequest(b)
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		if _, err := Render(req); err != nil {
@@ -587,28 +558,7 @@ func BenchmarkRender120x40(b *testing.B) {
 }
 
 func BenchmarkRenderSelected120x40(b *testing.B) {
-	children := make([]semantic.Node, 0, 2000)
-	for i := 0; i < 2000; i++ {
-		role := semantic.Role("text")
-		if i%20 == 0 {
-			role = "status"
-		}
-		children = append(children, testNodeBench(b, role, fmt.Sprintf("leaf-%04d", i), nil))
-	}
-	root := testNodeBench(b, "application", "Root", map[string]string{"layout.kind": "records", "layout.gap": "0"}, children...)
-	tree, err := semantic.NewTree(1, root)
-	if err != nil {
-		b.Fatal(err)
-	}
-	req := Request{
-		Tree:  tree,
-		Theme: testTheme(b, capability.ColorANSI256, capability.UnicodeFull),
-		Capabilities: capability.Manifest{
-			TTY: true, Color: capability.ColorANSI256, Unicode: capability.UnicodeFull, Width: 120, Height: 40,
-			Limits: capability.Limits{MaxTreeNodes: 4096, MaxMessageBytes: 1 << 20},
-		},
-		Viewport: layout.Size{Width: 120, Height: 40},
-	}
+	req := benchmarkRenderRequest(b)
 	for _, tc := range []struct {
 		name    string
 		outputs Outputs
@@ -624,6 +574,40 @@ func BenchmarkRenderSelected120x40(b *testing.B) {
 				}
 			}
 		})
+	}
+}
+
+func benchmarkRenderRequest(tb testing.TB) Request {
+	tb.Helper()
+	children := make([]semantic.Node, 0, 2000)
+	for i := 0; i < 2000; i++ {
+		role := semantic.Role("text")
+		if i%20 == 0 {
+			role = "status"
+		}
+		children = append(children, testNodeBench(tb, role, fmt.Sprintf("leaf-%04d", i), nil))
+	}
+	root := testNodeBench(tb, "application", "Root", map[string]string{"layout.kind": "records", "layout.gap": "0"}, children...)
+	tree, err := semantic.NewTree(1, root)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	return Request{
+		Tree:  tree,
+		Theme: testTheme(tb, capability.ColorANSI256, capability.UnicodeFull),
+		Capabilities: capability.Manifest{
+			TTY:        true,
+			Color:      capability.ColorANSI256,
+			Unicode:    capability.UnicodeFull,
+			Width:      120,
+			Height:     40,
+			OutputMode: capability.OutputAuto,
+			Limits: capability.Limits{
+				MaxTreeNodes:    4096,
+				MaxMessageBytes: 1 << 20,
+			},
+		},
+		Viewport: layout.Size{Width: 120, Height: 40},
 	}
 }
 
