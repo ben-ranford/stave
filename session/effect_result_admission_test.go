@@ -25,6 +25,51 @@ func TestSessionPreservesCompletedEffectResultWhenFollowupAdmissionIsSaturated(t
 	fixture.assertTranscriptReplays(t)
 }
 
+func TestSessionOverloadCloseDiscardsBufferedInput(t *testing.T) {
+	fixture := newSaturatedEffectResultFixture(t, "")
+	t.Cleanup(fixture.session.Close)
+	release, resume := context.WithCancel(context.Background())
+	t.Cleanup(resume)
+	resultRendering := make(chan struct{})
+	// Configure the view before sending any events. Pause after the result's
+	// terminal admission decision, so another input is definitely buffered.
+	view := fixture.session.view
+	fixture.session.view = func(ctx context.Context, current model) (ViewResult, error) {
+		if current.Count == 12 && release.Err() == nil {
+			close(resultRendering)
+			<-release.Done()
+		}
+		return view(ctx, current)
+	}
+	fixture.startInitialBatch(t)
+	fixture.queuePendingBatch(t)
+	close(fixture.releaseComplete)
+	select {
+	case <-resultRendering:
+	case <-time.After(2 * time.Second):
+		t.Fatal("completed result did not reach publication")
+	}
+	if err := fixture.session.Send(mustEvent(t, event.Text, event.TextPayload{Text: "buffered"})); err != nil {
+		t.Fatal(err)
+	}
+	resume()
+	select {
+	case <-fixture.session.loopDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("overloaded session did not close")
+	}
+	snapshot, err := fixture.session.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.Sequence != 3 {
+		t.Fatalf("closed sequence = %d, want 3; buffered input was published", snapshot.Sequence)
+	}
+	fixture.assertCompletedResultWasPublished(t)
+	fixture.assertUnadmittedWorkWasCancelled(t)
+	fixture.assertTranscriptReplays(t)
+}
+
 func TestSessionClosesAfterSaturatedCompletedResultLaterFails(t *testing.T) {
 	for _, failure := range []struct {
 		name, diagnostic string

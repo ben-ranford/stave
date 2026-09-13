@@ -849,6 +849,7 @@ func (q *eventQueue) close() {
 		return
 	}
 	q.closed = true
+	q.items = nil
 	q.signal()
 	q.mu.Unlock()
 }
