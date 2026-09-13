@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -175,5 +176,30 @@ func TestLatestStableV1TagExcludesCandidateAndFutureTags(t *testing.T) {
 			command("checkout", "--detach", candidate)
 			check()
 		})
+	}
+}
+
+func TestArchiveEntryTargetRejectsNonLocalPaths(t *testing.T) {
+	root := t.TempDir()
+	invalid := []string{"", ".", "..", "../escape", "nested/../../escape", filepath.Join(string(filepath.Separator), "escape")}
+	if runtime.GOOS == "windows" {
+		invalid = append(invalid, `..\escape`, `C:\escape`, "CON")
+	}
+	for _, name := range invalid {
+		t.Run(name, func(t *testing.T) {
+			if target, err := archiveEntryTarget(root, name); err == nil {
+				t.Fatalf("unsafe archive path %q accepted as %q", name, target)
+			}
+		})
+	}
+}
+
+func TestArchiveEntryTargetPreservesNestedLocalPaths(t *testing.T) {
+	root := t.TempDir()
+	for _, name := range []string{"go.mod", "nested/file.go", "nested/../file.go"} {
+		target, err := archiveEntryTarget(root, name)
+		if err != nil || target != filepath.Join(root, name) {
+			t.Fatalf("archive path %q: target=%q err=%v", name, target, err)
+		}
 	}
 }

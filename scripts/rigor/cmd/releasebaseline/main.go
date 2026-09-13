@@ -18,6 +18,12 @@ import (
 	"strings"
 )
 
+const (
+	gitRevParse  = "rev-parse"
+	methodPrefix = "method "
+	structMarker = " struct {"
+)
+
 var stableV1Tag = regexp.MustCompile(`^v1\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
 
 type baseline struct {
@@ -80,7 +86,7 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 }
 
 func latestStableV1Tag(ctx context.Context) (string, error) {
-	head, err := git(ctx, "rev-parse", "HEAD^{commit}")
+	head, err := git(ctx, gitRevParse, "HEAD^{commit}")
 	if err != nil {
 		return "", err
 	}
@@ -92,7 +98,7 @@ func latestStableV1Tag(ctx context.Context) (string, error) {
 		if !stableV1Tag.MatchString(tag) {
 			continue
 		}
-		commit, err := git(ctx, "rev-parse", tag+"^{commit}")
+		commit, err := git(ctx, gitRevParse, tag+"^{commit}")
 		if err != nil {
 			return "", err
 		}
@@ -118,7 +124,7 @@ func loadBaseline(ctx context.Context, tag string) (baseline, error) {
 	if strings.TrimSpace(string(objectType)) != "tag" {
 		return baseline{}, fmt.Errorf("baseline tag %q must be an annotated immutable tag", tag)
 	}
-	commit, err := git(ctx, "rev-parse", tag+"^{commit}")
+	commit, err := git(ctx, gitRevParse, tag+"^{commit}")
 	if err != nil {
 		return baseline{}, err
 	}
@@ -154,10 +160,10 @@ func archiveTag(ctx context.Context, tag string) (string, error) {
 			_ = os.RemoveAll(directory)
 			return "", err
 		}
-		target := filepath.Join(directory, header.Name)
-		if !strings.HasPrefix(target, directory+string(filepath.Separator)) {
+		target, err := archiveEntryTarget(directory, header.Name)
+		if err != nil {
 			_ = os.RemoveAll(directory)
-			return "", fmt.Errorf("baseline archive has unsafe path %q", header.Name)
+			return "", err
 		}
 		switch header.Typeflag {
 		case tar.TypeXGlobalHeader:
@@ -189,6 +195,17 @@ func archiveTag(ctx context.Context, tag string) (string, error) {
 		}
 	}
 	return directory, nil
+}
+
+func archiveEntryTarget(directory, name string) (string, error) {
+	if !filepath.IsLocal(name) {
+		return "", fmt.Errorf("baseline archive has unsafe path %q", name)
+	}
+	target := filepath.Join(directory, name)
+	if !strings.HasPrefix(target, directory+string(filepath.Separator)) {
+		return "", fmt.Errorf("baseline archive has unsafe path %q", name)
+	}
+	return target, nil
 }
 
 func currentInventory(ctx context.Context) (string, error) {
@@ -268,12 +285,12 @@ func declarationKey(declaration string) string {
 	if strings.HasPrefix(declaration, "func ") {
 		return "func " + strings.SplitN(strings.TrimPrefix(declaration, "func "), "(", 2)[0]
 	}
-	if strings.HasPrefix(declaration, "method ") {
-		rest := strings.TrimPrefix(declaration, "method ")
+	if strings.HasPrefix(declaration, methodPrefix) {
+		rest := strings.TrimPrefix(declaration, methodPrefix)
 		receiverEnd := strings.Index(rest, ") ")
 		if receiverEnd >= 0 {
 			name := strings.SplitN(rest[receiverEnd+2:], "(", 2)[0]
-			return "method " + rest[:receiverEnd+1] + " " + name
+			return methodPrefix + rest[:receiverEnd+1] + " " + name
 		}
 	}
 	fields := strings.Fields(declaration)
@@ -284,7 +301,7 @@ func declarationKey(declaration string) string {
 }
 
 func compatibleStructFieldAddition(baselineDeclaration, candidateDeclaration string) bool {
-	if !strings.HasPrefix(baselineDeclaration, "type ") || !strings.Contains(baselineDeclaration, " struct {") || !strings.HasPrefix(candidateDeclaration, strings.SplitN(baselineDeclaration, " struct {", 2)[0]+" struct {") {
+	if !strings.HasPrefix(baselineDeclaration, "type ") || !strings.Contains(baselineDeclaration, structMarker) || !strings.HasPrefix(candidateDeclaration, strings.SplitN(baselineDeclaration, structMarker, 2)[0]+structMarker) {
 		return false
 	}
 	baselineFields := structFields(baselineDeclaration)
@@ -301,7 +318,7 @@ func compatibleStructFieldAddition(baselineDeclaration, candidateDeclaration str
 }
 
 func structFields(declaration string) map[string]bool {
-	body := strings.TrimSuffix(strings.SplitN(declaration, " struct {", 2)[1], " }")
+	body := strings.TrimSuffix(strings.SplitN(declaration, structMarker, 2)[1], " }")
 	fields := map[string]bool{}
 	for _, field := range strings.Split(body, "; ") {
 		fields[strings.TrimSpace(field)] = true
