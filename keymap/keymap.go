@@ -51,6 +51,14 @@ const (
 // CodecVersion identifies the current serialized keymap profile format.
 const CodecVersion = "stave.keymap.v1"
 
+// Codec limits bound imported profile memory and conflict-validation work.
+// They apply to serialized profiles; New retains its in-memory behavior.
+const (
+	MaxProfileBytes    = 1 << 20
+	MaxProfileMappings = 1024
+	MaxBindingChords   = 16
+)
+
 const (
 	RouteEvent  RouteKind = "event"
 	RouteAction RouteKind = "action"
@@ -174,6 +182,12 @@ func (m Map) Bindings() []Mapping {
 
 // Encode returns a deterministic, versioned keymap profile document.
 func (m Map) Encode() ([]byte, error) {
+	if err := checkCodecMappings(m.mappings); err != nil {
+		return nil, err
+	}
+	if len(m.profile) > MaxProfileBytes {
+		return nil, errors.New("keymap profile exceeds byte limit")
+	}
 	mappings := m.Bindings()
 	type sortableMapping struct {
 		mapping Mapping
@@ -191,12 +205,22 @@ func (m Map) Encode() ([]byte, error) {
 	for i := range sorted {
 		mappings[i] = sorted[i].mapping
 	}
-	return json.Marshal(codecDocument{Version: CodecVersion, Profile: m.profile, Mappings: mappings})
+	raw, err := json.Marshal(codecDocument{Version: CodecVersion, Profile: m.profile, Mappings: mappings})
+	if err != nil {
+		return nil, err
+	}
+	if len(raw) > MaxProfileBytes {
+		return nil, errors.New("keymap profile exceeds byte limit")
+	}
+	return raw, nil
 }
 
 // Decode imports a versioned keymap profile and verifies its action routes
 // against the application's action manifest.
 func Decode(raw []byte, manifest []action.Definition) (Map, error) {
+	if len(raw) > MaxProfileBytes {
+		return Map{}, errors.New("keymap profile exceeds byte limit")
+	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	var document codecDocument
@@ -209,6 +233,9 @@ func Decode(raw []byte, manifest []action.Definition) (Map, error) {
 	if document.Version != CodecVersion {
 		return Map{}, fmt.Errorf("unsupported keymap profile version %q", document.Version)
 	}
+	if err := checkCodecMappings(document.Mappings); err != nil {
+		return Map{}, err
+	}
 	keymap, err := New(document.Profile, document.Mappings)
 	if err != nil {
 		return Map{}, fmt.Errorf("decode keymap profile: %w", err)
@@ -217,6 +244,18 @@ func Decode(raw []byte, manifest []action.Definition) (Map, error) {
 		return Map{}, err
 	}
 	return keymap, nil
+}
+
+func checkCodecMappings(mappings []Mapping) error {
+	if len(mappings) > MaxProfileMappings {
+		return errors.New("keymap profile exceeds mapping limit")
+	}
+	for _, mapping := range mappings {
+		if len(mapping.Binding.Sequence) > MaxBindingChords {
+			return errors.New("keymap binding exceeds chord limit")
+		}
+	}
+	return nil
 }
 
 // ValidateActionManifest rejects action bindings that are absent from manifest.

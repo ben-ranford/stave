@@ -2,6 +2,7 @@ package keymap
 
 import (
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -289,4 +290,76 @@ func TestDispatcherClonesRouteArgumentsAndPayloadAtIngress(t *testing.T) {
 		t.Fatalf("route args were aliased: %s", r.Call.Arguments)
 	}
 	_ = payload
+}
+
+func codecMappings(count, chords int) []Mapping {
+	mappings := make([]Mapping, count)
+	for i := range mappings {
+		sequence := make([]input.KeyChord, chords)
+		for j := range sequence {
+			sequence[j] = input.KeyChord{Code: "a"}
+		}
+		sequence[len(sequence)-1] = input.KeyChord{Code: input.KeyCode(fmt.Sprintf("key-%d", i))}
+		mappings[i] = Mapping{Binding: Binding{Sequence: sequence, Command: CommandID(fmt.Sprint(i))}, Route: Route{Kind: RouteEvent, EventKind: "shutdown"}}
+	}
+	return mappings
+}
+
+func TestCodecBoundsBytesMappingsAndChords(t *testing.T) {
+	const byteLimit = 1 << 20
+	encode := func(mappings []Mapping, profile string) []byte {
+		t.Helper()
+		raw, err := json.Marshal(codecDocument{Version: CodecVersion, Profile: profile, Mappings: mappings})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return raw
+	}
+	raw := encode([]Mapping{}, "")
+	profile := strings.Repeat("p", byteLimit-len(raw))
+	exact := encode([]Mapping{}, profile)
+	if len(exact) != byteLimit {
+		t.Fatal("incorrect exact-size fixture")
+	}
+	if _, err := Decode(exact, nil); err != nil {
+		t.Fatalf("exact byte limit rejected: %v", err)
+	}
+	boundaryMap, err := New(profile, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if encoded, err := boundaryMap.Encode(); err != nil || len(encoded) != byteLimit {
+		t.Fatalf("exact byte limit encode: bytes=%d err=%v", len(encoded), err)
+	}
+	for _, raw := range [][]byte{append(exact, ' '), encode(codecMappings(1025, 1), "test"), encode(codecMappings(1, 17), "test")} {
+		if _, err := Decode(raw, nil); err == nil {
+			t.Fatal("oversized profile accepted")
+		}
+	}
+	for _, data := range []struct {
+		profile  string
+		mappings []Mapping
+	}{
+		{strings.Repeat("p", byteLimit), nil}, {"test", codecMappings(1025, 1)}, {"test", codecMappings(1, 17)},
+	} {
+		m, err := New(data.profile, data.mappings)
+		if err != nil {
+			t.Fatalf("in-memory API changed: %v", err)
+		}
+		if _, err := m.Encode(); err == nil {
+			t.Fatal("encoder produced non-importable oversized profile")
+		}
+	}
+	maximum, err := New("maximum", codecMappings(1024, 16))
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := maximum.Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := Decode(encoded, nil)
+	if err != nil || len(decoded.Bindings()) != 1024 {
+		t.Fatalf("maximum valid profile rejected: %v", err)
+	}
 }

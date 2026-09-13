@@ -67,3 +67,9 @@ Each meaningful node must expose the applicable parts of this contract:
 
 - [UI primitives](primitives.md)
 - [Security contract](security.md)
+
+Serialized keymap profiles are limited to 1 MiB (`keymap.MaxProfileBytes`),
+1,024 mappings (`keymap.MaxProfileMappings`), and 16 chords per binding
+(`keymap.MaxBindingChords`). `Encode` and `Decode` enforce the same limits;
+`Decode` checks bytes before parsing and mapping/chord counts before conflict
+validation. The existing in-memory `keymap.New` API retains its behavior.
