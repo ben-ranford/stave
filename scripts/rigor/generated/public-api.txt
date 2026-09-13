@@ -545,11 +545,18 @@ type SnapshotResult struct { SchemaVersion string `json:"schemaVersion"`; Sessio
 var ErrBatch
 
 [github.com/ben-ranford/stave/render]
+const OutputAll
+const OutputMachine
+const OutputPatch
+const OutputPlain
+const OutputTerminal
 func ANSI(text string, level capability.ColorLevel, fg string) string
 func Render(r Request) (Result, error)
+func RenderSelected(r Request, outputs Outputs) (Result, error)
 method (Writer) Render(s surface.Surface) (string, error)
 type Budgets struct { MaxBytes int; MaxCells int; MaxDepth int; MaxWork int }
 type EventContext struct { Reason string `json:"reason,omitempty"`; Focused semantic.NodeID `json:"focused,omitempty"`; Hovered semantic.NodeID `json:"hovered,omitempty"`; Revision uint64 `json:"revision,omitempty"` }
+type Outputs uint8
 type Request struct { Context context.Context; Tree semantic.Tree; Theme theme.Resolved; Capabilities capability.Manifest; Viewport layout.Size; Window layout.Rect; Previous *surface.Surface; Event EventContext; Budgets Budgets }
 type Result struct { Viewport layout.Size; Capabilities capability.Manifest; ThemeHash string; Event EventContext; Plan layout.Plan; Surface surface.Surface; Patch surface.Patch; Plain string; Machine []byte; Terminal string }
 type Writer struct { Manifest capability.Manifest; ByteLimit int }
