@@ -91,18 +91,9 @@ func validateUniqueJSONKeys(data []byte, depth int) error {
 	seen := map[string]struct{}{}
 	for decoder.More() {
 		if delim == '{' {
-			keyToken, err := decoder.Token()
-			if err != nil {
+			if err := validateUniqueJSONObjectKey(decoder, seen); err != nil {
 				return err
 			}
-			key, ok := keyToken.(string)
-			if !ok {
-				return errors.New("invalid replay transcript object key")
-			}
-			if _, exists := seen[key]; exists {
-				return fmt.Errorf("duplicate replay transcript key %q", key)
-			}
-			seen[key] = struct{}{}
 		}
 		var raw json.RawMessage
 		if err := decoder.Decode(&raw); err != nil {
@@ -125,6 +116,22 @@ func validateUniqueJSONKeys(data []byte, depth int) error {
 		}
 		return err
 	}
+	return nil
+}
+
+func validateUniqueJSONObjectKey(decoder *json.Decoder, seen map[string]struct{}) error {
+	keyToken, err := decoder.Token()
+	if err != nil {
+		return err
+	}
+	key, ok := keyToken.(string)
+	if !ok {
+		return errors.New("invalid replay transcript object key")
+	}
+	if _, exists := seen[key]; exists {
+		return fmt.Errorf("duplicate replay transcript key %q", key)
+	}
+	seen[key] = struct{}{}
 	return nil
 }
 
@@ -167,10 +174,10 @@ func RedactedDivergence(divergence *Divergence) *Divergence {
 	if divergence == nil {
 		return nil
 	}
-	copy := *divergence
-	copy.Expected = redactDivergenceValue(copy.Expected)
-	copy.Actual = redactDivergenceValue(copy.Actual)
-	return &copy
+	redacted := *divergence
+	redacted.Expected = redactDivergenceValue(redacted.Expected)
+	redacted.Actual = redactDivergenceValue(redacted.Actual)
+	return &redacted
 }
 
 func redactDivergenceValue(value any) any {
