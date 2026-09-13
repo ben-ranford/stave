@@ -143,13 +143,8 @@ func ValidateReport(report Report) error {
 	if report.AllocBytes > report.AllocLimit || !report.AllocWithin {
 		return errors.New("performance report fails its allocation budget")
 	}
-	if report.IdleCPU.Name != "idle_cpu.percent_one_core" || report.IdleCPU.Window <= 0 || math.IsNaN(report.IdleCPU.Value) || math.IsInf(report.IdleCPU.Value, 0) || math.IsNaN(report.IdleCPU.Limit) || math.IsInf(report.IdleCPU.Limit, 0) || report.IdleCPU.Value < 0 || report.IdleCPU.Limit <= 0 || report.IdleCPU.Value >= report.IdleCPU.Limit || !report.IdleCPU.AllWithinBudget {
-		return errors.New("performance report fails its idle CPU budget")
-	}
-	for _, attempt := range report.IdleCPU.Attempts {
-		if math.IsNaN(attempt) || math.IsInf(attempt, 0) || attempt < 0 {
-			return errors.New("performance report has invalid idle CPU attempts")
-		}
+	if err := validateIdleCPUReport(report.IdleCPU); err != nil {
+		return err
 	}
 	if len(report.Measurements) == 0 {
 		return errors.New("performance report has no measurements")
@@ -163,6 +158,18 @@ func ValidateReport(report Report) error {
 			return fmt.Errorf("performance report has duplicate metric %q", measurement.Name)
 		}
 		seen[measurement.Name] = struct{}{}
+	}
+	return nil
+}
+
+func validateIdleCPUReport(metric RatioMeasurement) error {
+	if metric.Name != "idle_cpu.percent_one_core" || metric.Window <= 0 || math.IsNaN(metric.Value) || math.IsInf(metric.Value, 0) || math.IsNaN(metric.Limit) || math.IsInf(metric.Limit, 0) || metric.Value < 0 || metric.Limit <= 0 || metric.Value >= metric.Limit || !metric.AllWithinBudget {
+		return errors.New("performance report fails its idle CPU budget")
+	}
+	for _, attempt := range metric.Attempts {
+		if math.IsNaN(attempt) || math.IsInf(attempt, 0) || attempt < 0 {
+			return errors.New("performance report has invalid idle CPU attempts")
+		}
 	}
 	return nil
 }
