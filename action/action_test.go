@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/ben-ranford/stave/semantic"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -210,6 +212,75 @@ func TestConfirmationRegistryPrunesExpiredAndRetainsConsumedToken(t *testing.T) 
 		t.Fatal("consumed confirmation token was reissued")
 	}
 }
+
+func TestStagedConfirmationRejectsAlteredActivationAndRemainsCancellable(t *testing.T) {
+	r := NewRegistry()
+	d := Definition{ID: "stage.v1", Version: "1", InputSchema: Schema{ID: "i", JSON: json.RawMessage(`{}`)}, OutputSchema: Schema{ID: "o", JSON: json.RawMessage(`{}`)}, Safety: ReadOnly, Confirmation: ConfirmationPolicy{Required: true}}
+	if err := r.Register(d, func(context.Context, Call, any) (any, error) { return map[string]any{}, nil }); err != nil {
+		t.Fatal(err)
+	}
+	grant, err := NewConfirmation("s", d, semantic.Target{}, json.RawMessage(`{}`), time.Now().Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant.PolicyID, grant.PolicyEpoch = "policy", 1
+	if err := r.StageConfirmation(grant); err != nil {
+		t.Fatal(err)
+	}
+	altered := grant
+	altered.PolicyEpoch++
+	if err := r.ActivateConfirmation(altered); err == nil {
+		t.Fatal("altered staged confirmation activated")
+	}
+	if staged, ok := r.pending[grant.Token]; !ok || !reflect.DeepEqual(staged, grant) {
+		t.Fatalf("altered activation changed staged grant: %#v", staged)
+	}
+	if !r.CancelConfirmation(grant) {
+		t.Fatal("original staged grant was not cancellable")
+	}
+	if err := r.IssueConfirmation(grant); err == nil {
+		t.Fatal("cancelled staged token was reissued")
+	}
+}
+
+func TestStagedConfirmationExpiryRejectsActivation(t *testing.T) {
+	r := NewRegistry()
+	grant := Confirmation{Token: "staged-expired", SessionID: "s", ExpiresAt: time.Now().Add(time.Minute)}
+	if err := r.StageConfirmation(grant); err != nil {
+		t.Fatal(err)
+	}
+	expired := r.pending[grant.Token]
+	expired.ExpiresAt = time.Now().Add(-time.Second)
+	r.pending[grant.Token] = expired
+	if err := r.ActivateConfirmation(grant); err == nil {
+		t.Fatal("expired staged confirmation activated")
+	}
+	if _, ok := r.pending[grant.Token]; ok {
+		t.Fatal("expired staged confirmation was not pruned")
+	}
+}
+
+func TestStagedConfirmationCapacityIncludesPendingAndTombstones(t *testing.T) {
+	for _, tombstone := range []bool{false, true} {
+		t.Run(fmt.Sprintf("tombstone=%t", tombstone), func(t *testing.T) {
+			r := NewRegistry()
+			for i := 0; i < maxConfirmationGrants; i++ {
+				grant := Confirmation{Token: fmt.Sprintf("pending-%d", i), SessionID: "s", ExpiresAt: time.Now().Add(time.Hour)}
+				if err := r.StageConfirmation(grant); err != nil {
+					t.Fatalf("stage pending %d: %v", i, err)
+				}
+				if tombstone && i == 0 && !r.CancelConfirmation(grant) {
+					t.Fatal("create tombstone")
+				}
+			}
+			overflow := Confirmation{Token: "overflow", SessionID: "s", ExpiresAt: time.Now().Add(time.Hour)}
+			if err := r.StageConfirmation(overflow); !errors.Is(err, ErrConfirmationLimit) {
+				t.Fatalf("capacity error = %v, want ErrConfirmationLimit", err)
+			}
+		})
+	}
+}
+
 func TestSchemaKeywordNegatives(t *testing.T) {
 	cases := []struct{ name, schema, input string }{{"required", `{"type":"object","required":["x"]}`, `{}`}, {"additional", `{"type":"object","additionalProperties":false,"properties":{}}`, `{"x":1}`}, {"enum", `{"enum":["a"]}`, `"b"`}, {"minimum", `{"minimum":2}`, `1`}, {"maximum", `{"maximum":2}`, `3`}, {"minLength", `{"minLength":2}`, `"a"`}, {"maxLength", `{"maxLength":2}`, `"abc"`}, {"minItems", `{"minItems":2}`, `[1]`}, {"maxItems", `{"maxItems":1}`, `[1,2]`}, {"items", `{"type":"array","items":{"type":"string"}}`, `[1]`}}
 	for _, tc := range cases {

@@ -588,45 +588,111 @@ func cloneDefinition(d Definition) Definition {
 }
 
 type Registry struct {
-	mu     sync.RWMutex
-	m      map[ID]entry
-	used   map[string]time.Time
-	grants map[string]Confirmation
+	mu      sync.RWMutex
+	m       map[ID]entry
+	used    map[string]time.Time
+	grants  map[string]Confirmation
+	pending map[string]Confirmation
 }
 
 const maxConfirmationGrants = 1024
 
 // ErrConfirmationLimit indicates that the registry cannot retain more
-// confirmation state, including live grants and replay tombstones, until it expires.
+// confirmation state, including live grants, staged grants, and replay
+// tombstones, until it expires.
 var ErrConfirmationLimit = errors.New("confirmation registry capacity reached")
 
 func NewRegistry() *Registry {
-	return &Registry{m: map[ID]entry{}, used: map[string]time.Time{}, grants: map[string]Confirmation{}}
+	return &Registry{m: map[ID]entry{}, used: map[string]time.Time{}, grants: map[string]Confirmation{}, pending: map[string]Confirmation{}}
 }
 func (r *Registry) IssueConfirmation(c Confirmation) error {
-	if c.Token == "" || c.SessionID == "" || c.ExpiresAt.IsZero() || !c.ExpiresAt.After(time.Now()) {
-		return errors.New("invalid confirmation")
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err := r.checkConfirmationLocked(c); err != nil {
+		return err
 	}
+	r.grants[c.Token] = c
+	return nil
+}
+
+// StageConfirmation reserves a bounded, inactive confirmation while a trusted
+// host issuer obtains a human decision. Staged confirmations cannot be invoked.
+func (r *Registry) StageConfirmation(c Confirmation) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err := r.checkConfirmationLocked(c); err != nil {
+		return err
+	}
+	r.pending[c.Token] = c
+	return nil
+}
+
+// ActivateConfirmation promotes an exactly matching staged confirmation after
+// a trusted host issuer has established explicit human approval. The registry
+// cannot verify that approval itself. It cannot activate an unissued or
+// altered grant.
+func (r *Registry) ActivateConfirmation(c Confirmation) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.pruneConfirmationsLocked(time.Now())
+	pending, ok := r.pending[c.Token]
+	if !ok || !reflect.DeepEqual(pending, c) {
+		return errors.New("unissued confirmation")
+	}
+	delete(r.pending, c.Token)
+	r.grants[c.Token] = pending
+	return nil
+}
+
+func (r *Registry) checkConfirmationLocked(c Confirmation) error {
+	if c.Token == "" || c.SessionID == "" || c.ExpiresAt.IsZero() || !c.ExpiresAt.After(time.Now()) {
+		return errors.New("invalid confirmation")
+	}
+	r.pruneConfirmationsLocked(time.Now())
 	if _, exists := r.grants[c.Token]; exists {
+		return errors.New("duplicate confirmation token")
+	}
+	if _, exists := r.pending[c.Token]; exists {
 		return errors.New("duplicate confirmation token")
 	}
 	if _, used := r.used[c.Token]; used {
 		return errors.New("confirmation token already used")
 	}
-	if len(r.grants)+len(r.used) >= maxConfirmationGrants {
+	if len(r.grants)+len(r.pending)+len(r.used) >= maxConfirmationGrants {
 		return ErrConfirmationLimit
 	}
-	r.grants[c.Token] = c
 	return nil
+}
+
+// CancelConfirmation revokes an issued grant without invoking its action.
+// It only accepts the exact grant issued by this registry, so cancellation
+// cannot be used to alter a different confirmation's lifecycle.
+func (r *Registry) CancelConfirmation(c Confirmation) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.pruneConfirmationsLocked(time.Now())
+	grant, ok := r.grants[c.Token]
+	if !ok {
+		grant, ok = r.pending[c.Token]
+	}
+	if !ok || !reflect.DeepEqual(grant, c) {
+		return false
+	}
+	delete(r.grants, c.Token)
+	delete(r.pending, c.Token)
+	r.used[c.Token] = grant.ExpiresAt
+	return true
 }
 
 func (r *Registry) pruneConfirmationsLocked(now time.Time) {
 	for token, grant := range r.grants {
 		if grant.ExpiresAt.IsZero() || !grant.ExpiresAt.After(now) {
 			delete(r.grants, token)
+		}
+	}
+	for token, grant := range r.pending {
+		if grant.ExpiresAt.IsZero() || !grant.ExpiresAt.After(now) {
+			delete(r.pending, token)
 		}
 	}
 	for token, expiry := range r.used {
