@@ -59,6 +59,41 @@ func TestSurfaceClipsAndPreservesWideGraphemes(t *testing.T) {
 	}
 }
 
+func TestWideRawCellsRespectContinuationOwnershipAtRightEdge(t *testing.T) {
+	t.Parallel()
+	base := New(2, 1).WithCell(0, 0, Cell{Grapheme: "a", Width: 1})
+	for _, grapheme := range []string{"界", "🙂"} {
+		got := base.WithCell(1, 0, Cell{Grapheme: grapheme, Width: 2})
+		if got.Hash() != base.Hash() || got.At(1, 0) != base.At(1, 0) {
+			t.Fatalf("right-edge %q cell changed the surface: %#v", grapheme, got.At(1, 0))
+		}
+		roundTrip, err := base.ApplyPatch(Diff(base, got))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if roundTrip.Hash() != base.Hash() {
+			t.Fatalf("right-edge %q patch changed the surface", grapheme)
+		}
+	}
+
+	valid := base.WithCell(0, 0, Cell{Grapheme: "界", Width: 2})
+	if lead, continuation := valid.At(0, 0), valid.At(1, 0); lead.Width != 2 || !continuation.Continuation {
+		t.Fatalf("valid wide cell ownership mismatch: %#v %#v", lead, continuation)
+	}
+	if base.At(0, 0).Grapheme != "a" {
+		t.Fatalf("WithCell mutated the original surface: %#v", base.At(0, 0))
+	}
+
+	builder, err := NewBuilder(2, 1, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	builder.putCell(1, 0, Cell{Grapheme: "界", Width: 2})
+	if got := builder.Surface(); got.At(1, 0).Width != 0 || got.At(0, 0).Continuation {
+		t.Fatalf("builder accepted a truncated wide cell: %#v %#v", got.At(0, 0), got.At(1, 0))
+	}
+}
+
 func TestSurfaceDeterminismAndMergeDirty(t *testing.T) {
 	t.Parallel()
 	s := New(3, 2)
