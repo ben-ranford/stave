@@ -43,7 +43,12 @@ merge commit.
 4. The tag triggers [the release workflow](../.github/workflows/release.yml).
    It validates the tag, runs `make ci` and `make release-contract`, then
    publishes a prerelease with `CHANGELOG.md`, `LICENSE`, and the performance
-   evidence artifact. Wait for that workflow and verify all published assets.
+   evidence artifact. Its final `release / public consumer` job waits for public
+   propagation, then resolves the exact module through `proxy.golang.org` and
+   `sum.golang.org`, runs the quick-start consumer, and checks the three release
+   asset SHA-256 digests. The job reports the annotated tag object SHA, peeled
+   source commit SHA, module sum, and asset digests. It makes only anonymous
+   public reads and never changes tags, releases, or labels.
 5. Change repository visibility only after the scheduler-boundary proof in
    step 1 passes. Then run a controlled real public-fork pull request and
    prove it uses the hosted untrusted path before approving general outside
@@ -55,11 +60,26 @@ merge commit.
    go list -m -json "github.com/ben-ranford/stave@${release_tag}"
    ```
 
-7. After the tag, prerelease, assets, and public Go resolution are verified,
-   replace `autorelease: pending` with `autorelease: tagged` on the original
+7. After the tag, prerelease, assets, and `release / public consumer` job are
+   verified, replace `autorelease: pending` with `autorelease: tagged` on the original
    release-please pull request. `skip-github-release: true` delegates
    publication to the tag workflow, so release-please does not make that label
    transition itself.
+
+   If public propagation is delayed, rerun only the failed workflow job after
+   confirming the immutable tag still points at the recorded source SHA. The
+   probe retries each public fetch or incomplete release metadata three times at
+   five-second intervals. Each HTTP request is limited to 15 seconds and each
+   public Go resolution attempt to 60 seconds, with a two-second TERM-to-KILL
+   cleanup window. These settings bound publication retries, but `go list` and
+   `go run` intentionally remain outside that helper so they can validate the
+   resolved module and example; the workflow job timeout remains the outer cap,
+   not a claimed total script deadline. A failed
+   job is not evidence to set the release label. For an operator-only retry,
+   run `RELEASE_PROBE_ATTEMPTS=3 RELEASE_PROBE_RETRY_SECONDS=5
+   ./scripts/rigor/verify-published-release.sh "$release_tag"` from any clean
+   checkout. Do not add credentials, `go.work`, private proxy settings, or a
+   local `replace` directive.
 
 Release Please updates the annotated candidate versions in `README.md` and
 `docs/client-adoption.md` for future release pull requests. Keep the
