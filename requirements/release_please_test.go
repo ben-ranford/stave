@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-var releaseVersion = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-rc\.([1-9][0-9]*))?$`)
+var releaseVersion = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-rc\.([1-9][0-9]*)|\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$`)
 
 type releasePleasePackageConfig struct {
 	ReleaseType           string   `json:"release-type"`
@@ -146,6 +146,9 @@ func TestReleaseVersionContract(t *testing.T) {
 		"1.0.0-rc.1":         true,
 		"2.14.3-rc.42":       true,
 		"0.0.0-rc.1":         true,
+		"1.0.0+build.7":      true,
+		"1.0.0+":             false,
+		"1.0.0+build..7":     false,
 		"1.1.0":              true,
 		"2.14.3":             true,
 		"01.0.0-rc.1":        false,
