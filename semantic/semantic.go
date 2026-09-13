@@ -389,7 +389,7 @@ func (query Query) validate(limits QueryLimits) error {
 		}
 	}
 	if limits.MaxVisited <= 0 || limits.MaxResults <= 0 || limits.MaxDepth < 0 {
-		return fmt.Errorf("%w: limits must be positive", ErrInvalidQuery)
+		return fmt.Errorf("%w: MaxVisited and MaxResults must be positive; MaxDepth must be non-negative", ErrInvalidQuery)
 	}
 	return nil
 }
