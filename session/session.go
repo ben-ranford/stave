@@ -153,10 +153,14 @@ func New[M any](ctx context.Context, opts Options[M]) (*Session[M], error) {
 
 // Send queues input for reduction. A successful return does not guarantee that
 // its proposed state will be published. Pending effect batches are separately
-// bounded by Options.QueueCapacity (default 256); saturation discards a proposal
-// with effects before rendering and reports EFFECT_ADMISSION_BACKPRESSURE through
-// Diagnostics, without changing state or transcript. Effectless input remains
-// processable, and Cancel or Shutdown still closes a saturated session.
+// bounded by Options.QueueCapacity (default 256). Saturation discards ordinary
+// input proposals with effects before rendering and reports
+// EFFECT_ADMISSION_BACKPRESSURE through Diagnostics, without changing state or
+// transcript. A completed effect result is instead published with its follow-up
+// declarations, then the overloaded session closes and cancels unadmitted work.
+// Its state and transcript remain replayable; replay does not reproduce this
+// overload-driven lifecycle closure. Effectless input remains processable, and
+// Cancel or Shutdown still closes a saturated session.
 func (s *Session[M]) Send(ev event.Event) error {
 	// Clone at the ownership boundary. Callers may reuse or mutate payload
 	// slices/maps immediately after Send returns.
@@ -288,18 +292,16 @@ func (s *Session[M]) handleEvent(raw event.Event) {
 		return
 	}
 
-	reservationHeld := false
-	if len(requests) > 0 {
-		if !s.reserveEffectBatch(raw) {
-			return
-		}
-		reservationHeld = true
-		defer func() {
-			if reservationHeld {
-				s.effectAdmissions.release()
-			}
-		}()
+	admission := s.reserveEffectBatch(raw, len(requests))
+	if admission == effectAdmissionRejected {
+		return
 	}
+	reservationHeld := admission == effectAdmissionReserved
+	defer func() {
+		if reservationHeld {
+			s.effectAdmissions.release()
+		}
+	}()
 
 	rendered, viewDiagnostics, err := s.renderState(current.SessionID, nextModel, accepted.Sequence, current.Revision, Options[M]{
 		ConfigHash:   current.ConfigHash,
@@ -354,14 +356,12 @@ func (s *Session[M]) handleEvent(raw event.Event) {
 	}
 
 	s.publish(current, rendered, accepted)
-	if len(calls) > 0 {
+	if reservationHeld {
 		s.effectAdmissions.commit(calls)
 		reservationHeld = false
 	}
 
-	if raw.Kind == event.Cancel || raw.Kind == event.Shutdown {
-		s.beginClose()
-	}
+	s.finishEffectAdmission(raw, admission)
 }
 
 func (s *Session[M]) rejectEvent(current state.State[M], ev event.Event, code, message string, safe map[string]string) {
@@ -422,18 +422,44 @@ func (s *Session[M]) bindEffects(snapshot state.State[M], requests []effect.Requ
 	return calls, hash, nil
 }
 
-func (s *Session[M]) reserveEffectBatch(raw event.Event) bool {
+type effectAdmissionDecision uint8
+
+const (
+	effectAdmissionSkipped effectAdmissionDecision = iota
+	effectAdmissionReserved
+	effectAdmissionRejected
+	effectAdmissionTerminal
+)
+
+func (s *Session[M]) reserveEffectBatch(raw event.Event, requestCount int) effectAdmissionDecision {
+	if requestCount == 0 {
+		return effectAdmissionSkipped
+	}
 	err := s.effectAdmissions.reserve()
 	if err == nil {
-		return true
+		return effectAdmissionReserved
 	}
 	if errors.Is(err, ErrBackpressure) {
+		if raw.Kind == event.EffectResult {
+			// A completion cannot be redelivered. Preserve its reducer output,
+			// then cancel its unadmitted follow-ups by closing after publication.
+			return effectAdmissionTerminal
+		}
 		s.addTransientDiagnostic("EFFECT_ADMISSION_BACKPRESSURE", "pending effect admission queue saturated", nil)
 	}
 	if raw.Kind == event.Cancel || raw.Kind == event.Shutdown {
 		s.beginClose()
 	}
-	return false
+	return effectAdmissionRejected
+}
+
+func (s *Session[M]) finishEffectAdmission(raw event.Event, admission effectAdmissionDecision) {
+	if admission == effectAdmissionTerminal {
+		s.addTransientDiagnostic("EFFECT_ADMISSION_BACKPRESSURE", "completed result preserved; closing session with saturated effect admission", nil)
+	}
+	if admission == effectAdmissionTerminal || raw.Kind == event.Cancel || raw.Kind == event.Shutdown {
+		s.beginClose()
+	}
 }
 
 // admitEffects owns the only pending admission retry loop. A published
