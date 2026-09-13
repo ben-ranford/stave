@@ -18,8 +18,11 @@ represents a resolved `Config`, so the configuration target decodes it into a
 zero `Config` with strict JSON checks and then validates it before comparing
 canonical bytes and hashes. Accepted configuration and request values must
 round-trip canonically; invalid input must be bounded and must not echo the
-seeded secret value in configuration or protocol errors. The input-size and
-nesting limits are fuzz-harness bounds, not claimed production parser limits;
-the nesting guard uses JSON tokens so braces in string values remain covered.
+seeded secret value in configuration or protocol errors. The configuration input-size and
+nesting bounds belong to the fuzz harness; its nesting guard uses JSON tokens
+so braces in strings remain covered. The protocol parser separately enforces
+the caller-provided byte cap and its production depth-64 guard. Protocol
+round-trip checks allow the emitted JSON length because escaping can expand
+an accepted input.
 A completed fuzz run exercises only the chosen time budget. It does not claim
 that the library has no vulnerabilities.

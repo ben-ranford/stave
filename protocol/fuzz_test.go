@@ -33,7 +33,7 @@ func FuzzDecodeLineBounded(f *testing.F) {
 		if err != nil {
 			t.Fatalf("accepted request did not marshal: %v", err)
 		}
-		roundTrip, err := DecodeLine(canonical, maxProtocolFuzzBytes)
+		roundTrip, err := DecodeLine(canonical, len(canonical))
 		if err != nil {
 			t.Fatalf("accepted request did not round trip: %v", err)
 		}
@@ -48,6 +48,7 @@ func protocolFuzzSeeds() [][]byte {
 	limit := append(append([]byte(nil), valid...), bytes.Repeat([]byte(" "), maxProtocolFuzzBytes-len(valid))...)
 	return [][]byte{
 		valid,
+		[]byte(`{"jsonrpc":"2.0","id":1,"method":"` + strings.Repeat("&", 680) + `"}`),
 		[]byte(`{"jsonrpc":"2.0","id":1,"method":"stave.ping","unexpected":true}`),
 		[]byte(`{"jsonrpc":"2.0","id":1,"fuzz-secret":1,"fuzz-secret":2,"method":"stave.ping"}`),
 		[]byte(`{"jsonrpc":"2.0","id":1,"method":"stave.ping"} {}`),
@@ -95,4 +96,13 @@ func protocolNestedSeed(depth int) []byte {
 		output = append(output, '}')
 	}
 	return append(output, '}')
+}
+
+func TestProtocolFuzzNestingBoundarySeeds(t *testing.T) {
+	if _, err := DecodeLine(protocolNestedSeed(64), maxProtocolFuzzBytes); err != nil {
+		t.Fatalf("accepted boundary seed rejected: %v", err)
+	}
+	if _, err := DecodeLine(protocolNestedSeed(65), maxProtocolFuzzBytes); err == nil {
+		t.Fatal("over-boundary seed accepted")
+	}
 }
