@@ -9,8 +9,9 @@ type ModalLifecycle struct {
 }
 
 type modalScope struct {
-	scope    semantic.NodeID
-	previous semantic.NodeID
+	scope     semantic.NodeID
+	previous  semantic.NodeID
+	initiator semantic.Target
 }
 
 func NewModalLifecycle(state State) ModalLifecycle { return ModalLifecycle{State: state} }
@@ -22,7 +23,7 @@ func (m *ModalLifecycle) Open(g Graph, scope semantic.NodeID) bool {
 	if !ok {
 		return false
 	}
-	m.scopes = append(m.scopes, modalScope{scope: scope, previous: m.State.Scope})
+	m.scopes = append(m.scopes, modalScope{scope: scope, previous: m.State.Scope, initiator: m.State.Active})
 	m.State = next
 	return true
 }
@@ -46,6 +47,7 @@ func (m *ModalLifecycle) Close(previous, current Graph, scope semantic.NodeID) b
 			return false
 		}
 	}
+	next.Active = frame.initiator
 	m.scopes = m.scopes[:len(m.scopes)-1]
 	next.Scope = frame.previous
 	m.State = current.RepairFrom(previous, next)

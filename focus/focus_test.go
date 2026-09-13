@@ -166,6 +166,30 @@ func TestModalLifecycleRestoresAndIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestModalLifecycleRepairsOpenerRemovedWhenModalIsIntroduced(t *testing.T) {
+	previous := NewGraph(testTree(t, testNode(t, "app", "application", "App", semantic.Flags{Visible: true}, []semantic.Node{
+		testNode(t, "first", "button", "First", semantic.Flags{Visible: true, Focusable: true}, nil),
+		testNode(t, "opener", "button", "Open", semantic.Flags{Visible: true, Focusable: true}, nil),
+		testNode(t, "last", "button", "Last", semantic.Flags{Visible: true, Focusable: true}, nil),
+	})))
+	dialog := testNode(t, "dialog", "dialog", "Dialog", semantic.Flags{Visible: true}, []semantic.Node{testNode(t, "dialog.ok", "button", "OK", semantic.Flags{Visible: true, Focusable: true}, nil)})
+	introduced := NewGraph(testTree(t, testNode(t, "app", "application", "App", semantic.Flags{Visible: true}, []semantic.Node{
+		testNode(t, "first", "button", "First", semantic.Flags{Visible: true, Focusable: true}, nil), dialog,
+		testNode(t, "last", "button", "Last", semantic.Flags{Visible: true, Focusable: true}, nil),
+	})))
+	closed := NewGraph(testTree(t, testNode(t, "app", "application", "App", semantic.Flags{Visible: true}, []semantic.Node{
+		testNode(t, "first", "button", "First", semantic.Flags{Visible: true, Focusable: true}, nil),
+		testNode(t, "last", "button", "Last", semantic.Flags{Visible: true, Focusable: true}, nil),
+	})))
+	m := NewModalLifecycle(State{Active: previous.Focusable()[1]})
+	if !m.Open(introduced, dialog.ID()) || !m.Close(previous, closed, dialog.ID()) {
+		t.Fatal("modal lifecycle failed")
+	}
+	if m.State.Active.NodeID != closed.Focusable()[1].NodeID {
+		t.Fatalf("deleted opener restored %s, want nearest %s", m.State.Active.NodeID, closed.Focusable()[1].NodeID)
+	}
+}
+
 func TestModalLifecycleRestoresOuterScopeAfterNestedClose(t *testing.T) {
 	inner := testNode(t, "inner", "dialog", "Inner", semantic.Flags{Visible: true}, []semantic.Node{
 		testNode(t, "inner.ok", "button", "OK", semantic.Flags{Visible: true, Focusable: true}, nil),
