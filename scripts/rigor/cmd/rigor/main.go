@@ -29,6 +29,8 @@ import (
 	"github.com/ben-ranford/stave/semantic"
 )
 
+const scriptsPackageSuffix = "/scripts/"
+
 type goListModule struct {
 	Path    string
 	Version string
@@ -284,7 +286,7 @@ func newSourceImporter(ctx context.Context, fset *token.FileSet, pkgs []goListPa
 
 func publicAPIPackage(modulePath, path string) bool {
 	return path != "" && strings.HasPrefix(path, modulePath) &&
-		!strings.Contains(path, "/internal/") && !strings.Contains(path, "/cmd/") && !strings.Contains(path, "/scripts/")
+		!strings.Contains(path, "/internal/") && !strings.Contains(path, "/cmd/") && !strings.Contains(path, scriptsPackageSuffix)
 }
 
 func publicAPIEntries(fset *token.FileSet, pkg goListPackage, importer *sourceImporter) ([]string, error) {
@@ -806,7 +808,7 @@ func boundaryCheck(ctx context.Context) error {
 			if strings.HasPrefix(imp, modulePath+"/cmd/") {
 				violations = append(violations, fmt.Sprintf("%s imports command package %s", pkg.ImportPath, imp))
 			}
-			if strings.HasPrefix(imp, modulePath+"/scripts/") && !strings.HasPrefix(pkg.ImportPath, modulePath+"/scripts/") {
+			if strings.HasPrefix(imp, modulePath+scriptsPackageSuffix) && !strings.HasPrefix(pkg.ImportPath, modulePath+scriptsPackageSuffix) {
 				violations = append(violations, fmt.Sprintf("%s imports tooling package %s", pkg.ImportPath, imp))
 			}
 			if strings.HasPrefix(pkg.ImportPath, modulePath+"/schema/") && strings.HasPrefix(imp, modulePath+"/") && !strings.HasPrefix(imp, modulePath+"/schema/") {
