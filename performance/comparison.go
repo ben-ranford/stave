@@ -179,13 +179,12 @@ func compatibleEnvironment(baseline, candidate Report) error {
 	return nil
 }
 
-// comparableInvocation preserves measured run parameters while excluding the
-// artifact destination. The existing command records -out in os.Args, but two
-// distinct report files must be comparable without making their paths a false
-// environment difference.
+// comparableInvocation preserves measured run parameters while excluding
+// launch and artifact locations. os.Args[0] can be an ephemeral go-build path,
+// while -out names an artifact; neither changes a measurement run.
 func comparableInvocation(invocation []string) []string {
 	result := make([]string, 0, len(invocation))
-	for i := 0; i < len(invocation); i++ {
+	for i := 1; i < len(invocation); i++ {
 		if invocation[i] == "-out" {
 			i++
 			continue

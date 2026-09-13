@@ -29,6 +29,25 @@ func TestCompareProducesDeterministicDeltasAndAllowsSourceRevisionChange(t *test
 	}
 }
 
+func TestCompareIgnoresNonMeasurementInvocationPaths(t *testing.T) {
+	baseline := comparisonFixture()
+	candidate := comparisonFixture()
+	baseline.Reproducibility.Invocation = []string{"/private/var/folders/a/go-build123/b001/exe/stave-performance", "-strict", "-out", "baseline.json"}
+	candidate.Reproducibility.Invocation = []string{"/private/var/folders/b/go-build456/b001/exe/stave-performance", "-strict", "-out", "candidate.json"}
+	if _, err := Compare(baseline, candidate); err != nil {
+		t.Fatalf("Compare() rejected equivalent invocation paths: %v", err)
+	}
+}
+
+func TestCompareRejectsMeasuredInvocationArgumentChange(t *testing.T) {
+	baseline := comparisonFixture()
+	candidate := comparisonFixture()
+	candidate.Reproducibility.Invocation = []string{"/tmp/go-build/exe/stave-performance", "-strict=false"}
+	if _, err := Compare(baseline, candidate); err == nil {
+		t.Fatal("Compare() accepted different invocation arguments")
+	}
+}
+
 func TestCompareWithPolicyRejectsInvalidTolerancesAndReports(t *testing.T) {
 	baseline := comparisonFixture()
 	for _, policy := range []ComparisonPolicy{{MeasurementTolerance: -1}, {MeasurementTolerance: math.NaN()}, {MeasurementTolerance: math.Inf(1)}} {
