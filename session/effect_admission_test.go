@@ -251,3 +251,112 @@ func TestSessionEffectAdmissionReleasesReservationAfterFailure(t *testing.T) {
 		})
 	}
 }
+
+func newHeldEffectSession(t *testing.T, ctx context.Context) (*Session[model], <-chan struct{}, <-chan struct{}) {
+	t.Helper()
+	started, canceled := make(chan struct{}), make(chan struct{})
+	s, err := New(ctx, Options[model]{
+		QueueCapacity: 1, MaxActiveBatches: 1, View: testView,
+		EffectPorts: map[string]effect.Port{"hold": effect.PortFunc(func(ctx context.Context, call effect.Call) (any, error) {
+			if call.Sequence == 1 {
+				close(started)
+			}
+			<-ctx.Done()
+			if call.Sequence == 1 {
+				close(canceled)
+			}
+			return nil, ctx.Err()
+		})},
+		Reduce: func(_ context.Context, current model, _ event.Event) (model, []effect.Request, error) {
+			current.Count++
+			return current, []effect.Request{{Spec: effect.Spec{Kind: "hold"}}}, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(s.Close)
+	return s, started, canceled
+}
+
+func TestSessionParentCancellationClosesPendingAdmissions(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s, started, canceled := newHeldEffectSession(t, ctx)
+	startBlockedAndQueuePendingBatch(t, s, started)
+	cancel()
+	select {
+	case <-canceled:
+	case <-time.After(2 * time.Second):
+		t.Fatal("parent cancellation left a non-cancellable effect running")
+	}
+	select {
+	case <-s.effectAdmissions.done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("parent cancellation did not close admission queue")
+	}
+	s.effectAdmissions.mu.Lock()
+	reserved, buffered := s.effectAdmissions.reserved, len(s.effectAdmissions.committed)
+	s.effectAdmissions.mu.Unlock()
+	if reserved != 0 || buffered != 0 {
+		t.Fatalf("parent cancellation retained pending work: reservations=%d buffered=%d", reserved, buffered)
+	}
+	if err := s.Send(mustEvent(t, event.Key, event.KeyPayload{Key: "enter"})); !errors.Is(err, ErrSessionClosed) {
+		t.Fatalf("send after parent cancellation = %v", err)
+	}
+}
+
+func TestSessionClosesExecutorBeforeDrainingAdmissions(t *testing.T) {
+	s, started, canceled := newHeldEffectSession(t, context.Background())
+	if err := s.Send(mustEvent(t, event.Key, event.KeyPayload{Key: "enter"})); err != nil {
+		t.Fatal(err)
+	}
+	<-started
+	// Pause admission cleanup to exercise an already-dequeued worker's delivery
+	// attempt during shutdown. Executor closure must already be authoritative.
+	s.effectAdmissions.mu.Lock()
+	locked := true
+	defer func() {
+		if locked {
+			s.effectAdmissions.mu.Unlock()
+		}
+	}()
+	closed := make(chan struct{})
+	go func() { s.beginClose(); close(closed) }()
+	select {
+	case <-canceled:
+	case <-time.After(2 * time.Second):
+		t.Fatal("executor remained open while admission cleanup was blocked")
+	}
+	calls, err := effect.Bind("stave-session", 2, 1, []effect.Request{{Spec: effect.Spec{Kind: "hold"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.effects.Deliver(context.Background(), calls, func(event.Event) error { return nil }); !errors.Is(err, effect.ErrClosed) {
+		t.Fatalf("delivery during admission cleanup = %v, want ErrClosed", err)
+	}
+	s.effectAdmissions.mu.Unlock()
+	locked = false
+	select {
+	case <-closed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("session close did not finish")
+	}
+}
+
+func TestEffectAdmissionCanceledWaitDiscardsBufferedBatch(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	for range 64 {
+		q := newEffectAdmissionQueue(1)
+		if err := q.reserve(); err != nil {
+			t.Fatal(err)
+		}
+		q.commit([]effect.Call{{Sequence: 1}})
+		calls, ok := q.next(ctx)
+		q.close()
+		if ok || calls != nil {
+			t.Fatalf("canceled wait returned pending work: %#v", calls)
+		}
+	}
+}

@@ -432,12 +432,16 @@ func (s *Session[M]) bindEffects(snapshot state.State[M], requests []effect.Requ
 // declaration has already reserved capacity in effectAdmissions, so it stays
 // durable until admitted or session shutdown cancels the pending queue.
 func (s *Session[M]) admitEffects() {
+	defer s.beginClose()
 	for {
 		calls, ok := s.effectAdmissions.next(s.ctx)
 		if !ok {
 			return
 		}
 		for {
+			if s.ctx.Err() != nil {
+				return
+			}
 			err := s.effects.Deliver(s.ctx, calls, s.enqueueInternalEvent)
 			if err == nil {
 				s.effectAdmissions.release()
@@ -701,7 +705,7 @@ func (q *effectAdmissionQueue) next(ctx context.Context) ([]effect.Call, bool) {
 	case calls := <-q.committed:
 		q.mu.Lock()
 		defer q.mu.Unlock()
-		if q.closed {
+		if q.closed || ctx.Err() != nil {
 			return nil, false
 		}
 		return calls, true
@@ -825,8 +829,8 @@ func (s *Session[M]) beginClose() {
 		}
 		s.mu.Unlock()
 		s.queue.close()
-		s.effectAdmissions.close()
 		s.effects.Close()
+		s.effectAdmissions.close()
 		s.cancel()
 	})
 }
