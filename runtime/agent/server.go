@@ -14,6 +14,7 @@ import (
 
 	"github.com/ben-ranford/stave/action"
 	"github.com/ben-ranford/stave/capability"
+	"github.com/ben-ranford/stave/config"
 	"github.com/ben-ranford/stave/diag"
 	"github.com/ben-ranford/stave/observer"
 	"github.com/ben-ranford/stave/protocol"
@@ -71,6 +72,20 @@ type Options struct {
 	Capabilities      map[string]any
 	Manifest          any
 }
+
+// OptionsFromConfig explicitly projects the validated Config limits owned by
+// the agent adapter. Applications retain ownership of transport selection and
+// all other agent Options values, which can be set after this helper returns.
+func OptionsFromConfig(cfg config.Config) (Options, error) {
+	if err := config.Validate(cfg); err != nil {
+		return Options{}, fmt.Errorf("agent: config: %w", err)
+	}
+	return Options{
+		MaxMessageBytes: cfg.Protocol.MaxMessageBytes,
+		MaxTreeNodes:    cfg.Security.MaxTreeNodes,
+	}, nil
+}
+
 type Server struct {
 	opt                                    Options
 	mu                                     sync.Mutex

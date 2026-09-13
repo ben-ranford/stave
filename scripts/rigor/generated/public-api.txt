@@ -593,6 +593,7 @@ type Transcript struct { SchemaVersion string `json:"schemaVersion"`; SessionID 
 
 [github.com/ben-ranford/stave/runtime/agent]
 func New(opts Options) *Server
+func OptionsFromConfig(cfg config.Config) (Options, error)
 method (*Server) Close()
 method (*Server) Notifications() <-chan protocol.Notification
 method (*Server) Notify(n protocol.Notification) error
