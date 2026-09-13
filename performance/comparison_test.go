@@ -17,6 +17,7 @@ func TestCompareProducesDeterministicDeltasAndAllowsSourceRevisionChange(t *test
 	baseline.Reproducibility.Invocation = append(baseline.Reproducibility.Invocation, "-out", "baseline.json")
 	candidate.Reproducibility.Invocation = append(candidate.Reproducibility.Invocation, "-out", "candidate.json")
 	candidate.Measurements[0].P95 = 105 * time.Nanosecond
+	candidate.Measurements[0].P99 = 105 * time.Nanosecond
 	comparison, err := Compare(baseline, candidate)
 	if err != nil {
 		t.Fatal(err)
@@ -32,8 +33,8 @@ func TestCompareProducesDeterministicDeltasAndAllowsSourceRevisionChange(t *test
 func TestCompareIgnoresNonMeasurementInvocationPaths(t *testing.T) {
 	baseline := comparisonFixture()
 	candidate := comparisonFixture()
-	baseline.Reproducibility.Invocation = []string{"/private/var/folders/a/go-build123/b001/exe/stave-performance", "-strict", "-out", "baseline.json"}
-	candidate.Reproducibility.Invocation = []string{"/private/var/folders/b/go-build456/b001/exe/stave-performance", "-strict", "-out", "candidate.json"}
+	baseline.Reproducibility.Invocation = []string{"/private/var/folders/a/go-build123/b001/exe/stave-performance", "-strict", "--out=baseline.json"}
+	candidate.Reproducibility.Invocation = []string{"/private/var/folders/b/go-build456/b001/exe/stave-performance", "-strict", "--out", "candidate.json"}
 	if _, err := Compare(baseline, candidate); err != nil {
 		t.Fatalf("Compare() rejected equivalent invocation paths: %v", err)
 	}
@@ -58,7 +59,14 @@ func TestCompareWithPolicyRejectsInvalidTolerancesAndReports(t *testing.T) {
 	for _, mutate := range []func(*Report){
 		func(r *Report) { r.IdleCPU.Value = math.NaN() },
 		func(r *Report) { r.IdleCPU.Value = -1 },
+		func(r *Report) { r.IdleCPU.Window = 0 },
+		func(r *Report) { r.Host = "unknown" },
+		func(r *Report) { r.IdleCPU.Attempts = []float64{math.NaN()} },
+		func(r *Report) { r.IdleCPU.Attempts = []float64{math.Inf(1)} },
+		func(r *Report) { r.IdleCPU.Attempts = []float64{-1} },
+		func(r *Report) { r.Measurements[0].P50 = r.Measurements[0].P95 + time.Nanosecond },
 		func(r *Report) { r.Measurements[0].P95 = -time.Nanosecond },
+		func(r *Report) { r.Measurements[0].P99 = r.Measurements[0].P95 - time.Nanosecond },
 	} {
 		invalid := comparisonFixture()
 		mutate(&invalid)
@@ -75,7 +83,9 @@ func TestCompareRejectsRegressionEnvironmentAndBudgetChanges(t *testing.T) {
 		mutate func(*Report)
 		wantOK bool
 	}{
-		{"regression", func(r *Report) { r.Measurements[0].P95 = 120 * time.Nanosecond }, false},
+		{"regression", func(r *Report) {
+			r.Measurements[0].P95, r.Measurements[0].P99 = 120*time.Nanosecond, 120*time.Nanosecond
+		}, false},
 		{"host", func(r *Report) { r.Host = "other" }, true},
 		{"run parameters", func(r *Report) { r.Reproducibility.SampleCount++ }, true},
 		{"absolute budget", func(r *Report) { r.Measurements[0].Limit++ }, true},
@@ -125,7 +135,16 @@ func comparisonFixture() Report {
 		Nodes: 10000, NodeShape: "balanced-binary", Renderer: "stave.render/v1", Viewport: layout.Size{Width: 120, Height: 40}, Capabilities: capability.Manifest{Width: 120, Height: 40},
 		Reproducibility: Reproducibility{Invocation: []string{"stave-performance", "-strict"}, SampleCount: 101, Strict: true, GOMAXPROCS: 1, VCSRevision: "baseline"},
 		AllocBytes:      100, AllocLimit: 200, AllocWithin: true,
-		IdleCPU:      RatioMeasurement{Name: "idle_cpu.percent_one_core", Value: 0.20, Limit: 1, AllWithinBudget: true},
-		Measurements: []Measurement{{Name: "render.p95", Samples: 101, P95: 100 * time.Nanosecond, Limit: time.Microsecond, AllWithinBudget: true}},
+		IdleCPU:      RatioMeasurement{Name: "idle_cpu.percent_one_core", Window: time.Second, Value: 0.20, Limit: 1, AllWithinBudget: true},
+		Measurements: []Measurement{{Name: "render.p95", Samples: 101, P95: 100 * time.Nanosecond, P99: 100 * time.Nanosecond, Limit: time.Microsecond, AllWithinBudget: true}},
+	}
+}
+
+func TestComparePreservesP95AbsoluteBudget(t *testing.T) {
+	report := comparisonFixture()
+	report.Measurements[0].P99 = report.Measurements[0].Limit + time.Nanosecond
+	report.IdleCPU.Attempts = []float64{report.IdleCPU.Limit + 1, report.IdleCPU.Value}
+	if _, err := Compare(report, report); err != nil {
+		t.Fatalf("valid p95/retry report rejected: %v", err)
 	}
 }

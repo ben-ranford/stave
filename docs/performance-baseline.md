@@ -11,11 +11,13 @@ go run ./cmd/stave-performance-compare -baseline baseline.json -candidate candid
 ```
 
 Both reports must be from the same host, Go version, OS/architecture, CPU
-count, fixture, capabilities, and exact run parameters. The executable path
+count, declared fixture metadata, capabilities, and exact run parameters. The executable path
 (`os.Args[0]`) is excluded because launch and build locations can differ
-between runs or revisions, and the `-out` destination is excluded because it
+between runs or revisions, and the `-out`/`--out` destination is excluded because it
 names the artifact rather than a measurement parameter. All remaining arguments
-and environment metadata are compared. Source revisions are recorded and may
+and environment metadata are compared. The report does not contain a fixture
+content hash, so matching declared fixture metadata does not prove identical
+fixture source content. Source revisions are recorded and may
 differ. The comparator rejects reports that fail their existing absolute
 budgets, change their budget schema, or use incompatible environment or
 reproducibility metadata.
@@ -26,3 +28,6 @@ increase to absorb ordinary same-host noise, while idle CPU allows 0.10
 percentage points. Exit status is `0` when all deltas are within tolerance, `2`
 for a valid regression, `3` for invalid or incompatible input, and `64` for
 usage errors.
+
+`percentDelta` is omitted when its baseline is zero because a relative change
+is undefined in that case.
