@@ -253,6 +253,40 @@ func TestRenderRequestIsExplicitAndDeterministic(t *testing.T) {
 	}
 }
 
+func TestRenderSelectedPreservesDefaultAndOmitsUnselectedProducts(t *testing.T) {
+	t.Parallel()
+	root := testNode(t, "application", "App", nil, testNode(t, "text", "hello", nil))
+	tree, err := semantic.NewTree(1, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := Request{Context: context.Background(), Tree: tree, Theme: testTheme(t, capability.ColorTrueColor, capability.UnicodeFull), Capabilities: capability.Manifest{TTY: true, Color: capability.ColorTrueColor, Unicode: capability.UnicodeFull, Width: 20, Height: 4, Limits: capability.Limits{MaxTreeNodes: 64, MaxMessageBytes: 1 << 20}}, Viewport: layout.Size{Width: 20, Height: 4}}
+	all, err := Render(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selected, err := RenderSelected(req, OutputAll)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if all.Plan.Hash != selected.Plan.Hash || all.Surface.Hash() != selected.Surface.Hash() || all.Plain != selected.Plain || string(all.Machine) != string(selected.Machine) || all.Terminal != selected.Terminal || all.Patch.ToHash != selected.Patch.ToHash {
+		t.Fatal("Render default differs from OutputAll")
+	}
+	terminal, err := RenderSelected(req, OutputTerminal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if terminal.Terminal == "" || terminal.Plain != "" || terminal.Machine != nil || terminal.Patch.ToHash != ([32]byte{}) {
+		t.Fatalf("terminal selection materialized other products: %#v", terminal)
+	}
+	if _, err := RenderSelected(req, 0); err == nil {
+		t.Fatal("zero output selection accepted")
+	}
+	if _, err := RenderSelected(req, Outputs(128)); err == nil {
+		t.Fatal("unknown output selection accepted")
+	}
+}
+
 func TestMachineAndPlainOutputsAvoidANSIAndPreserveSemantics(t *testing.T) {
 	t.Parallel()
 	root := testNode(t, "application", "Status", map[string]string{"layout.kind": "stack"},
