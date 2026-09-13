@@ -20,31 +20,31 @@ type ViewContext struct { Context context.Context; SessionID string; Revision ui
 type View[M any] func(ViewContext, M) (semantic.Tree, error)
 
 [github.com/ben-ranford/stave/action]
-const ActionNotFound
-const AmbiguousTarget
-const Cancelled
-const CapabilityMismatch
-const ConfirmationInvalid
-const ConfirmationRequired
-const Conflict
-const Consequential
-const DeadlineExceeded
-const Destructive
-const Forbidden
-const Idempotent
-const Internal
-const InvalidArgument
-const InvalidRequest
-const NodeNotFound
-const NodeReplaced
-const NonIdempotent
-const OutputSchemaViolation
-const ReadOnly
-const ResourceLimit
-const ResultOK
-const ResultRejected
-const Reversible
-const StaleSnapshot
+const ActionNotFound Code = "ACTION_NOT_FOUND"
+const AmbiguousTarget Code = "AMBIGUOUS_TARGET"
+const Cancelled Code = "CANCELLED"
+const CapabilityMismatch Code = "CAPABILITY_MISMATCH"
+const ConfirmationInvalid Code = "CONFIRMATION_INVALID"
+const ConfirmationRequired Code = "CONFIRMATION_REQUIRED"
+const Conflict Code = "CONFLICT"
+const Consequential Safety = "consequential"
+const DeadlineExceeded Code = "DEADLINE_EXCEEDED"
+const Destructive Safety = "destructive"
+const Forbidden Code = "FORBIDDEN"
+const Idempotent Idempotency = "idempotent"
+const Internal Code = "INTERNAL"
+const InvalidArgument Code = "INVALID_ARGUMENT"
+const InvalidRequest Code = "INVALID_REQUEST"
+const NodeNotFound Code = "NODE_NOT_FOUND"
+const NodeReplaced Code = "NODE_REPLACED"
+const NonIdempotent Idempotency = "non_idempotent"
+const OutputSchemaViolation Code = "OUTPUT_SCHEMA_VIOLATION"
+const ReadOnly Safety = "read_only"
+const ResourceLimit Code = "RESOURCE_LIMIT"
+const ResultOK ResultStatus = "ok"
+const ResultRejected ResultStatus = "rejected"
+const Reversible Safety = "reversible"
+const StaleSnapshot Code = "STALE_SNAPSHOT"
 func NewConfirmation(session string, d Definition, target semantic.Target, args json.RawMessage, expiry time.Time) (Confirmation, error)
 func NewConfirmationE(session string, d Definition, target semantic.Target, args json.RawMessage, expiry time.Time) (Confirmation, error)
 func NewRegistry() *Registry
@@ -72,42 +72,42 @@ type Result struct { CallID string; ActionID ID; Target semantic.Target; Status 
 type ResultStatus string
 type Safety string
 type Schema struct { ID string `json:"id"`; JSON json.RawMessage `json:"json"`; Decode func(json.RawMessage) (any, error) `json:"-"`; Encode func(any) (json.RawMessage, error) `json:"-"` }
-var ErrConfirmationLimit
-var ErrNumericLimit
+var ErrConfirmationLimit error
+var ErrNumericLimit error
 
 [github.com/ben-ranford/stave/capability]
-const ColorANSI16
-const ColorANSI16Level
-const ColorANSI256
-const ColorANSI256Level
-const ColorAlways
-const ColorAuto
-const ColorMonochrome
-const ColorNever
-const ColorNoColor
-const ColorNone
-const ColorTrueColor
-const ColorTruecolor
-const OutputAccessibleLine
-const OutputAuto
-const OutputDumb
-const OutputMachineJSON
-const OutputMachineJSONL
-const OutputPlain
-const ProfileANSI16
-const ProfileANSI256
-const ProfileAccessibleLine
-const ProfileDumb
-const ProfileFullScreen
-const ProfileMachineJSON
-const ProfileMachineJSONL
-const ProfileMonochrome
-const ProfileNoColor
-const ProfilePlain
-const ProfileTrueColor
-const UnicodeASCII
-const UnicodeFull
-const UnicodeNone
+const ColorANSI16 ColorLevel = 2
+const ColorANSI16Level ColorLevel = 2
+const ColorANSI256 ColorLevel = 3
+const ColorANSI256Level ColorLevel = 3
+const ColorAlways ColorPolicy = "always"
+const ColorAuto ColorPolicy = "auto"
+const ColorMonochrome ColorLevel = 1
+const ColorNever ColorPolicy = "never"
+const ColorNoColor ColorLevel = 0
+const ColorNone ColorLevel = 0
+const ColorTrueColor ColorLevel = 4
+const ColorTruecolor ColorLevel = 4
+const OutputAccessibleLine OutputMode = "accessible-line"
+const OutputAuto OutputMode = "auto"
+const OutputDumb OutputMode = "dumb"
+const OutputMachineJSON OutputMode = "machine-json"
+const OutputMachineJSONL OutputMode = "machine-jsonl"
+const OutputPlain OutputMode = "plain"
+const ProfileANSI16 Profile = "ansi16"
+const ProfileANSI256 Profile = "ansi256"
+const ProfileAccessibleLine Profile = "accessible-line"
+const ProfileDumb Profile = "dumb"
+const ProfileFullScreen Profile = "full-screen"
+const ProfileMachineJSON Profile = "machine-json"
+const ProfileMachineJSONL Profile = "machine-jsonl"
+const ProfileMonochrome Profile = "mono"
+const ProfileNoColor Profile = "none"
+const ProfilePlain Profile = "plain"
+const ProfileTrueColor Profile = "truecolor"
+const UnicodeASCII UnicodeLevel = 1
+const UnicodeFull UnicodeLevel = 2
+const UnicodeNone UnicodeLevel = 0
 func Detect(p Probe) Manifest
 func DetectEnv(env map[string]string, tty bool, width, height int) Manifest
 func DetectEnvWithDiagnostics(env map[string]string, tty bool, width, height int) (Manifest, []Diagnostic)
@@ -186,22 +186,22 @@ type Mode struct { Width, Height int; Color, Unicode, Interactive, TTY, ReducedM
 type Report struct { Adapter string; Modes int; Failures []Failure }
 
 [github.com/ben-ranford/stave/diag]
-const ErrorSeverity
-const Info
-const Warning
+const ErrorSeverity Severity = "error"
+const Info Severity = "info"
+const Warning Severity = "warning"
 method (Diagnostic) MarshalJSON() ([]byte, error)
 type Diagnostic struct { SchemaVersion string `json:"schemaVersion"`; ID string `json:"id"`; Sequence uint64 `json:"sequence,omitempty"`; Revision uint64 `json:"revision,omitempty"`; Time time.Time `json:"time,omitempty"`; Severity Severity `json:"severity"`; Category string `json:"category,omitempty"`; Code string `json:"code,omitempty"`; Message string `json:"message,omitempty"`; NodeID semantic.NodeID `json:"nodeId,omitempty"`; Attributes map[string]string `json:"attributes,omitempty"`; Retryable bool `json:"retryable,omitempty"`; Redacted bool `json:"redacted,omitempty"` }
 type Severity string
 
 [github.com/ben-ranford/stave/effect]
-const CompletionOrder
-const DeclarationOrder
-const IDAlgorithm
-const SchemaVersion
-const StatusCancelled
-const StatusCompleted
-const StatusFailed
-const StatusTimedOut
+const CompletionOrder Delivery = "completion_order"
+const DeclarationOrder Delivery = "declaration_order"
+const IDAlgorithm untyped string = "stave-effect-id-v1"
+const SchemaVersion untyped string = "stave.effect/v1"
+const StatusCancelled Status = "cancelled"
+const StatusCompleted Status = "completed"
+const StatusFailed Status = "failed"
+const StatusTimedOut Status = "timed_out"
 func Bind(sessionID string, sequence, revision uint64, requests []Request) ([]Call, error)
 func ID(sessionID string, sequence uint64, ordinal uint32, kind string) string
 func NewExecutor(opts Options) *Executor
@@ -222,27 +222,27 @@ type Request struct { Spec Spec `json:"spec"`; Input any `json:"input,omitempty"
 type Sink func(event.Event) error
 type Spec struct { Kind string `json:"kind"`; Lane string `json:"lane,omitempty"`; Cancellable bool `json:"cancellable,omitempty"`; Sensitive bool `json:"sensitive,omitempty"`; Timeout time.Duration `json:"timeout,omitempty"` }
 type Status string
-var ErrBackpressure
-var ErrClosed
-var ErrMissingPort
+var ErrBackpressure error
+var ErrClosed error
+var ErrMissingPort error
 
 [github.com/ben-ranford/stave/event]
-const ActionInvoked
-const Blur
-const Cancel
-const Diagnostic
-const EffectResult
-const Focus
-const Key
-const MaxPayloadTextBytes
-const MaxViewportDimension
-const Pointer
-const Resize
-const SchemaVersion
-const SecureInput
-const Shutdown
-const Text
-const Tick
+const ActionInvoked Kind = "action_invoked"
+const Blur Kind = "blur"
+const Cancel Kind = "cancel"
+const Diagnostic Kind = "diagnostic"
+const EffectResult Kind = "effect_result"
+const Focus Kind = "focus"
+const Key Kind = "key"
+const MaxPayloadTextBytes untyped int = 1048576
+const MaxViewportDimension untyped int = 65536
+const Pointer Kind = "pointer"
+const Resize Kind = "resize"
+const SchemaVersion untyped string = "stave.event/v1"
+const SecureInput Kind = "secure_input"
+const Shutdown Kind = "shutdown"
+const Text Kind = "text"
+const Tick Kind = "tick"
 func Equal(a, b Event) bool
 func New(kind Kind, payload any) (Event, error)
 method (*Event) UnmarshalJSON(data []byte) error
@@ -291,30 +291,30 @@ type Graph struct {  }
 type State struct { Active semantic.Target; Scope semantic.NodeID; Stack []semantic.Target }
 
 [github.com/ben-ranford/stave/input]
-const DefaultMaxPasteBytes
-const DefaultMaxTextBytes
-const KeyBackspace
-const KeyDelete
-const KeyDown
-const KeyEnd
-const KeyEnter
-const KeyEscape
-const KeyHome
-const KeyLeft
-const KeyPageDown
-const KeyPageUp
-const KeyRight
-const KeyRune
-const KeySpace
-const KeyTab
-const KeyUp
-const ModAlt
-const ModCtrl
-const ModMeta
-const ModShift
-const SecretEventKind
-const SourcePaste
-const SourceTyped
+const DefaultMaxPasteBytes untyped int = 65536
+const DefaultMaxTextBytes untyped int = 4096
+const KeyBackspace KeyCode = "backspace"
+const KeyDelete KeyCode = "delete"
+const KeyDown KeyCode = "down"
+const KeyEnd KeyCode = "end"
+const KeyEnter KeyCode = "enter"
+const KeyEscape KeyCode = "escape"
+const KeyHome KeyCode = "home"
+const KeyLeft KeyCode = "left"
+const KeyPageDown KeyCode = "pagedown"
+const KeyPageUp KeyCode = "pageup"
+const KeyRight KeyCode = "right"
+const KeyRune KeyCode = "rune"
+const KeySpace KeyCode = "space"
+const KeyTab KeyCode = "tab"
+const KeyUp KeyCode = "up"
+const ModAlt Mod = 4
+const ModCtrl Mod = 2
+const ModMeta Mod = 8
+const ModShift Mod = 1
+const SecretEventKind github.com/ben-ranford/stave/event.Kind = "secure_input"
+const SourcePaste TextSource = "paste"
+const SourceTyped TextSource = "typed"
 func EOFEvent() staveevent.Event
 func KeyEvent(chord KeyChord) staveevent.Event
 func NewMemorySecretStore() *MemorySecretStore
@@ -340,23 +340,23 @@ type SecureProvider interface { ReadSecret(context.Context, SecretPrompt) (Secre
 type Signal struct { Name string `json:"name"` }
 type Text struct { Value string `json:"value"`; Source TextSource `json:"source"`; Truncated bool `json:"truncated,omitempty"` }
 type TextSource string
-var ErrSecretNotFound
+var ErrSecretNotFound error
 
 [github.com/ben-ranford/stave/keymap]
-const CommandActivate
-const CommandCancel
-const CommandFocusFirst
-const CommandFocusLast
-const CommandFocusNext
-const CommandFocusPrevious
-const CommandPageDown
-const CommandPageUp
-const CommandShutdown
-const RouteAction
-const RouteEvent
-const StatusMatch
-const StatusNoMatch
-const StatusPending
+const CommandActivate CommandID = "stave.activate.v1"
+const CommandCancel CommandID = "stave.cancel.v1"
+const CommandFocusFirst CommandID = "stave.focus.first.v1"
+const CommandFocusLast CommandID = "stave.focus.last.v1"
+const CommandFocusNext CommandID = "stave.focus.next.v1"
+const CommandFocusPrevious CommandID = "stave.focus.previous.v1"
+const CommandPageDown CommandID = "stave.page.down.v1"
+const CommandPageUp CommandID = "stave.page.up.v1"
+const CommandShutdown CommandID = "stave.shutdown.v1"
+const RouteAction RouteKind = "action"
+const RouteEvent RouteKind = "event"
+const StatusMatch ResolutionStatus = "match"
+const StatusNoMatch ResolutionStatus = "no_match"
+const StatusPending ResolutionStatus = "pending"
 func Default() (Map, error)
 func New(profile string, mappings []Mapping) (Map, error)
 func NewDispatcher(keymap Map) *Dispatcher
@@ -407,7 +407,7 @@ type Nop struct {  }
 type Observer interface { Observe(context.Context, Event) }
 
 [github.com/ben-ranford/stave/performance]
-const Samples
+const Samples untyped int = 101
 func ActionAckLine() ([]byte, error)
 func Context() context.Context
 func Fixture(n int) (semantic.Tree, error)
@@ -433,9 +433,9 @@ type Report struct { GeneratedAt time.Time `json:"generatedAt"`; Host string `js
 type Reproducibility struct { Invocation []string `json:"invocation"`; SampleCount int `json:"sampleCount"`; Strict bool `json:"strict"`; GOMAXPROCS int `json:"gomaxprocs"`; VCSRevision string `json:"vcsRevision,omitempty"`; VCSModified bool `json:"vcsModified,omitempty"` }
 
 [github.com/ben-ranford/stave/primitive]
-const Grid
-const Horizontal
-const Vertical
+const Grid Direction = "grid"
+const Horizontal Direction = "horizontal"
+const Vertical Direction = "vertical"
 func Action(id, label string, def bool) semantic.ActionRef
 func Alert(o Options, text string) (semantic.Node, error)
 func BarChart(o Options, values []int, description string) (semantic.Node, error)
@@ -499,29 +499,29 @@ type TableRow struct { Key, Name string; Cells []string; Selected, Expanded bool
 type ViewportOptions struct { Options; Width, Height int; Narrow bool; Children []semantic.Node }
 
 [github.com/ben-ranford/stave/protocol]
-const Backpressure
-const Cancelled
-const CapabilityMismatch
-const ConfirmationInvalid
-const ConfirmationRequired
-const ContextCancelled
-const ContextDeadline
-const DeadlineExceeded
-const Forbidden
-const InternalError
-const InvalidParams
-const InvalidRequest
-const JSONRPC
-const MethodNotFound
-const NotInitialized
-const OutputLimit
-const ParseError
-const RequestTooLarge
-const ResourceLimit
-const SchemaViolation
-const StaleTarget
-const UnsupportedVersion
-const Version
+const Backpressure untyped int = -32003
+const Cancelled untyped int = -32004
+const CapabilityMismatch untyped int = -32007
+const ConfirmationInvalid untyped int = -32009
+const ConfirmationRequired untyped int = -32008
+const ContextCancelled untyped int = -32015
+const ContextDeadline untyped int = -32016
+const DeadlineExceeded untyped int = -32005
+const Forbidden untyped int = -32014
+const InternalError untyped int = -32603
+const InvalidParams untyped int = -32602
+const InvalidRequest untyped int = -32600
+const JSONRPC untyped string = "2.0"
+const MethodNotFound untyped int = -32601
+const NotInitialized untyped int = -32006
+const OutputLimit untyped int = -32013
+const ParseError untyped int = -32700
+const RequestTooLarge untyped int = -32001
+const ResourceLimit untyped int = -32012
+const SchemaViolation untyped int = -32017
+const StaleTarget untyped int = -32011
+const UnsupportedVersion untyped int = -32002
+const Version untyped string = "1.0"
 func DecodeLine(line []byte, max int) (Request, error)
 func Errorf(code int, format string, args ...any) *Error
 func Marshal(v any) ([]byte, error)
@@ -542,7 +542,7 @@ type Request struct { JSONRPC string `json:"jsonrpc"`; ID json.RawMessage `json:
 type Response struct { JSONRPC string `json:"jsonrpc"`; ID json.RawMessage `json:"id,omitempty"`; Result any `json:"result,omitempty"`; Error *Error `json:"error,omitempty"` }
 type SnapshotParams struct { Mode string `json:"mode,omitempty"`; IncludeActions bool `json:"includeActions,omitempty"`; SinceRevision uint64 `json:"sinceRevision,omitempty"` }
 type SnapshotResult struct { SchemaVersion string `json:"schemaVersion"`; SessionID string `json:"sessionId"`; Sequence uint64 `json:"sequence"`; Mode string `json:"mode"`; Snapshot *semantic.Snapshot `json:"snapshot,omitempty"`; Patch *semantic.Patch `json:"patch,omitempty"`; Revision uint64 `json:"revision"`; TreeHash string `json:"treeHash"`; CapabilityHash string `json:"capabilityHash"`; SemanticVersion string `json:"semanticVersion"`; ConfigHash string `json:"configHash"`; ThemeHash string `json:"themeHash"`; WidthVersion string `json:"widthVersion"`; Actions []action.Definition `json:"actions,omitempty"`; Diagnostics []diag.Diagnostic `json:"diagnostics,omitempty"` }
-var ErrBatch
+var ErrBatch error
 
 [github.com/ben-ranford/stave/render]
 func ANSI(text string, level capability.ColorLevel, fg string) string
@@ -555,23 +555,23 @@ type Result struct { Viewport layout.Size; Capabilities capability.Manifest; The
 type Writer struct { Manifest capability.Manifest; ByteLimit int }
 
 [github.com/ben-ranford/stave/replay]
-const DivergenceCapability
-const DivergenceCheckpoint
-const DivergenceConfigHash
-const DivergenceDelivery
-const DivergenceEvent
-const DivergenceModelHash
-const DivergenceNodeID
-const DivergenceRecordCount
-const DivergenceRevision
-const DivergenceSchemaVersion
-const DivergenceSequence
-const DivergenceSessionID
-const DivergenceSurfaceHash
-const DivergenceThemeHash
-const DivergenceTreeHash
-const DivergenceWidthPolicy
-const SchemaVersion
+const DivergenceCapability DivergenceCode = "CAPABILITY_HASH_MISMATCH"
+const DivergenceCheckpoint DivergenceCode = "CHECKPOINT_MISMATCH"
+const DivergenceConfigHash DivergenceCode = "CONFIG_HASH_MISMATCH"
+const DivergenceDelivery DivergenceCode = "DELIVERY_ORDER_MISMATCH"
+const DivergenceEvent DivergenceCode = "EVENT_MISMATCH"
+const DivergenceModelHash DivergenceCode = "MODEL_HASH_MISMATCH"
+const DivergenceNodeID DivergenceCode = "NODE_ID_ALGORITHM_MISMATCH"
+const DivergenceRecordCount DivergenceCode = "RECORD_COUNT_MISMATCH"
+const DivergenceRevision DivergenceCode = "REVISION_MISMATCH"
+const DivergenceSchemaVersion DivergenceCode = "SCHEMA_VERSION_MISMATCH"
+const DivergenceSequence DivergenceCode = "SEQUENCE_MISMATCH"
+const DivergenceSessionID DivergenceCode = "SESSION_ID_MISMATCH"
+const DivergenceSurfaceHash DivergenceCode = "SURFACE_HASH_MISMATCH"
+const DivergenceThemeHash DivergenceCode = "THEME_HASH_MISMATCH"
+const DivergenceTreeHash DivergenceCode = "TREE_HASH_MISMATCH"
+const DivergenceWidthPolicy DivergenceCode = "WIDTH_POLICY_MISMATCH"
+const SchemaVersion untyped string = "stave.replay/v1"
 func DigestFromState[M any](snapshot state.State[M]) Digest
 func Encode(record Record) ([]byte, error)
 func Execute(ctx context.Context, transcript Transcript, apply ApplyFunc) (Transcript, error)
@@ -607,15 +607,15 @@ type SnapshotEnvelope struct { Snapshot *semantic.Snapshot; Patch *semantic.Patc
 type SnapshotEnvelopeProvider func(context.Context, string, uint64) (SnapshotEnvelope, error)
 type SnapshotPatchProvider func(context.Context, uint64) (any, uint64, string, error)
 type SnapshotProvider func(context.Context) (any, uint64, string, error)
-var ErrBackpressure
-var ErrOutputLimit
+var ErrBackpressure error
+var ErrOutputLimit error
 
 [github.com/ben-ranford/stave/runtime/human]
-const ProfileAccessibleLine
-const ProfileFullScreen
-const ProfileLine
-const ProfileNonTTY
-const ProfilePlain
+const ProfileAccessibleLine Profile = "accessible-line"
+const ProfileFullScreen Profile = "full-screen"
+const ProfileLine Profile = "line"
+const ProfileNonTTY Profile = "non-tty"
+const ProfilePlain Profile = "plain"
 func New(opts Options) (*Runtime, error)
 func NewEvent(chord input.KeyChord) event.Event
 func NewLineDriver(opts LineDriverOptions) (*LineDriver, error)
@@ -642,26 +642,26 @@ type OutputSink interface { Draw(context.Context, surface.Surface, surface.Patch
 type Profile string
 type Runtime struct {  }
 type SecretProvider interface { ReadSecret(context.Context, input.SecretPrompt) (secret.Handle, error) }
-var ErrBackpressure
-var ErrEventSourceClosed
-var ErrInvalidEvent
-var ErrNoDriver
-var ErrNotInteractive
-var ErrOpenFailed
-var ErrRuntimePanic
-var ErrSecureInputDenied
-var ErrStopped
+var ErrBackpressure error
+var ErrEventSourceClosed error
+var ErrInvalidEvent error
+var ErrNoDriver error
+var ErrNotInteractive error
+var ErrOpenFailed error
+var ErrRuntimePanic error
+var ErrSecureInputDenied error
+var ErrStopped error
 
 [github.com/ben-ranford/stave/schema/config]
-const SchemaPath
-const Version
-var EnvKeys
-var FlagKeys
-var JSONPaths
-var Required
+const SchemaPath untyped string = "schema/config/config.json"
+const Version untyped string = "stave.config/v1"
+var EnvKeys []string
+var FlagKeys []string
+var JSONPaths []string
+var Required []string
 
 [github.com/ben-ranford/stave/schema/protocol]
-const Version
+const Version untyped string = "stave.protocol/v1"
 
 [github.com/ben-ranford/stave/secret]
 func NewMemoryStore() *MemoryStore
@@ -671,17 +671,17 @@ method (*MemoryStore) Use(h Handle, fn func([]byte) error) error
 type Handle struct { ID string `json:"id"` }
 type MemoryStore struct {  }
 type Store interface { Put([]byte) (Handle, error); Use(Handle, func([]byte) error) error; Destroy(Handle) error }
-var ErrEmptySecret
-var ErrInvalidHandle
-var ErrUnavailable
+var ErrEmptySecret error
+var ErrInvalidHandle error
+var ErrUnavailable error
 
 [github.com/ben-ranford/stave/semantic]
-const LiveAssertive
-const LiveNone
-const LivePolite
-const NodeIDNormalizationPolicy
-const SnapshotStability
-const Stable
+const LiveAssertive LiveMode = "assertive"
+const LiveNone LiveMode = "none"
+const LivePolite LiveMode = "polite"
+const NodeIDNormalizationPolicy untyped string = "stave-node-id-v1:utf8-identity"
+const SnapshotStability Stability = "snapshot"
+const Stable Stability = "stable"
 func Diff(a, b Tree) Patch
 func NewNode(s NodeSpec) (Node, error)
 func NewTombstones() *Tombstones
@@ -747,10 +747,10 @@ type Tree struct {  }
 type Value struct { Text string `json:"text,omitempty"`; Redacted bool `json:"redacted,omitempty"`; HasValue bool `json:"hasValue,omitempty"` }
 
 [github.com/ben-ranford/stave/session]
-const LifecycleCancelling
-const LifecycleClosed
-const LifecycleRunning
-const LifecycleStarting
+const LifecycleCancelling Lifecycle = "cancelling"
+const LifecycleClosed Lifecycle = "closed"
+const LifecycleRunning Lifecycle = "running"
+const LifecycleStarting Lifecycle = "starting"
 func New[M any](ctx context.Context, opts Options[M]) (*Session[M], error)
 method (*Session[M]) Cancel()
 method (*Session[M]) Checkpoint() (state.Checkpoint, error)
@@ -768,15 +768,15 @@ type Reducer[M any] func(context.Context, M, event.Event) (M, []effect.Request, 
 type Session[M any] struct {  }
 type ViewResult struct { Tree semantic.Tree; SurfaceHash string; Diagnostics []Diagnostic }
 type View[M any] func(context.Context, M) (ViewResult, error)
-var ErrBackpressure
-var ErrReducerNil
-var ErrSessionClosed
-var ErrViewRequired
+var ErrBackpressure error
+var ErrReducerNil error
+var ErrSessionClosed error
+var ErrViewRequired error
 
 [github.com/ben-ranford/stave/state]
-const CheckpointSchemaVersion
-const DefaultWidthPolicy
-const ReplaySchemaVersion
+const CheckpointSchemaVersion untyped string = "stave.checkpoint/v1"
+const DefaultWidthPolicy untyped string = "stave-width-v1"
+const ReplaySchemaVersion untyped string = "stave.replay/v1"
 func Clone[T any](value T) (T, error)
 func HashString(v any) (string, error)
 func New[M any](sessionID string, model M, tree semantic.Tree, meta Meta, policy ModelPolicy[M]) (State[M], error)
@@ -831,18 +831,18 @@ func Surface() (surface.Surface, error)
 func TableTree(namespace string) (semantic.Node, error)
 
 [github.com/ben-ranford/stave/theme]
-const DensityComfortable
-const DensityCompact
-const DensityDense
-const KindBool
-const KindColor
-const KindDuration
-const KindNumber
-const KindString
-const MinimumSemanticContrast
-const ModeAuto
-const ModeDark
-const ModeLight
+const DensityComfortable Density = "comfortable"
+const DensityCompact Density = "compact"
+const DensityDense Density = "dense"
+const KindBool Kind = "bool"
+const KindColor Kind = "color"
+const KindDuration Kind = "duration"
+const KindNumber Kind = "number"
+const KindString Kind = "string"
+const MinimumSemanticContrast untyped float = 3
+const ModeAuto Mode = "auto"
+const ModeDark Mode = "dark"
+const ModeLight Mode = "light"
 func ContrastPairs() []ContrastPair
 func ContrastRatio(foreground, background string) (float64, error)
 func FromDTCG(data []byte) (Theme, error)

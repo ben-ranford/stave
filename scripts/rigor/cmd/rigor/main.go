@@ -10,9 +10,11 @@ import (
 	"flag"
 	"fmt"
 	"go/ast"
+	"go/importer"
 	"go/parser"
 	"go/printer"
 	"go/token"
+	"go/types"
 	"io"
 	"os"
 	"os/exec"
@@ -39,6 +41,43 @@ type goListPackage struct {
 	Imports    []string
 	Standard   bool
 	Module     *goListModule
+}
+
+type sourceImporter struct {
+	fset     *token.FileSet
+	packages map[string]goListPackage
+	checked  map[string]*types.Package
+	standard types.Importer
+}
+
+func (i *sourceImporter) Import(path string) (*types.Package, error) {
+	if pkg, ok := i.checked[path]; ok {
+		return pkg, nil
+	}
+
+	source, ok := i.packages[path]
+	if !ok {
+		return i.standard.Import(path)
+	}
+
+	files := make([]*ast.File, 0, len(source.GoFiles))
+	for _, name := range source.GoFiles {
+		file, err := parser.ParseFile(i.fset, filepath.Join(source.Dir, name), nil, parser.SkipObjectResolution)
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, file)
+	}
+	if len(files) == 0 {
+		return nil, fmt.Errorf("package %s has no Go files", path)
+	}
+
+	pkg, err := (&types.Config{Importer: i}).Check(path, i.fset, files, nil)
+	if err != nil {
+		return nil, err
+	}
+	i.checked[path] = pkg
+	return pkg, nil
 }
 
 type packageInfo struct {
@@ -198,6 +237,16 @@ func run(ctx context.Context, args []string) error {
 func renderPublicAPI(modulePath string, pkgs []goListPackage) (string, error) {
 	exported := make(map[string][]string)
 	fset := token.NewFileSet()
+	packageIndex := make(map[string]goListPackage, len(pkgs))
+	for _, pkg := range pkgs {
+		packageIndex[pkg.ImportPath] = pkg
+	}
+	importer := &sourceImporter{
+		fset:     fset,
+		packages: packageIndex,
+		checked:  make(map[string]*types.Package),
+		standard: importer.Default(),
+	}
 
 	for _, pkg := range pkgs {
 		if pkg.ImportPath == "" || !strings.HasPrefix(pkg.ImportPath, modulePath) {
@@ -229,6 +278,16 @@ func renderPublicAPI(modulePath string, pkgs []goListPackage) (string, error) {
 
 		entries := []string{}
 		for _, parsedPkg := range parsed {
+			typeInfo := types.Info{Defs: make(map[*ast.Ident]types.Object)}
+			config := types.Config{Importer: importer}
+			files := make([]*ast.File, 0, len(parsedPkg.Files))
+			for _, file := range parsedPkg.Files {
+				files = append(files, file)
+			}
+			checkedPkg, err := config.Check(pkg.ImportPath, fset, files, &typeInfo)
+			if err != nil {
+				return "", err
+			}
 			for _, file := range parsedPkg.Files {
 				for _, decl := range file.Decls {
 					switch d := decl.(type) {
@@ -246,7 +305,11 @@ func renderPublicAPI(modulePath string, pkgs []goListPackage) (string, error) {
 								}
 								for _, name := range valueSpec.Names {
 									if ast.IsExported(name.Name) {
-										entries = append(entries, fmt.Sprintf("%s %s", label, name.Name))
+										entry, err := publicValueDeclaration(label, name.Name, typeInfo.Defs[name], types.RelativeTo(checkedPkg))
+										if err != nil {
+											return "", err
+										}
+										entries = append(entries, entry)
 									}
 								}
 							}
@@ -296,6 +359,22 @@ func renderPublicAPI(modulePath string, pkgs []goListPackage) (string, error) {
 		out.WriteByte('\n')
 	}
 	return strings.TrimRight(out.String(), "\n") + "\n", nil
+}
+
+func publicValueDeclaration(label, name string, object types.Object, qualifier types.Qualifier) (string, error) {
+	if object == nil {
+		return "", fmt.Errorf("missing type information for exported %s %s", label, name)
+	}
+
+	typeName := types.TypeString(object.Type(), qualifier)
+	switch object := object.(type) {
+	case *types.Var:
+		return fmt.Sprintf("var %s %s", name, typeName), nil
+	case *types.Const:
+		return fmt.Sprintf("const %s %s = %s", name, typeName, object.Val().ExactString()), nil
+	default:
+		return "", fmt.Errorf("unexpected type information for exported %s %s", label, name)
+	}
 }
 
 func renderDependencyInventory(ctx context.Context) (dependencyInventory, error) {
