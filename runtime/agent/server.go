@@ -82,6 +82,7 @@ func OptionsFromConfig(cfg config.Config) (Options, error) {
 	}
 	return Options{
 		MaxMessageBytes: cfg.Protocol.MaxMessageBytes,
+		MaxOutputBytes:  defaultOutputBytes,
 		MaxTreeNodes:    cfg.Security.MaxTreeNodes,
 	}, nil
 }
@@ -103,7 +104,10 @@ type callSlot struct {
 	cancel context.CancelFunc
 }
 
-const minimumOutputBytes = 128
+const (
+	minimumOutputBytes = 128
+	defaultOutputBytes = 4 << 20
+)
 
 var (
 	ErrBackpressure = errors.New("protocol request queue full")

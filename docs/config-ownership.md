@@ -23,8 +23,9 @@ map names the owner of each public configuration field.
 
 To opt in to the documented agent projection, pass a validated configuration to
 `agent.OptionsFromConfig`, then set any adapter-owned options explicitly. The
-helper projects only message and tree limits; it does not select a transport or
-change queue, output, concurrency, or Program runtime settings.
+helper projects the configured message and tree limits and supplies the
+adapter's independent output default. It does not select a transport or change
+queue, concurrency, or Program runtime settings.
 
 When a Program has already prepared a session, use `prepared.Config` as that
 validated source before constructing the agent adapter.
