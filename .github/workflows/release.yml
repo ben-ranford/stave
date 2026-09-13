@@ -124,4 +124,5 @@ jobs:
           RELEASE_PROBE_CONNECT_TIMEOUT_SECONDS: "5"
           RELEASE_PROBE_REQUEST_TIMEOUT_SECONDS: "15"
           RELEASE_PROBE_GO_TIMEOUT_SECONDS: "60"
+          RELEASE_PROBE_TERMINATE_GRACE_SECONDS: "2"
         run: ./scripts/rigor/verify-published-release.sh "${{ github.ref_name }}"

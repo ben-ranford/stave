@@ -70,8 +70,11 @@ merge commit.
    confirming the immutable tag still points at the recorded source SHA. The
    probe retries each public fetch or incomplete release metadata three times at
    five-second intervals. Each HTTP request is limited to 15 seconds and each
-   public Go resolution attempt to 60 seconds, keeping the probe within its
-   20-minute workflow job budget; a failed
+   public Go resolution attempt to 60 seconds, with a two-second TERM-to-KILL
+   cleanup window. These settings bound publication retries, but `go list` and
+   `go run` intentionally remain outside that helper so they can validate the
+   resolved module and example; the workflow job timeout remains the outer cap,
+   not a claimed total script deadline. A failed
    job is not evidence to set the release label. For an operator-only retry,
    run `RELEASE_PROBE_ATTEMPTS=3 RELEASE_PROBE_RETRY_SECONDS=5
    ./scripts/rigor/verify-published-release.sh "$release_tag"` from any clean
