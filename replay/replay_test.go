@@ -210,7 +210,7 @@ func TestTranscriptClonePreservesCanonicalBytesAndIsolation(t *testing.T) {
 		t.Fatalf("clone canonical JSON changed:\nwant %s\ngot  %s", want, got)
 	}
 	tr.Records[0].Prior.Hashes.Model = "mutated"
-	if got := cloned.Records[0].Prior.Hashes.Model; got == "mutated" {
+	if cloned.Records[0].Prior.Hashes.Model == "mutated" {
 		t.Fatal("clone retained source alias")
 	}
 }
