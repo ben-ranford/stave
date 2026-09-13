@@ -68,9 +68,12 @@ merge commit.
 
    If public propagation is delayed, rerun only the failed workflow job after
    confirming the immutable tag still points at the recorded source SHA. The
-   probe retries each public fetch five times at 15-second intervals; a failed
+   probe retries each public fetch or incomplete release metadata three times at
+   five-second intervals. Each HTTP request is limited to 15 seconds and each
+   public Go resolution attempt to 60 seconds, keeping the probe within its
+   20-minute workflow job budget; a failed
    job is not evidence to set the release label. For an operator-only retry,
-   run `RELEASE_PROBE_ATTEMPTS=5 RELEASE_PROBE_RETRY_SECONDS=15
+   run `RELEASE_PROBE_ATTEMPTS=3 RELEASE_PROBE_RETRY_SECONDS=5
    ./scripts/rigor/verify-published-release.sh "$release_tag"` from any clean
    checkout. Do not add credentials, `go.work`, private proxy settings, or a
    local `replace` directive.

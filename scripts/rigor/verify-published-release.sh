@@ -5,23 +5,24 @@ set -euo pipefail
 # This script performs only public reads; it never creates, moves, or labels a release.
 
 usage() {
-	printf 'usage: %s <tag> [owner/repository]\n' "${0##*/}" >&2
+	printf 'usage: %s <tag>\n' "${0##*/}" >&2
 	exit 2
 }
 
 tag="${1:-}"
-repository="${2:-ben-ranford/stave}"
-[[ -n "${tag}" ]] || usage
-[[ "${repository}" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || { printf 'invalid repository %q\n' "${repository}" >&2; exit 2; }
+[[ $# -eq 1 && -n "${tag}" ]] || usage
+repository="ben-ranford/stave"
 
-attempts="${RELEASE_PROBE_ATTEMPTS:-5}"
-retry_seconds="${RELEASE_PROBE_RETRY_SECONDS:-15}"
-connect_timeout_seconds="${RELEASE_PROBE_CONNECT_TIMEOUT_SECONDS:-10}"
-request_timeout_seconds="${RELEASE_PROBE_REQUEST_TIMEOUT_SECONDS:-30}"
+attempts="${RELEASE_PROBE_ATTEMPTS:-3}"
+retry_seconds="${RELEASE_PROBE_RETRY_SECONDS:-5}"
+connect_timeout_seconds="${RELEASE_PROBE_CONNECT_TIMEOUT_SECONDS:-5}"
+request_timeout_seconds="${RELEASE_PROBE_REQUEST_TIMEOUT_SECONDS:-15}"
+go_timeout_seconds="${RELEASE_PROBE_GO_TIMEOUT_SECONDS:-60}"
 [[ "${attempts}" =~ ^[1-9][0-9]*$ ]] || { printf 'RELEASE_PROBE_ATTEMPTS must be a positive integer\n' >&2; exit 2; }
 [[ "${retry_seconds}" =~ ^[0-9]+$ ]] || { printf 'RELEASE_PROBE_RETRY_SECONDS must be a non-negative integer\n' >&2; exit 2; }
 [[ "${connect_timeout_seconds}" =~ ^[1-9][0-9]*$ ]] || { printf 'RELEASE_PROBE_CONNECT_TIMEOUT_SECONDS must be a positive integer\n' >&2; exit 2; }
 [[ "${request_timeout_seconds}" =~ ^[1-9][0-9]*$ ]] || { printf 'RELEASE_PROBE_REQUEST_TIMEOUT_SECONDS must be a positive integer\n' >&2; exit 2; }
+[[ "${go_timeout_seconds}" =~ ^[1-9][0-9]*$ ]] || { printf 'RELEASE_PROBE_GO_TIMEOUT_SECONDS must be a positive integer\n' >&2; exit 2; }
 
 for command in curl go jq mktemp; do
 	command -v "${command}" >/dev/null 2>&1 || { printf 'required command not found: %s\n' "${command}" >&2; exit 2; }
@@ -57,10 +58,61 @@ retry_command() {
 	done
 }
 
+run_with_timeout() {
+	local description="$1"
+	shift
+	"$@" &
+	local command_pid=$!
+	(
+		sleep "${go_timeout_seconds}"
+		if kill -0 "${command_pid}" 2>/dev/null; then
+			printf 'release probe timed out after %ss while %s\n' "${go_timeout_seconds}" "${description}" >&2
+			kill "${command_pid}" 2>/dev/null || true
+		fi
+	) &
+	local watchdog_pid=$!
+	local command_status=0
+	if wait "${command_pid}"; then
+		command_status=0
+	else
+		command_status=$?
+	fi
+	kill "${watchdog_pid}" 2>/dev/null || true
+	wait "${watchdog_pid}" 2>/dev/null || true
+	return "${command_status}"
+}
+
 api_base="https://api.github.com/repos/${repository}"
 release_json="${workdir}/release.json"
 tag_ref_json="${workdir}/tag-ref.json"
-fetch "${api_base}/releases/tags/${tag}" "${release_json}"
+
+wait_for_release_metadata() {
+	local attempt=1 expected_digest asset_url asset_name
+	local -a incomplete_assets=()
+	while :; do
+		fetch "${api_base}/releases/tags/${tag}" "${release_json}"
+		incomplete_assets=()
+		for asset_name in CHANGELOG.md LICENSE report.json; do
+			expected_digest="$(jq -er --arg name "${asset_name}" '.assets[] | select(.name == $name) | .digest' "${release_json}" 2>/dev/null || true)"
+			asset_url="$(jq -er --arg name "${asset_name}" '.assets[] | select(.name == $name) | .browser_download_url' "${release_json}" 2>/dev/null || true)"
+			if [[ ! "${expected_digest}" =~ ^sha256:[0-9a-f]{64}$ || -z "${asset_url}" ]]; then
+				incomplete_assets+=("${asset_name}")
+			fi
+		done
+		if ((${#incomplete_assets[@]} == 0)); then
+			return 0
+		fi
+		if (( attempt >= attempts )); then
+			printf 'release metadata incomplete after %s attempts; missing digest or download URL for: %s\n' "${attempts}" "${incomplete_assets[*]}" >&2
+			return 1
+		fi
+		printf 'release metadata incomplete for %s; retrying in %ss (missing digest or download URL for: %s)\n' "${tag}" "${retry_seconds}" "${incomplete_assets[*]}" >&2
+		sleep "${retry_seconds}"
+		((attempt += 1))
+	done
+}
+
+wait_for_release_metadata
 fetch "${api_base}/git/ref/tags/${tag}" "${tag_ref_json}"
 
 release_tag="$(jq -er '.tag_name' "${release_json}")"
@@ -111,7 +163,7 @@ mkdir "${workdir}/home"
 (
 	cd "${consumer}"
 	env -i "${go_environment[@]}" go mod init example.com/stave-release-probe >/dev/null
-	retry_command "resolving github.com/ben-ranford/stave@${tag} through the public Go proxy and checksum database" env -i "${go_environment[@]}" go get "github.com/ben-ranford/stave@${tag}" >/dev/null
+	retry_command "resolving github.com/ben-ranford/stave@${tag} through the public Go proxy and checksum database" run_with_timeout "resolving github.com/ben-ranford/stave@${tag}" env -i "${go_environment[@]}" go get "github.com/ben-ranford/stave@${tag}" >/dev/null
 	! grep -qE '^replace[[:space:]]' go.mod
 	module_json="$(env -i "${go_environment[@]}" go list -m -json "github.com/ben-ranford/stave@${tag}")"
 	printf '%s\n' "${module_json}" >"${workdir}/module.json"
