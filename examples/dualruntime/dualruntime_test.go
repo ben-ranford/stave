@@ -16,6 +16,7 @@ import (
 	"github.com/ben-ranford/stave/effect"
 	"github.com/ben-ranford/stave/event"
 	"github.com/ben-ranford/stave/primitive"
+	"github.com/ben-ranford/stave/protocol"
 	"github.com/ben-ranford/stave/runtime/agent"
 	"github.com/ben-ranford/stave/runtime/human"
 	"github.com/ben-ranford/stave/semantic"
@@ -98,6 +99,80 @@ func TestIncrementAcknowledgementWaitsForReusedCallIDMutation(t *testing.T) {
 		snapshot, err := app.Prepared.Session.Snapshot()
 		if err != nil || snapshot.Model.Count != want {
 			t.Fatalf("increment %d returned before visible mutation: snapshot=%+v err=%v", want, snapshot, err)
+		}
+	}
+}
+
+func TestAgentOptionsOwnsAuthorityOverPreparedCallback(t *testing.T) {
+	app, err := New(context.Background(), AgentManifest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Close()
+	opts, err := app.AgentOptions(agent.Options{CompatibilityMode: true, AuthorizePrepared: func(_ context.Context, call action.Call) (action.Call, *action.Error) {
+		call.ActionID = IncrementActionID
+		return call, nil
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := agent.New(opts)
+	var output bytes.Buffer
+	requests := strings.Join([]string{
+		`{"jsonrpc":"2.0","id":1,"method":"stave.initialize"}`,
+		`{"jsonrpc":"2.0","id":2,"method":"stave.initialized"}`,
+		`{"jsonrpc":"2.0","id":3,"method":"stave.action.invoke","params":{"callId":"bypass","actionId":"example.other.v1","arguments":{}}}`,
+	}, "\n") + "\n"
+	if err := server.Serve(context.Background(), ioNopCloser{Reader: strings.NewReader(requests)}, &output); err != nil {
+		t.Fatal(err)
+	}
+	var rejected bool
+	for _, line := range bytes.Split(bytes.TrimSpace(output.Bytes()), []byte{'\n'}) {
+		var response struct {
+			ID    int             `json:"id"`
+			Error *protocol.Error `json:"error"`
+		}
+		if err := json.Unmarshal(line, &response); err != nil {
+			t.Fatal(err)
+		}
+		if response.ID == 3 {
+			rejected = response.Error != nil && response.Error.Code == protocol.Forbidden
+		}
+	}
+	if !rejected {
+		t.Fatalf("prepared callback bypassed tutorial authority: %s", output.String())
+	}
+	snapshot, err := app.Prepared.Session.Snapshot()
+	if err != nil || snapshot.Model.Count != 0 {
+		t.Fatalf("prepared callback mutated count: snapshot=%+v err=%v", snapshot, err)
+	}
+}
+
+func TestIncrementInputSchemaAndDecoderAgree(t *testing.T) {
+	app, err := New(context.Background(), AgentManifest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Close()
+	definition, ok := app.Registry.Definition(IncrementActionID)
+	if !ok {
+		t.Fatal("increment action is not registered")
+	}
+	for _, test := range []struct {
+		raw   json.RawMessage
+		valid bool
+	}{
+		{raw: json.RawMessage(`{}`), valid: true},
+		{raw: json.RawMessage(`"unexpected"`)},
+		{raw: json.RawMessage(`{"unexpected":true}`)},
+		{raw: json.RawMessage(`null`)},
+		{raw: json.RawMessage(`[]`)},
+		{raw: json.RawMessage(`{}{} `)},
+	} {
+		_, schemaErr := definition.InputSchema.Validate(test.raw)
+		_, decodeErr := decodeIncrement(test.raw)
+		if (schemaErr == nil) != test.valid || (decodeErr == nil) != test.valid {
+			t.Fatalf("input %s schema=%v decoder=%v valid=%t", test.raw, schemaErr, decodeErr, test.valid)
 		}
 	}
 }

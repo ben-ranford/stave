@@ -247,8 +247,10 @@
       "importPath": "github.com/ben-ranford/stave/examples/dualruntime",
       "dir": "examples/dualruntime",
       "imports": [
+        "bytes",
         "context",
         "encoding/json",
+        "errors",
         "fmt",
         "github.com/ben-ranford/stave",
         "github.com/ben-ranford/stave/action",
@@ -265,6 +267,7 @@
         "github.com/ben-ranford/stave/state",
         "github.com/ben-ranford/stave/surface",
         "github.com/ben-ranford/stave/theme",
+        "io",
         "strings"
       ]
     },

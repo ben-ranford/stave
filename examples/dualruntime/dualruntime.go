@@ -3,9 +3,12 @@
 package dualruntime
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/ben-ranford/stave"
@@ -41,9 +44,10 @@ type Application struct {
 
 func New(ctx context.Context, runtimeDetected capability.Manifest) (*Application, error) {
 	registry := action.NewRegistry()
+	emptySchema := action.Schema{ID: "empty", JSON: []byte(`{"type":"object","additionalProperties":false}`)}
 	definition := action.Definition{
 		ID: IncrementActionID, Version: "1", Title: "Increment",
-		InputSchema: action.Schema{ID: "empty", JSON: []byte(`{}`)}, OutputSchema: action.Schema{ID: "empty", JSON: []byte(`{}`)},
+		InputSchema: emptySchema, OutputSchema: emptySchema,
 		Safety: action.Reversible, Idempotency: action.NonIdempotent,
 	}
 	incrementGate := make(chan struct{}, 1)
@@ -86,8 +90,20 @@ func (a *Application) increment(ctx context.Context, call action.Call) (incremen
 }
 
 func decodeIncrement(raw json.RawMessage) (incrementInput, error) {
+	if input := bytes.TrimSpace(raw); len(input) == 0 || input[0] != '{' {
+		return incrementInput{}, errors.New("increment input must be an object")
+	}
 	var input incrementInput
-	return input, json.Unmarshal(raw, &input)
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&input); err != nil {
+		return incrementInput{}, err
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return incrementInput{}, errors.New("trailing increment input")
+	}
+	return input, nil
 }
 
 func encodeIncrement(output incrementOutput) (json.RawMessage, error) { return json.Marshal(output) }
@@ -178,7 +194,19 @@ func (a *Application) AgentOptions(options agent.Options) (agent.Options, error)
 	options.MaxMessageBytes = projected.MaxMessageBytes
 	options.MaxTreeNodes = projected.MaxTreeNodes
 	options.Actions = a.Registry
-	options.Authorize = a.Authorize
+	// Agent omission is normalized by the runtime to null. The tutorial's
+	// no-argument action accepts that convenience form as an empty object while
+	// replacing any caller-provided prepared authority with its own policy.
+	options.Authorize = nil
+	options.AuthorizePrepared = func(ctx context.Context, call action.Call) (action.Call, *action.Error) {
+		if bytes.Equal(bytes.TrimSpace(call.Arguments), []byte("null")) {
+			call.Arguments = json.RawMessage(`{}`)
+		}
+		if err := a.Authorize(ctx, call); err != nil {
+			return action.Call{}, err
+		}
+		return call, nil
+	}
 	options.Negotiate = func(context.Context, map[string]any) (capability.Manifest, error) {
 		return a.Prepared.Capabilities.Clone(), nil
 	}
