@@ -99,8 +99,7 @@ func decodeIncrement(raw json.RawMessage) (incrementInput, error) {
 	if err := decoder.Decode(&input); err != nil {
 		return incrementInput{}, err
 	}
-	var trailing any
-	if err := decoder.Decode(&trailing); err != io.EOF {
+	if decoder.Decode(new(any)) != io.EOF {
 		return incrementInput{}, errors.New("trailing increment input")
 	}
 	return input, nil
