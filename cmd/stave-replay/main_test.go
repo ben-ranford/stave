@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -44,6 +45,33 @@ func TestRunReportsDistinctValidateCompareAndInvalidStatuses(t *testing.T) {
 	}
 	if code, result := runReport(t, "validate", "-input", actualPath); code != exitInvalid || result.Error != invalidInputMessage {
 		t.Fatalf("sensitive invalid input code=%d report=%+v", code, result)
+	}
+}
+
+type failingReportWriter struct{}
+
+func (failingReportWriter) Write([]byte) (int, error) { return 0, errors.New("private-output-path") }
+
+func TestRunFailsWhenReportCannotBeWritten(t *testing.T) {
+	directory := t.TempDir()
+	valid, different := filepath.Join(directory, "valid.json"), filepath.Join(directory, "different.json")
+	transcript := testTranscript(t)
+	writeTranscript(t, valid, transcript)
+	transcript.Records[0].Result.Hashes.Model = "different"
+	writeTranscript(t, different, transcript)
+	for _, args := range [][]string{
+		{"validate", "-input", valid},
+		{"compare", "-expected", valid, "-actual", valid},
+		{"compare", "-expected", valid, "-actual", different},
+		{"validate", "-input", filepath.Join(directory, "missing.json")},
+	} {
+		var stderr bytes.Buffer
+		if code := run(args, failingReportWriter{}, &stderr); code != 1 {
+			t.Errorf("run(%q) output failure code=%d, want 1", args, code)
+		}
+		if stderr.String() != "cannot write replay report\n" {
+			t.Errorf("unsafe or missing output diagnostic: %q", stderr.String())
+		}
 	}
 }
 

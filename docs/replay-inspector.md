@@ -20,3 +20,5 @@ JSON, duplicate or unknown fields, unsupported schema versions, malformed
 events, and inconsistent transcript chains. Invalid-input reports intentionally
 do not echo raw input. Mismatch reports use the replay package's existing
 sensitive-event redaction before serialization.
+
+If the command cannot write its report, it exits `1` and emits a bounded diagnostic on standard error. A successful validation or comparison requires successful report output.
