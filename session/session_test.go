@@ -359,7 +359,13 @@ func TestSessionEffectAdmissionSaturationRejectsProducerWithoutStarvingInput(t *
 			}
 			return current, nil, nil
 		},
-		View: testView,
+		View: func(ctx context.Context, current model) (ViewResult, error) {
+			result, err := testView(ctx, current)
+			if current.Count == 3 {
+				result.Diagnostics = []Diagnostic{{Code: "VIEW_NOTE", Message: "accepted view note"}}
+			}
+			return result, err
+		},
 	})
 	defer func() {
 		close(releaseFirst)
@@ -370,14 +376,45 @@ func TestSessionEffectAdmissionSaturationRejectsProducerWithoutStarvingInput(t *
 	if err := s.Send(mustEvent(t, event.Key, event.KeyPayload{Key: "escape"})); err != nil {
 		t.Fatal(err)
 	}
-	waitSnapshot(t, s, func(snapshot state.State[model]) bool { return snapshot.Sequence == 3 })
+	waitDiagnostic(t, s, "EFFECT_ADMISSION_BACKPRESSURE")
+	rejectedSnapshot, err := s.Snapshot()
+	if err != nil || rejectedSnapshot.Sequence != 2 || rejectedSnapshot.Model.Count != 2 || rejectedSnapshot.DiagnosticCount != 0 {
+		t.Fatalf("unadmitted event changed durable state: %#v, %v", rejectedSnapshot, err)
+	}
 	if err := s.Send(mustEvent(t, event.Key, event.KeyPayload{Key: "space"})); err != nil {
 		t.Fatal(err)
 	}
 	waitSnapshot(t, s, func(snapshot state.State[model]) bool {
-		return snapshot.Sequence == 4 && snapshot.Model.Count == 3
+		return snapshot.Model.Count == 3
 	})
 	assertDiagnostic(t, s.Diagnostics(), "EFFECT_ADMISSION_BACKPRESSURE")
+	transcript, err := s.Transcript()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Replay with ample admission capacity. Rejected work must not depend on
+	// reproducing the original executor timing or inject a fake applied event.
+	playback := newSession(t, Options[model]{
+		QueueCapacity: 8, MaxActiveBatches: 1, Reduce: s.reduce, View: s.view,
+		EffectPorts: map[string]effect.Port{"blocked": effect.PortFunc(func(ctx context.Context, _ effect.Call) (any, error) {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		})},
+	})
+	defer playback.Close()
+	_, err = replay.Execute(context.Background(), transcript, func(ctx context.Context, _ state.Checkpoint, recorded event.Event) (state.Checkpoint, error) {
+		if err := playback.Send(recorded); err != nil {
+			return state.Checkpoint{}, err
+		}
+		waitSnapshot(t, playback, func(snapshot state.State[model]) bool { return snapshot.Sequence == recorded.Sequence })
+		return playback.Checkpoint()
+	})
+	if err != nil {
+		t.Fatalf("admission transcript is not replayable: %v", err)
+	}
+	if len(transcript.Records) != 3 || transcript.Records[2].Event.Payload.(event.KeyPayload).Key != "space" {
+		t.Fatalf("rejected producer was recorded as an applied event: %#v", transcript.Records)
+	}
 }
 
 func TestSessionShutdownCancelsPendingEffectAdmission(t *testing.T) {

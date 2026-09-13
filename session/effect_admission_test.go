@@ -166,3 +166,88 @@ func TestEffectAdmissionDequeueObservesClosureBeforeDoneSignal(t *testing.T) {
 		t.Fatalf("closing queue returned pending batch %#v", calls)
 	}
 }
+
+func TestSessionSaturatedTerminalEventsCloseWithEffectRequests(t *testing.T) {
+	for _, kind := range []event.Kind{event.Cancel, event.Shutdown} {
+		t.Run(string(kind), func(t *testing.T) {
+			firstStarted := make(chan struct{})
+			s := newSession(t, Options[model]{
+				QueueCapacity: 1, MaxActiveBatches: 1,
+				EffectPorts: map[string]effect.Port{"hold": effect.PortFunc(func(ctx context.Context, call effect.Call) (any, error) {
+					if call.Sequence == 1 {
+						close(firstStarted)
+					}
+					<-ctx.Done()
+					return nil, ctx.Err()
+				})},
+				Reduce: func(_ context.Context, current model, _ event.Event) (model, []effect.Request, error) {
+					current.Count++
+					return current, []effect.Request{{Spec: effect.Spec{Kind: "hold"}}}, nil
+				},
+			})
+			defer s.Close()
+			startBlockedAndQueuePendingBatch(t, s, firstStarted)
+			if err := s.Send(mustEvent(t, kind, nil)); err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case <-s.loopDone:
+				if s.Lifecycle() != LifecycleClosed {
+					t.Fatal("terminal event did not close the session")
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("saturated terminal event did not stop the session")
+			}
+		})
+	}
+}
+
+func TestSessionEffectAdmissionReleasesReservationAfterFailure(t *testing.T) {
+	for _, failure := range []struct{ stage, diagnostic string }{{"view", "VIEW_FAILED"}, {"bind", "EFFECT_BIND_FAILED"}} {
+		t.Run(failure.stage, func(t *testing.T) {
+			started := make(chan struct{})
+			s := newSession(t, Options[model]{
+				QueueCapacity: 1, MaxActiveBatches: 1,
+				EffectPorts: map[string]effect.Port{"hold": effect.PortFunc(func(ctx context.Context, _ effect.Call) (any, error) {
+					close(started)
+					<-ctx.Done()
+					return nil, ctx.Err()
+				})},
+				Reduce: func(_ context.Context, current model, ev event.Event) (model, []effect.Request, error) {
+					current.Count++
+					kind := "hold"
+					if ev.Payload.(event.KeyPayload).Key == "enter" {
+						current.EffectOrdinals = []int{1}
+						if failure.stage == "bind" {
+							kind = ""
+						}
+					}
+					return current, []effect.Request{{Spec: effect.Spec{Kind: kind}}}, nil
+				},
+				View: func(ctx context.Context, current model) (ViewResult, error) {
+					if failure.stage == "view" && len(current.EffectOrdinals) > 0 {
+						return ViewResult{}, errors.New("view rejected the proposal")
+					}
+					return testView(ctx, current)
+				},
+			})
+			defer s.Close()
+			if err := s.Send(mustEvent(t, event.Key, event.KeyPayload{Key: "enter"})); err != nil {
+				t.Fatal(err)
+			}
+			waitDiagnostic(t, s, failure.diagnostic)
+			if err := s.Send(mustEvent(t, event.Key, event.KeyPayload{Key: "space"})); err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case <-started:
+				snapshot, err := s.Snapshot()
+				if err != nil || snapshot.Sequence != 2 || snapshot.Model.Count != 1 {
+					t.Fatalf("valid retry state = %#v, %v", snapshot, err)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("failed proposal did not release admission capacity")
+			}
+		})
+	}
+}
