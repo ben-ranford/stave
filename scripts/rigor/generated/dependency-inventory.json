@@ -356,6 +356,7 @@
       "importPath": "github.com/ben-ranford/stave/keymap",
       "dir": "keymap",
       "imports": [
+        "bytes",
         "encoding/json",
         "errors",
         "fmt",
@@ -364,6 +365,8 @@
         "github.com/ben-ranford/stave/input",
         "github.com/ben-ranford/stave/primitive",
         "github.com/ben-ranford/stave/semantic",
+        "io",
+        "sort",
         "strconv",
         "strings",
         "time"

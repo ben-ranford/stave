@@ -1,9 +1,12 @@
 package keymap
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -44,6 +47,9 @@ const (
 	CommandPageUp        CommandID = "stave.page.up.v1"
 	CommandPageDown      CommandID = "stave.page.down.v1"
 )
+
+// CodecVersion identifies the current serialized keymap profile format.
+const CodecVersion = "stave.keymap.v1"
 
 const (
 	RouteEvent  RouteKind = "event"
@@ -89,6 +95,12 @@ type Resolution struct {
 type Map struct {
 	profile  string
 	mappings []Mapping
+}
+
+type codecDocument struct {
+	Version  string    `json:"version"`
+	Profile  string    `json:"profile"`
+	Mappings []Mapping `json:"mappings"`
 }
 
 type Dispatcher struct {
@@ -158,6 +170,67 @@ func (m Map) Bindings() []Mapping {
 		out[i].Route.Payload = copyPayload(mapping.Route.Payload)
 	}
 	return out
+}
+
+// Encode returns a deterministic, versioned keymap profile document.
+func (m Map) Encode() ([]byte, error) {
+	mappings := m.Bindings()
+	type sortableMapping struct {
+		mapping Mapping
+		encoded string
+	}
+	sorted := make([]sortableMapping, len(mappings))
+	for i, mapping := range mappings {
+		raw, err := json.Marshal(mapping)
+		if err != nil {
+			return nil, fmt.Errorf("encode keymap mapping: %w", err)
+		}
+		sorted[i] = sortableMapping{mapping: mapping, encoded: string(raw)}
+	}
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].encoded < sorted[j].encoded })
+	for i := range sorted {
+		mappings[i] = sorted[i].mapping
+	}
+	return json.Marshal(codecDocument{Version: CodecVersion, Profile: m.profile, Mappings: mappings})
+}
+
+// Decode imports a versioned keymap profile and verifies its action routes
+// against the application's action manifest.
+func Decode(raw []byte, manifest []action.Definition) (Map, error) {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	var document codecDocument
+	if err := decoder.Decode(&document); err != nil {
+		return Map{}, fmt.Errorf("decode keymap profile: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return Map{}, errors.New("decode keymap profile: trailing data")
+	}
+	if document.Version != CodecVersion {
+		return Map{}, fmt.Errorf("unsupported keymap profile version %q", document.Version)
+	}
+	keymap, err := New(document.Profile, document.Mappings)
+	if err != nil {
+		return Map{}, fmt.Errorf("decode keymap profile: %w", err)
+	}
+	if err := keymap.ValidateActionManifest(manifest); err != nil {
+		return Map{}, err
+	}
+	return keymap, nil
+}
+
+// ValidateActionManifest rejects action bindings that are absent from manifest.
+func (m Map) ValidateActionManifest(manifest []action.Definition) error {
+	known := make(map[action.ID]struct{}, len(manifest))
+	for _, definition := range manifest {
+		known[definition.ID] = struct{}{}
+	}
+	for _, id := range m.ActionIDs() {
+		if _, ok := known[id]; !ok {
+			return fmt.Errorf("keymap action %q is absent from action manifest", id)
+		}
+	}
+	return nil
 }
 
 func (m Map) Hints(command CommandID) []string {

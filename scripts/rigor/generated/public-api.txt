@@ -357,6 +357,7 @@ type TextSource string
 var ErrSecretNotFound error
 
 [github.com/ben-ranford/stave/keymap]
+const CodecVersion untyped string = "stave.keymap.v1"
 const CommandActivate CommandID = "stave.activate.v1"
 const CommandCancel CommandID = "stave.cancel.v1"
 const CommandFocusFirst CommandID = "stave.focus.first.v1"
@@ -371,6 +372,7 @@ const RouteEvent RouteKind = "event"
 const StatusMatch ResolutionStatus = "match"
 const StatusNoMatch ResolutionStatus = "no_match"
 const StatusPending ResolutionStatus = "pending"
+func Decode(raw []byte, manifest []action.Definition) (Map, error)
 func Default() (Map, error)
 func New(profile string, mappings []Mapping) (Map, error)
 func NewDispatcher(keymap Map) *Dispatcher
@@ -380,9 +382,11 @@ method (*Dispatcher) Pending() bool
 method (*Dispatcher) Reset()
 method (Map) ActionIDs() []action.ID
 method (Map) Bindings() []Mapping
+method (Map) Encode() ([]byte, error)
 method (Map) Hints(command CommandID) []string
 method (Map) Inventory() []BindingInventory
 method (Map) Profile() string
+method (Map) ValidateActionManifest(manifest []action.Definition) error
 type Binding struct { Sequence []input.KeyChord `json:"sequence"`; Command CommandID `json:"command"`; Scope semantic.NodeID `json:"scope,omitempty"`; Priority int `json:"priority,omitempty"` }
 type BindingInventory struct { Command CommandID; Sequence []input.KeyChord; Scope semantic.NodeID; Priority int; Hint string; RouteKind RouteKind; ActionID action.ID; EventKind staveevent.Kind }
 type CommandID string
