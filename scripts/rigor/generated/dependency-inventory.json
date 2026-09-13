@@ -484,7 +484,6 @@
         "github.com/ben-ranford/stave/protocol",
         "github.com/ben-ranford/stave/semantic",
         "github.com/ben-ranford/stave/session",
-        "github.com/ben-ranford/stave/state",
         "io",
         "sync",
         "time"

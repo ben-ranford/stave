@@ -9,7 +9,6 @@ import (
 	"github.com/ben-ranford/stave/diag"
 	"github.com/ben-ranford/stave/semantic"
 	"github.com/ben-ranford/stave/session"
-	"github.com/ben-ranford/stave/state"
 )
 
 // BindSession attaches a Session to caller-owned agent Options. Applications
@@ -39,12 +38,13 @@ func BindSession[M any](s *session.Session[M], options Options) (Options, error)
 }
 
 type sessionBridge[M any] struct {
-	session     *session.Session[M]
-	actions     *action.Registry
-	mu          sync.Mutex
-	previous    state.State[M]
-	hasPrevious bool
-	cancelOnce  sync.Once
+	session          *session.Session[M]
+	actions          *action.Registry
+	mu               sync.Mutex
+	previousTree     semantic.Tree
+	previousRevision uint64
+	hasPrevious      bool
+	cancelOnce       sync.Once
 }
 
 func (b *sessionBridge[M]) cancel(context.Context) error {
@@ -74,17 +74,17 @@ func (b *sessionBridge[M]) snapshot(_ context.Context, mode string, since uint64
 		envelope.Actions = b.actions.Manifest()
 	}
 	if mode == "patch" {
-		if !b.hasPrevious || since != b.previous.Revision || current.Revision <= since {
+		if !b.hasPrevious || since != b.previousRevision || current.Revision <= since {
 			return SnapshotEnvelope{}, errors.New("agent: stale session snapshot revision")
 		}
-		patch := semantic.Diff(b.previous.Tree, current.Tree)
+		patch := semantic.Diff(b.previousTree, current.Tree)
 		envelope.Mode, envelope.Patch = "patch", &patch
 	} else {
 		envelope.Mode = "full"
 		snapshot := current.Tree.Snapshot()
 		envelope.Snapshot = &snapshot
 	}
-	b.previous, b.hasPrevious = current, true
+	b.previousTree, b.previousRevision, b.hasPrevious = current.Tree, current.Revision, true
 	return envelope, nil
 }
 
