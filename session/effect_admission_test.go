@@ -15,7 +15,7 @@ import (
 func TestEffectAdmissionReservationPublicationBoundary(t *testing.T) {
 	q := newEffectAdmissionQueue(1)
 	defer q.close()
-	if err := q.reserve(); err != nil {
+	if _, err := q.reserve(); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -23,7 +23,7 @@ func TestEffectAdmissionReservationPublicationBoundary(t *testing.T) {
 		t.Fatal("unpublished reservation became available to the worker")
 	default:
 	}
-	if err := q.reserve(); !errors.Is(err, ErrBackpressure) {
+	if _, err := q.reserve(); !errors.Is(err, ErrBackpressure) {
 		t.Fatalf("second reservation = %v, want backpressure", err)
 	}
 	q.commit([]effect.Call{{Sequence: 1}})
@@ -31,11 +31,11 @@ func TestEffectAdmissionReservationPublicationBoundary(t *testing.T) {
 	if !ok || len(calls) != 1 || calls[0].Sequence != 1 {
 		t.Fatalf("committed batch = %#v, %t", calls, ok)
 	}
-	if err := q.reserve(); !errors.Is(err, ErrBackpressure) {
+	if _, err := q.reserve(); !errors.Is(err, ErrBackpressure) {
 		t.Fatalf("worker-held batch lost its reservation: %v", err)
 	}
 	q.release()
-	if err := q.reserve(); err != nil {
+	if _, err := q.reserve(); err != nil {
 		t.Fatalf("completed admission did not release capacity: %v", err)
 	}
 	q.commit([]effect.Call{{Sequence: 2}})
@@ -49,7 +49,7 @@ func TestEffectAdmissionReservationPublicationBoundary(t *testing.T) {
 func TestEffectAdmissionCloseCancelsCommittedAndUnpublishedBatches(t *testing.T) {
 	q := newEffectAdmissionQueue(2)
 	for range 2 {
-		if err := q.reserve(); err != nil {
+		if _, err := q.reserve(); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -61,7 +61,7 @@ func TestEffectAdmissionCloseCancelsCommittedAndUnpublishedBatches(t *testing.T)
 	if len(q.committed) != 0 || q.reserved != 0 {
 		t.Fatalf("closed queue retained batches or reservations: %d, %d", len(q.committed), q.reserved)
 	}
-	if err := q.reserve(); !errors.Is(err, ErrSessionClosed) {
+	if _, err := q.reserve(); !errors.Is(err, ErrSessionClosed) {
 		t.Fatalf("closed queue reserve = %v", err)
 	}
 	if calls, ok := q.next(context.Background()); ok || calls != nil {
@@ -151,7 +151,7 @@ func TestSessionEffectsWaitForPublication(t *testing.T) {
 
 func TestEffectAdmissionDequeueObservesClosureBeforeDoneSignal(t *testing.T) {
 	q := newEffectAdmissionQueue(1)
-	if err := q.reserve(); err != nil {
+	if _, err := q.reserve(); err != nil {
 		t.Fatal(err)
 	}
 	q.commit([]effect.Call{{Sequence: 1}})
@@ -353,7 +353,7 @@ func TestEffectAdmissionCanceledWaitDiscardsBufferedBatch(t *testing.T) {
 	cancel()
 	for range 64 {
 		q := newEffectAdmissionQueue(1)
-		if err := q.reserve(); err != nil {
+		if _, err := q.reserve(); err != nil {
 			t.Fatal(err)
 		}
 		q.commit([]effect.Call{{Sequence: 1}})

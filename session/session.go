@@ -435,7 +435,7 @@ func (s *Session[M]) reserveEffectBatch(raw event.Event, requestCount int) effec
 	if requestCount == 0 {
 		return effectAdmissionSkipped
 	}
-	err := s.effectAdmissions.reserve()
+	overflowEpisode, err := s.effectAdmissions.reserve()
 	if err == nil {
 		return effectAdmissionReserved
 	}
@@ -445,7 +445,9 @@ func (s *Session[M]) reserveEffectBatch(raw event.Event, requestCount int) effec
 			// then cancel its unadmitted follow-ups by closing after publication.
 			return effectAdmissionTerminal
 		}
-		s.addTransientDiagnostic("EFFECT_ADMISSION_BACKPRESSURE", "pending effect admission queue saturated", nil)
+		if overflowEpisode {
+			s.addTransientDiagnostic("EFFECT_ADMISSION_BACKPRESSURE", "pending effect admission queue saturated", nil)
+		}
 	}
 	if raw.Kind == event.Cancel || raw.Kind == event.Shutdown {
 		s.beginClose()
@@ -489,7 +491,7 @@ func (s *Session[M]) admitEffects() {
 				}
 				continue
 			}
-			if !errors.Is(err, effect.ErrClosed) || s.ctx.Err() == nil {
+			if !errors.Is(err, effect.ErrClosed) {
 				s.addTransientDiagnostic("EFFECT_DELIVER_FAILED", "effect delivery failed", nil)
 			}
 			s.effectAdmissions.release()
@@ -688,11 +690,12 @@ type eventQueue struct {
 // batches to the worker only after publication. Reservations include the batch
 // held by the worker while it retries executor admission.
 type effectAdmissionQueue struct {
-	mu        sync.Mutex
-	committed chan []effect.Call
-	done      chan struct{}
-	reserved  int
-	closed    bool
+	mu          sync.Mutex
+	committed   chan []effect.Call
+	done        chan struct{}
+	reserved    int
+	closed      bool
+	overflowing bool
 }
 
 func newEffectAdmissionQueue(capacity int) *effectAdmissionQueue {
@@ -702,17 +705,19 @@ func newEffectAdmissionQueue(capacity int) *effectAdmissionQueue {
 	}
 }
 
-func (q *effectAdmissionQueue) reserve() error {
+func (q *effectAdmissionQueue) reserve() (bool, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	if q.closed {
-		return ErrSessionClosed
+		return false, ErrSessionClosed
 	}
 	if q.reserved >= cap(q.committed) {
-		return ErrBackpressure
+		episode := !q.overflowing
+		q.overflowing = true
+		return episode, ErrBackpressure
 	}
 	q.reserved++
-	return nil
+	return false, nil
 }
 
 func (q *effectAdmissionQueue) commit(calls []effect.Call) {
@@ -751,6 +756,7 @@ func (q *effectAdmissionQueue) release() {
 	defer q.mu.Unlock()
 	if q.reserved > 0 {
 		q.reserved--
+		q.overflowing = false
 	}
 }
 
