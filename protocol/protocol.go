@@ -138,6 +138,10 @@ type SnapshotSubscribeResult struct {
 type SnapshotSubscriptionNotification struct {
 	Snapshot SnapshotResult `json:"snapshot"`
 }
+type SnapshotSubscriptionTerminal struct {
+	State  string `json:"state"`
+	Reason string `json:"reason"`
+}
 type InvokeParams struct {
 	CallID       string                    `json:"callId"`
 	ActionID     string                    `json:"actionId"`

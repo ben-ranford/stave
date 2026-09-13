@@ -24,7 +24,7 @@ func TestSnapshotSubscriptionRequiresNegotiatedExtensionAndIsIdempotentlyRemoved
 		SnapshotEnvelope:          func(context.Context, string, uint64) (SnapshotEnvelope, error) { return envelope, nil },
 		SnapshotPublicationWaiter: func(ctx context.Context, _ uint64) error { <-ctx.Done(); return ctx.Err() },
 	}
-	requests := "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"stave.initialize\",\"params\":{\"protocolVersions\":[\"1.0\"]}}\n" +
+	requests := "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"stave.initialize\",\"params\":{\"protocolVersions\":[\"1.0\"],\"capabilities\":{\"snapshotSubscriptionVersions\":[\"stave.snapshot.subscribe/v1\"]}}}\n" +
 		"{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"stave.initialized\"}\n" +
 		"{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"stave.snapshot.subscribe\"}\n" +
 		"{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"stave.snapshot.unsubscribe\"}\n"
@@ -70,7 +70,7 @@ func TestSnapshotSubscriptionBaselinePrecedesNotification(t *testing.T) {
 	writer := &baselineGateWriter{gate: gate, blocked: blocked, notification: notificationWritten}
 	done := make(chan error, 1)
 	go func() { done <- New(options).Serve(context.Background(), reader, writer) }()
-	_, _ = io.WriteString(inputWriter, "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"stave.initialize\",\"params\":{\"protocolVersions\":[\"1.0\"]}}\n{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"stave.initialized\"}\n{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"stave.snapshot.subscribe\"}\n")
+	_, _ = io.WriteString(inputWriter, "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"stave.initialize\",\"params\":{\"protocolVersions\":[\"1.0\"],\"capabilities\":{\"snapshotSubscriptionVersions\":[\"stave.snapshot.subscribe/v1\"]}}}\n{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"stave.initialized\"}\n{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"stave.snapshot.subscribe\"}\n")
 	select {
 	case <-blocked:
 	case <-time.After(time.Second):
@@ -157,7 +157,7 @@ func TestSnapshotSubscriptionRejectsLegacyAndCompatibilityMode(t *testing.T) {
 			return capability.Manifest{ProtocolVersions: []string{protocol.Version}, SnapshotModes: []string{"full"}}, nil
 		}, SnapshotEnvelope: func(context.Context, string, uint64) (SnapshotEnvelope, error) { return envelope, nil }, SnapshotPublicationWaiter: func(context.Context, uint64) error { return nil }},
 	} {
-		requests := "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"stave.initialize\",\"params\":{\"protocolVersions\":[\"1.0\"]}}\n{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"stave.initialized\"}\n{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"stave.snapshot.subscribe\"}\n"
+		requests := "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"stave.initialize\",\"params\":{\"protocolVersions\":[\"1.0\"],\"capabilities\":{\"snapshotSubscriptionVersions\":[\"stave.snapshot.subscribe/v1\"]}}}\n{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"stave.initialized\"}\n{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"stave.snapshot.subscribe\"}\n"
 		var output bytes.Buffer
 		if err := New(options).Serve(context.Background(), input(requests), &output); err != nil {
 			t.Fatal(err)

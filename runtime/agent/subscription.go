@@ -13,6 +13,7 @@ type snapshotSubscription struct {
 	mu       sync.Mutex
 	active   bool
 	sequence uint64
+	revision uint64
 	pending  *protocol.SnapshotResult
 	terminal string
 	wake     chan struct{}
@@ -20,11 +21,16 @@ type snapshotSubscription struct {
 	done     chan struct{}
 }
 
-func newSnapshotSubscription(parent context.Context, baseline uint64, wake chan struct{}, wait SnapshotPublicationWaiter, snapshot func(context.Context) (protocol.SnapshotResult, bool)) *snapshotSubscription {
+func newSnapshotSubscription(parent context.Context, baseline protocol.SnapshotResult, wake chan struct{}, wait SnapshotPublicationWaiter, snapshot func(context.Context) (protocol.SnapshotResult, bool)) *snapshotSubscription {
 	ctx, cancel := context.WithCancel(parent)
-	s := &snapshotSubscription{active: true, sequence: baseline, wake: wake, cancel: cancel, done: make(chan struct{})}
+	s := &snapshotSubscription{active: true, sequence: baseline.Sequence, revision: baseline.Revision, wake: wake, cancel: cancel, done: make(chan struct{})}
 	go func() {
 		defer close(s.done)
+		defer func() {
+			if recover() != nil {
+				s.fail("provider_failed")
+			}
+		}()
 		for {
 			if wait(ctx, s.currentSequence()) != nil {
 				s.fail("session_closed")
@@ -36,6 +42,7 @@ func newSnapshotSubscription(parent context.Context, baseline uint64, wake chan 
 				return
 			}
 			if !s.replace(result) {
+				s.fail("provider_failed")
 				return
 			}
 		}
@@ -54,6 +61,7 @@ func (s *snapshotSubscription) fail(reason string) {
 		}
 	}
 	s.mu.Unlock()
+	s.cancel()
 }
 
 func (s *snapshotSubscription) currentSequence() uint64 {
@@ -64,12 +72,13 @@ func (s *snapshotSubscription) currentSequence() uint64 {
 func (s *snapshotSubscription) replace(result protocol.SnapshotResult) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if !s.active || result.Sequence <= s.sequence {
-		return s.active
+	if !s.active || result.Sequence <= s.sequence || result.Revision < s.revision {
+		return false
 	}
 	copy := result
 	s.pending = &copy
 	s.sequence = result.Sequence
+	s.revision = result.Revision
 	select {
 	case s.wake <- struct{}{}:
 	default:
@@ -98,12 +107,9 @@ func (s *snapshotSubscription) takeTerminal() (string, bool) {
 }
 func (s *snapshotSubscription) close() {
 	s.mu.Lock()
-	active := s.active
 	s.active = false
 	s.pending = nil
 	s.mu.Unlock()
-	if active {
-		s.cancel()
-		<-s.done
-	}
+	s.cancel()
+	<-s.done
 }

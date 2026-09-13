@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "stave.snapshot.subscribe/v1",
+  "title": "Stave negotiated snapshot subscription extension",
+  "description": "Opt-in JSON-RPC messages for full snapshot subscriptions. This extension does not alter stave.protocol/v1.",
+  "oneOf": [
+    {"$ref": "#/$defs/subscribeRequest"},
+    {"$ref": "#/$defs/unsubscribeRequest"},
+    {"$ref": "#/$defs/subscribeSuccessResponse"},
+    {"$ref": "#/$defs/unsubscribeSuccessResponse"},
+    {"$ref": "#/$defs/identifiedErrorResponse"},
+    {"$ref": "#/$defs/subscriptionNotification"}
+  ],
+  "$defs": {
+    "id": {"$ref": "../protocol.json#/$defs/id"},
+    "error": {"$ref": "../protocol.json#/$defs/error"},
+    "emptyParams": {"type": "object", "maxProperties": 0, "additionalProperties": false},
+    "optionalEmptyParams": {"oneOf": [{"$ref": "#/$defs/emptyParams"}, {"type": "null"}]},
+    "fullSnapshot": {
+      "allOf": [
+        {"$ref": "../protocol.json#/$defs/snapshotResult"},
+        {
+          "type": "object",
+          "required": ["snapshot"],
+          "not": {"required": ["patch"]},
+          "properties": {
+            "mode": {"const": "full"},
+            "sequence": {"type": "integer", "minimum": 1},
+            "revision": {"type": "integer", "minimum": 1}
+          }
+        }
+      ]
+    },
+    "subscribeRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["jsonrpc", "id", "method"],
+      "properties": {
+        "jsonrpc": {"const": "2.0"},
+        "id": {"$ref": "#/$defs/id"},
+        "method": {"const": "stave.snapshot.subscribe"},
+        "params": {"$ref": "#/$defs/optionalEmptyParams"}
+      }
+    },
+    "unsubscribeRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["jsonrpc", "id", "method"],
+      "properties": {
+        "jsonrpc": {"const": "2.0"},
+        "id": {"$ref": "#/$defs/id"},
+        "method": {"const": "stave.snapshot.unsubscribe"},
+        "params": {"$ref": "#/$defs/optionalEmptyParams"}
+      }
+    },
+    "subscribeSuccessResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["jsonrpc", "id", "result"],
+      "not": {"required": ["error"]},
+      "properties": {
+        "jsonrpc": {"const": "2.0"},
+        "id": {"$ref": "#/$defs/id"},
+        "result": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["snapshot"],
+          "properties": {"snapshot": {"$ref": "#/$defs/fullSnapshot"}}
+        }
+      }
+    },
+    "unsubscribeSuccessResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["jsonrpc", "id", "result"],
+      "not": {"required": ["error"]},
+      "properties": {
+        "jsonrpc": {"const": "2.0"},
+        "id": {"$ref": "#/$defs/id"},
+        "result": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ok"],
+          "properties": {"ok": {"const": true}}
+        }
+      }
+    },
+    "identifiedErrorResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["jsonrpc", "id", "error"],
+      "not": {"required": ["result"]},
+      "properties": {
+        "jsonrpc": {"const": "2.0"},
+        "id": {"$ref": "#/$defs/id"},
+        "error": {"$ref": "#/$defs/error"}
+      }
+    },
+    "subscriptionNotification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["jsonrpc", "method", "params"],
+      "properties": {
+        "jsonrpc": {"const": "2.0"},
+        "method": {"const": "stave.snapshot.subscription"},
+        "params": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["snapshot"],
+              "properties": {"snapshot": {"$ref": "#/$defs/fullSnapshot"}}
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["state", "reason"],
+              "properties": {
+                "state": {"const": "terminated"},
+                "reason": {"enum": ["provider_failed", "session_closed", "output_limit"]}
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

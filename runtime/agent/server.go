@@ -34,6 +34,11 @@ type SnapshotEnvelope struct {
 	Diagnostics                                                                    []diag.Diagnostic
 }
 type SnapshotEnvelopeProvider func(context.Context, string, uint64) (SnapshotEnvelope, error)
+
+// SnapshotPublicationWaiter waits for a wire sequence greater than after. It
+// must check current state before sleeping and honor context cancellation.
+// An error ends the subscription; BindSession supplies this callback for a
+// session, including its one-based wire-sequence projection.
 type SnapshotPublicationWaiter func(context.Context, uint64) error
 
 // AuthorizeCall runs before Registry.Invoke.
@@ -221,12 +226,22 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 					continue
 				}
 				if reason, terminal := current.takeTerminal(); terminal {
-					b, _ := json.Marshal(protocol.Notification{JSONRPC: protocol.JSONRPC, Method: "stave.snapshot.subscription", Params: mustJSON(map[string]string{"state": "terminated", "reason": reason})})
+					current.close()
+					subscriptionMu.Lock()
+					if subscription == current {
+						subscription = nil
+					}
+					subscriptionMu.Unlock()
+					b, _ := json.Marshal(protocol.Notification{JSONRPC: protocol.JSONRPC, Method: "stave.snapshot.subscription", Params: mustJSON(protocol.SnapshotSubscriptionTerminal{State: "terminated", Reason: reason})})
 					if len(b) <= s.outputLimit() {
 						writeMu.Lock()
 						_, e := out.Write(append(b, '\n'))
 						setWriteErr(e)
 						writeMu.Unlock()
+						if e != nil {
+							_ = in.Close()
+							return
+						}
 					}
 					continue
 				}
@@ -243,6 +258,11 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 				_, e = out.Write(append(b, '\n'))
 				setWriteErr(e)
 				writeMu.Unlock()
+				if e != nil {
+					current.close()
+					_ = in.Close()
+					return
+				}
 			case n, ok := <-notifications:
 				if ok {
 					b, e := json.Marshal(n)
@@ -256,6 +276,12 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 						s.observe(ctx, "protocol.output_error", map[string]string{"cause": "write_failed"})
 					}
 				} else {
+					subscriptionMu.Lock()
+					if subscription != nil {
+						subscription.close()
+						subscription = nil
+					}
+					subscriptionMu.Unlock()
 					notifications = nil
 				}
 			case item, ok := <-writes:
@@ -362,6 +388,11 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 			continue
 		}
 		if r.Method == "stave.snapshot.subscribe" {
+			// A request ID is required so the client receives its baseline before
+			// any notifications. Notifications never create subscriptions.
+			if len(r.ID) == 0 {
+				continue
+			}
 			subscriptionMu.Lock()
 			exists := subscription != nil
 			subscriptionMu.Unlock()
@@ -380,7 +411,7 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 			}
 			if response.Error == nil && baseline != nil {
 				subscriptionMu.Lock()
-				subscription = newSnapshotSubscription(ctx, baseline.Sequence, subscriptionWake, s.opt.SnapshotPublicationWaiter, func(waitCtx context.Context) (protocol.SnapshotResult, bool) {
+				subscription = newSnapshotSubscription(ctx, *baseline, subscriptionWake, s.opt.SnapshotPublicationWaiter, func(waitCtx context.Context) (protocol.SnapshotResult, bool) {
 					result, err := s.subscriptionSnapshot(waitCtx)
 					return result, err == nil
 				})
@@ -389,6 +420,16 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 			continue
 		}
 		if r.Method == "stave.snapshot.unsubscribe" {
+			if len(r.ID) == 0 {
+				continue
+			}
+			var empty struct{}
+			if !s.snapshotSubscriptionAllowed() || (len(r.Params) > 0 && decodeStrict(r.Params, &empty) != nil) {
+				if len(r.ID) > 0 {
+					_ = write(protocol.Response{JSONRPC: protocol.JSONRPC, ID: r.ID, Error: protocol.Errorf(protocol.InvalidRequest, "invalid snapshot unsubscribe request")})
+				}
+				continue
+			}
 			subscriptionMu.Lock()
 			if subscription != nil {
 				subscription.close()
@@ -463,7 +504,7 @@ func mustJSON(value any) json.RawMessage { b, _ := json.Marshal(value); return b
 
 func (s *Server) snapshotSubscriptionAllowed() bool {
 	s.mu.Lock()
-	resolved, ready := s.negotiated, s.ready
+	resolved, ready := s.negotiated, s.ready && !s.closed && !s.cancelling
 	s.mu.Unlock()
 	if !ready || s.opt.SnapshotEnvelope == nil || s.opt.SnapshotPublicationWaiter == nil || !s.snapshotModeAllowed("full") {
 		return false
@@ -481,7 +522,7 @@ func (s *Server) snapshotSubscriptionAllowed() bool {
 }
 
 func (s *Server) subscriptionSnapshot(ctx context.Context) (protocol.SnapshotResult, error) {
-	response := s.handle(ctx, protocol.Request{JSONRPC: protocol.JSONRPC, Method: "stave.snapshot", Params: json.RawMessage(`{"mode":"full"}`)})
+	response := s.handleSafely(ctx, protocol.Request{JSONRPC: protocol.JSONRPC, Method: "stave.snapshot", Params: json.RawMessage(`{"mode":"full"}`)})
 	if response.Error != nil {
 		return protocol.SnapshotResult{}, errors.New("snapshot subscription failed")
 	}
@@ -494,7 +535,8 @@ func (s *Server) subscriptionSnapshot(ctx context.Context) (protocol.SnapshotRes
 
 func (s *Server) snapshotSubscribe(ctx context.Context, request protocol.Request) (protocol.Response, *protocol.SnapshotResult) {
 	response := protocol.Response{JSONRPC: protocol.JSONRPC, ID: request.ID}
-	if len(request.Params) > 0 && string(request.Params) != "{}" && string(request.Params) != "null" {
+	var empty struct{}
+	if len(request.Params) > 0 && decodeStrict(request.Params, &empty) != nil {
 		response.Error = protocol.Errorf(protocol.InvalidParams, "snapshot subscription takes no parameters")
 		return response, nil
 	}
@@ -508,7 +550,23 @@ func (s *Server) snapshotSubscribe(ctx context.Context, request protocol.Request
 		return response, nil
 	}
 	response.Result = protocol.SnapshotSubscribeResult{Snapshot: result}
+	encoded, err := json.Marshal(response)
+	if err != nil || len(encoded) > s.outputLimit() {
+		response.Result = nil
+		response.Error = protocol.Errorf(protocol.OutputLimit, "subscription baseline exceeds output limit")
+		return response, nil
+	}
 	return response, &result
+}
+
+func offersSnapshotSubscription(capabilities map[string]any) bool {
+	versions, _ := capabilities["snapshotSubscriptionVersions"].([]any)
+	for _, version := range versions {
+		if version == protocol.SnapshotSubscriptionVersion {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) outputLimit() int {
@@ -662,6 +720,16 @@ func (s *Server) handle(parent context.Context, r protocol.Request) protocol.Res
 			if e != nil {
 				return fail(protocol.CapabilityMismatch, "capability negotiation failed")
 			}
+			var subscriptionVersions []string
+			if offersSnapshotSubscription(p.Capabilities) {
+				for _, version := range m.SnapshotSubscriptionVersions {
+					if version == protocol.SnapshotSubscriptionVersion {
+						subscriptionVersions = []string{protocol.SnapshotSubscriptionVersion}
+						break
+					}
+				}
+			}
+			m.SnapshotSubscriptionVersions = subscriptionVersions
 			resolved = m.Clone()
 		} else {
 			resolved = cloneJSONValue(s.opt.Manifest)

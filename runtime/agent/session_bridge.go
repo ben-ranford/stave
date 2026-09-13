@@ -37,7 +37,10 @@ func BindSession[M any](s *session.Session[M], options Options) (Options, error)
 }
 
 func (b *sessionBridge[M]) waitForPublication(ctx context.Context, after uint64) error {
-	return b.session.WaitForPublication(ctx, func(snapshot state.State[M]) bool { return snapshot.Sequence > after })
+	if after == 0 {
+		return errors.New("agent: subscription sequence must be positive")
+	}
+	return b.session.WaitForPublication(ctx, func(snapshot state.State[M]) bool { return snapshot.Sequence > after-1 })
 }
 
 type sessionBridge[M any] struct {
