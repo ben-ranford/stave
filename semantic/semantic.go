@@ -326,41 +326,48 @@ func (t Tree) Query(query Query, limits QueryLimits) (QueryResult, error) {
 	}
 
 	result := QueryResult{Nodes: make([]Node, 0)}
-	var walk func(Node, int) bool
-	walk = func(node Node, depth int) bool {
-		if result.Visited == limits.MaxVisited {
-			result.Truncated = true
-			result.Limit = QueryLimitVisited
-			return false
-		}
-		if depth > limits.MaxDepth {
-			result.Truncated = true
-			result.Limit = QueryLimitDepth
-			return false
-		}
-		result.Visited++
-		if query.matches(node) {
-			if len(result.Nodes) == limits.MaxResults {
-				result.Truncated = true
-				result.Limit = QueryLimitResults
-				return false
-			}
-			result.Nodes = append(result.Nodes, node)
-		}
-		if depth == limits.MaxDepth && len(node.children) > 0 {
-			result.Truncated = true
-			result.Limit = QueryLimitDepth
-			return false
-		}
-		for _, child := range node.children {
-			if !walk(child, depth+1) {
-				return false
-			}
-		}
-		return true
-	}
-	walk(t.root, 0)
+	query.walk(t.root, 0, limits, &result)
 	return result, nil
+}
+
+func (query Query) walk(node Node, depth int, limits QueryLimits, result *QueryResult) bool {
+	if !query.visit(node, depth, limits, result) {
+		return false
+	}
+	for _, child := range node.children {
+		if !query.walk(child, depth+1, limits, result) {
+			return false
+		}
+	}
+	return true
+}
+
+func (query Query) visit(node Node, depth int, limits QueryLimits, result *QueryResult) bool {
+	if result.Visited == limits.MaxVisited {
+		result.Truncated = true
+		result.Limit = QueryLimitVisited
+		return false
+	}
+	if depth > limits.MaxDepth {
+		result.Truncated = true
+		result.Limit = QueryLimitDepth
+		return false
+	}
+	result.Visited++
+	if query.matches(node) {
+		if len(result.Nodes) == limits.MaxResults {
+			result.Truncated = true
+			result.Limit = QueryLimitResults
+			return false
+		}
+		result.Nodes = append(result.Nodes, node)
+	}
+	if depth == limits.MaxDepth && len(node.children) > 0 {
+		result.Truncated = true
+		result.Limit = QueryLimitDepth
+		return false
+	}
+	return true
 }
 
 func (query Query) validate(limits QueryLimits) error {
@@ -398,17 +405,8 @@ func (query Query) matches(node Node) bool {
 	if query.Role != "" && node.role != query.Role {
 		return false
 	}
-	if query.Action != "" {
-		found := false
-		for _, action := range node.actions {
-			if action.ID == query.Action {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return false
-		}
+	if query.Action != "" && !node.hasAction(query.Action) {
+		return false
 	}
 	for key, value := range query.Metadata {
 		if actual, ok := node.metadata[key]; !ok || actual != value {
@@ -416,6 +414,15 @@ func (query Query) matches(node Node) bool {
 		}
 	}
 	return true
+}
+
+func (n Node) hasAction(id ActionID) bool {
+	for _, action := range n.actions {
+		if action.ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 type Snapshot struct {
