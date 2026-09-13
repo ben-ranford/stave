@@ -240,8 +240,9 @@ func (s *Session[M]) Wait(ctx context.Context, predicate func(state.State[M]) bo
 // Wait, it does not poll: predicates that depend on elapsed time should keep
 // using Wait. Predicate runs without the session lock and may call Session
 // methods. Session closure returns ErrSessionClosed after evaluating its latest
-// publication if the predicate remains false; caller cancellation
-// returns ctx.Err().
+// publication if the predicate remains false. Transient diagnostics produced
+// after closure are discarded, including completions from effects that ignore
+// cancellation; caller cancellation returns ctx.Err().
 func (s *Session[M]) WaitForPublication(ctx context.Context, predicate func(state.State[M]) bool) error {
 	for {
 		if err := ctx.Err(); err != nil {
@@ -656,9 +657,15 @@ func (s *Session[M]) addDiagnosticLocked(diagnostic Diagnostic) uint64 {
 
 func (s *Session[M]) addTransientDiagnostic(code, message string, safe map[string]string) {
 	s.mu.Lock()
+	defer s.mu.Unlock()
+	// LifecycleClosed is the terminal publication boundary. Effects can ignore
+	// cancellation, so their eventual sink calls must not mutate diagnostics or
+	// signal a publication after loopDone becomes observable.
+	if s.lifecycle == LifecycleClosed {
+		return
+	}
 	s.diagnostics = append(s.diagnostics, sanitizeDiagnostic(Diagnostic{Code: code, Message: message, SafeContext: safe}))
 	s.notifyPublicationLocked()
-	s.mu.Unlock()
 }
 
 func (s *Session[M]) notifyPublicationLocked() {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -775,6 +776,30 @@ func TestSessionShutdownCancelsPendingEffectAdmission(t *testing.T) {
 	}
 }
 
+func TestSessionCloseDropsLateEffectResultWithoutPublication(t *testing.T) {
+	s := newPublicationWaitTestSession(t, context.Background())
+	s.Close()
+
+	before := s.Diagnostics()
+	err := s.enqueueInternalEvent(event.Event{
+		SchemaVersion: event.SchemaVersion,
+		Kind:          event.EffectResult,
+		Payload: event.EffectResultPayload{
+			CallID: "late-call",
+			Status: "completed",
+		},
+	})
+	if !errors.Is(err, ErrSessionClosed) {
+		t.Fatalf("enqueueInternalEvent() error = %v, want ErrSessionClosed", err)
+	}
+	if got := s.Diagnostics(); !reflect.DeepEqual(got, before) {
+		t.Fatalf("late effect changed diagnostics after close: got %#v, want %#v", got, before)
+	}
+	if err := s.WaitForPublication(context.Background(), func(state.State[model]) bool { return false }); !errors.Is(err, ErrSessionClosed) {
+		t.Fatalf("WaitForPublication() error = %v, want ErrSessionClosed", err)
+	}
+}
+
 func TestSessionCancellationDiscardsLateEffectResults(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
@@ -815,7 +840,6 @@ func TestSessionCancellationDiscardsLateEffectResults(t *testing.T) {
 	}()
 	<-closed
 	close(release)
-	waitDiagnostic(t, s, "LATE_EFFECT_RESULT")
 
 	snapshot, err := s.Snapshot()
 	if err != nil {
