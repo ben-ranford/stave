@@ -1,9 +1,7 @@
 package state
 
 import (
-	"bytes"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 
 	"github.com/ben-ranford/stave/capability"
@@ -363,9 +361,7 @@ func cloneJSON[T any](value T) (T, error) {
 		return zero, err
 	}
 	var out T
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.UseNumber()
-	if err := decoder.Decode(&out); err != nil {
+	if err := canonical.Decode(data, &out); err != nil {
 		var zero T
 		return zero, fmt.Errorf("clone model: %w", err)
 	}
@@ -378,9 +374,7 @@ func toAny(value any) (any, error) {
 		return nil, err
 	}
 	var out any
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.UseNumber()
-	if err := decoder.Decode(&out); err != nil {
+	if err := canonical.Decode(data, &out); err != nil {
 		return nil, err
 	}
 	return out, nil

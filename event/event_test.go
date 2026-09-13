@@ -155,6 +155,40 @@ func TestClonePreservesJSONNumberInActionArguments(t *testing.T) {
 	}
 }
 
+func TestClonePreservesCanonicalBytesAndIsolation(t *testing.T) {
+	arguments := map[string]any{"nested": map[string]any{"n": json.Number("9007199254740993")}}
+	ev, err := New(ActionInvoked, ActionInvokedPayload{CallID: "c", ActionID: "a", Arguments: arguments})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := ev.CanonicalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cloned, err := ev.Clone()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := cloned.CanonicalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(want) {
+		t.Fatalf("clone canonical JSON changed:\nwant %s\ngot  %s", want, got)
+	}
+	arguments["nested"].(map[string]any)["n"] = json.Number("1")
+	cloneArgs := cloned.Payload.(ActionInvokedPayload).Arguments.(map[string]any)
+	if got := cloneArgs["nested"].(map[string]any)["n"]; got != json.Number("9007199254740993") {
+		t.Fatalf("clone retained source alias: %#v", got)
+	}
+}
+
+func TestCloneRejectsUnrehydratableEvent(t *testing.T) {
+	if _, err := (Event{SchemaVersion: SchemaVersion, Kind: "unknown"}).Clone(); err == nil {
+		t.Fatal("Clone accepted an unsupported event kind")
+	}
+}
+
 func TestEventUnmarshalRejectsUnknownTopLevelFields(t *testing.T) {
 	var ev Event
 	if err := json.Unmarshal([]byte(`{"schemaVersion":"stave.event/v1","kind":"key","payload":{"key":"enter"},"unexpected":true}`), &ev); err == nil {

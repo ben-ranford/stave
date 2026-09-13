@@ -1,9 +1,7 @@
 package replay
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/ben-ranford/stave/event"
@@ -189,9 +187,7 @@ func (t Transcript) Clone() (Transcript, error) {
 		return Transcript{}, err
 	}
 	var out Transcript
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.UseNumber()
-	if err := decoder.Decode(&out); err != nil {
+	if err := canonical.Decode(data, &out); err != nil {
 		return Transcript{}, err
 	}
 	return out, nil

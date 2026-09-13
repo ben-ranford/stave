@@ -1,13 +1,16 @@
 package effect
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/ben-ranford/stave/event"
+	"github.com/ben-ranford/stave/internal/canonical"
 )
 
 func TestIDDeterminism(t *testing.T) {
@@ -243,5 +246,34 @@ func TestOutcomeEventSanitizesUntrustedErrorControls(t *testing.T) {
 	payload := ev.Payload.(event.EffectResultPayload)
 	if payload.Error != "bad[31msecret" {
 		t.Fatalf("sanitized error = %q", payload.Error)
+	}
+}
+
+func TestCloneAnyPreservesCanonicalBytesAndIsolation(t *testing.T) {
+	value := map[string]any{"nested": map[string]any{"n": json.Number("9007199254740993")}}
+	want, err := canonical.Encode(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cloned, err := cloneAny(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := canonical.Encode(cloned)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("clone canonical JSON changed:\nwant %s\ngot  %s", want, got)
+	}
+	value["nested"].(map[string]any)["n"] = json.Number("1")
+	if got := cloned.(map[string]any)["nested"].(map[string]any)["n"]; got != json.Number("9007199254740993") {
+		t.Fatalf("clone retained source alias: %#v", got)
+	}
+}
+
+func TestCloneAnyRejectsMalformedValue(t *testing.T) {
+	if _, err := cloneAny(func() {}); err == nil {
+		t.Fatal("cloneAny accepted an unsupported JSON value")
 	}
 }

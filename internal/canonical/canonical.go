@@ -21,6 +21,15 @@ func Encode(v any) ([]byte, error) {
 	}
 	return json.Marshal(v)
 }
+
+// Decode applies the canonical decoder's number-preservation policy. Callers
+// retain ownership of validation, trailing-value handling, and error context.
+func Decode(raw []byte, target any) error {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	return decoder.Decode(target)
+}
+
 func Hash(v any) ([32]byte, error) {
 	b, e := Encode(v)
 	if e != nil {
