@@ -185,3 +185,40 @@ func TestValidateTranscriptRequiresStableEffectDelivery(t *testing.T) {
 		t.Fatal("ValidateTranscript() accepted mixed effect delivery")
 	}
 }
+
+func TestValidateTranscriptKeepsNonEffectLedgerStable(t *testing.T) {
+	transcript := mustTranscript(t)
+	transcript.Records[0].Result.Hashes.EffectLedger = "changed"
+	var divergence *Divergence
+	if err := ValidateTranscript(transcript); !errors.As(err, &divergence) || divergence.Field != "result.hashes.effectLedger" {
+		t.Fatalf("non-effect ledger change: got %v, want ledger divergence", err)
+	}
+	transcript.Records[0].Event.Kind = event.EffectResult
+	transcript.Records[0].Event.Payload = event.EffectResultPayload{CallID: "effect", Status: "ok"}
+	transcript.Records[0].Delivery = "declaration_order"
+	if err := ValidateTranscript(transcript); err != nil {
+		t.Fatalf("effect-result ledger change rejected: %v", err)
+	}
+}
+
+func TestValidateTranscriptBindsInitialCapabilityHash(t *testing.T) {
+	for _, withRecords := range []bool{false, true} {
+		transcript := mustTranscript(t)
+		if !withRecords {
+			transcript.Records = nil
+		}
+		if err := ValidateTranscript(transcript); err != nil {
+			t.Fatalf("valid checkpoint rejected: %v", err)
+		}
+		transcript.Initial.Hashes.Capability = "unrelated"
+		refreshInspectorCheckpointChecksum(t, &transcript.Initial)
+		if withRecords {
+			transcript.Records[0].Prior.Hashes.Capability = "unrelated"
+			transcript.Records[0].Result.Hashes.Capability = "unrelated"
+		}
+		var divergence *Divergence
+		if err := ValidateTranscript(transcript); !errors.As(err, &divergence) || divergence.Field != "initial.hashes.capability" {
+			t.Fatalf("records=%v: got %v, want capability divergence", withRecords, err)
+		}
+	}
+}
