@@ -343,8 +343,24 @@ fi
 
 printf '1\n' >"${workdir}/bin/omit-origin"
 printf '1\n' >"${workdir}/bin/slow-go-provenance"
+PATH="${workdir}/bin:${PATH}" RELEASE_PROBE_ATTEMPTS=1 RELEASE_PROBE_RETRY_SECONDS=0 RELEASE_PROBE_GO_TIMEOUT_SECONDS=1 RELEASE_PROBE_TERMINATE_GRACE_SECONDS=1 "${script}" v1.0.0-rc.2 >"${workdir}/provenance-timeout-failure.out" 2>"${workdir}/provenance-timeout-failure.err" &
+probe_pid=$!
+for _ in {1..5}; do
+	if [[ -s "${workdir}/bin/slow-go-provenance-pid" ]]; then
+		break
+	fi
+	if ! kill -0 "${probe_pid}" 2>/dev/null; then
+		break
+	fi
+	sleep 1
+done
+[[ -s "${workdir}/bin/slow-go-provenance-pid" ]] || {
+	wait "${probe_pid}" 2>/dev/null || true
+	printf 'selected module provenance lookup did not reach the stalled operation\n' >&2
+	exit 1
+}
 SECONDS=0
-if PATH="${workdir}/bin:${PATH}" RELEASE_PROBE_ATTEMPTS=1 RELEASE_PROBE_RETRY_SECONDS=0 RELEASE_PROBE_GO_TIMEOUT_SECONDS=1 RELEASE_PROBE_TERMINATE_GRACE_SECONDS=1 "${script}" v1.0.0-rc.2 >"${workdir}/provenance-timeout-failure.out" 2>"${workdir}/provenance-timeout-failure.err"; then
+if wait "${probe_pid}"; then
 	printf 'expected selected module provenance timeout failure\n' >&2
 	exit 1
 fi
