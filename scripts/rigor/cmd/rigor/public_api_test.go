@@ -134,6 +134,11 @@ var (
 	if before == after {
 		t.Fatal("incompatible exported variable types and constant values produced identical API inventory")
 	}
+	for _, want := range []string{`const SchemaVersion untyped string = "v2"`, "const TypedLimit int64 = 3"} {
+		if !strings.Contains(after, want) {
+			t.Fatalf("mutated API inventory missing constant value %q:\n%s", want, after)
+		}
+	}
 
 	formatted := render(`package api
 type State int
