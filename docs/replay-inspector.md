@@ -15,7 +15,9 @@ The command writes one structured JSON result. Its exit status is `0` for a
 valid transcript or matching evidence, `2` for a valid evidence mismatch, and
 `3` for invalid input. Usage errors return `64`.
 
-Inputs are bounded to 16 MiB and 100,000 records. The decoder rejects trailing
+Validation checks transcript content; JSON whitespace and field order need not
+match the canonical serializer output. Inputs are bounded to 16 MiB and
+100,000 records. The decoder rejects trailing
 JSON, duplicate or unknown fields, unsupported schema versions, malformed
 events, and inconsistent transcript chains. Invalid-input reports intentionally
 do not echo raw input. Mismatch reports use the replay package's existing
