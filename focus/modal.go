@@ -28,11 +28,21 @@ func (m *ModalLifecycle) Close(previous, current Graph, scope semantic.NodeID) b
 	if m == nil || len(m.scopes) == 0 || m.scopes[len(m.scopes)-1] != scope {
 		return false
 	}
+	var restore semantic.Target
+	if len(m.State.Stack) > 0 {
+		restore = m.State.Stack[len(m.State.Stack)-1]
+	}
 	next, ok := current.PopScope(m.State)
 	if !ok {
 		return false
 	}
 	m.scopes = m.scopes[:len(m.scopes)-1]
+	if restore.NodeID != "" {
+		next.Active = restore
+	}
+	if len(m.scopes) > 0 {
+		next.Scope = m.scopes[len(m.scopes)-1]
+	}
 	m.State = current.RepairFrom(previous, next)
 	return true
 }

@@ -1,6 +1,7 @@
 package focus
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/ben-ranford/stave/semantic"
@@ -162,5 +163,101 @@ func TestModalLifecycleRestoresAndIsIdempotent(t *testing.T) {
 	}
 	if m.Close(g, g, dialog.ID()) {
 		t.Fatal("close was not idempotent")
+	}
+}
+
+func TestModalLifecycleRestoresOuterScopeAfterNestedClose(t *testing.T) {
+	inner := testNode(t, "inner", "dialog", "Inner", semantic.Flags{Visible: true}, []semantic.Node{
+		testNode(t, "inner.ok", "button", "OK", semantic.Flags{Visible: true, Focusable: true}, nil),
+	})
+	outer := testNode(t, "outer", "dialog", "Outer", semantic.Flags{Visible: true}, []semantic.Node{
+		testNode(t, "outer.cancel", "button", "Cancel", semantic.Flags{Visible: true, Focusable: true}, nil), inner,
+	})
+	tree := testTree(t, testNode(t, "app", "application", "App", semantic.Flags{Visible: true}, []semantic.Node{
+		testNode(t, "open", "button", "Open", semantic.Flags{Visible: true, Focusable: true}, nil), outer,
+	}))
+	g := NewGraph(tree)
+	m := NewModalLifecycle(State{Active: g.Focusable()[0]})
+	if !m.Open(g, outer.ID()) || !m.Open(g, inner.ID()) {
+		t.Fatal("nested open failed")
+	}
+	if !m.Close(g, g, inner.ID()) {
+		t.Fatal("nested close failed")
+	}
+	if m.State.Scope != outer.ID() {
+		t.Fatalf("outer scope was not restored: %s", m.State.Scope)
+	}
+	if m.State.Active.NodeID != g.Focusable()[1].NodeID {
+		t.Fatalf("outer focus was not restored: %s", m.State.Active.NodeID)
+	}
+	if err := g.Validate(m.State); err != nil {
+		t.Fatalf("restored nested state is invalid: %v", err)
+	}
+	if !m.Close(g, g, outer.ID()) || m.State.Scope != "" || m.State.Active.NodeID != g.Focusable()[0].NodeID {
+		t.Fatalf("outer close state=%+v", m.State)
+	}
+}
+
+func TestModalLifecycleRepairsDeletedReturnTarget(t *testing.T) {
+	dialog := testNode(t, "dialog", "dialog", "Dialog", semantic.Flags{Visible: true}, []semantic.Node{
+		testNode(t, "dialog.ok", "button", "OK", semantic.Flags{Visible: true, Focusable: true}, nil),
+	})
+	before := NewGraph(testTree(t, testNode(t, "app", "application", "App", semantic.Flags{Visible: true}, []semantic.Node{
+		testNode(t, "a", "button", "A", semantic.Flags{Visible: true, Focusable: true}, nil),
+		testNode(t, "b", "button", "B", semantic.Flags{Visible: true, Focusable: true}, nil),
+		dialog,
+		testNode(t, "c", "button", "C", semantic.Flags{Visible: true, Focusable: true}, nil),
+	})))
+	m := NewModalLifecycle(State{Active: before.Focusable()[3]})
+	if !m.Open(before, dialog.ID()) {
+		t.Fatal("open failed")
+	}
+	current := NewGraph(testTree(t, testNode(t, "app", "application", "App", semantic.Flags{Visible: true}, []semantic.Node{
+		testNode(t, "a", "button", "A", semantic.Flags{Visible: true, Focusable: true}, nil),
+		testNode(t, "b", "button", "B", semantic.Flags{Visible: true, Focusable: true}, nil),
+	})))
+	if !m.Close(before, current, dialog.ID()) {
+		t.Fatal("close failed")
+	}
+	if m.State.Active.NodeID != current.Focusable()[1].NodeID {
+		t.Fatalf("deleted opener repaired to %s, want %s", m.State.Active.NodeID, current.Focusable()[1].NodeID)
+	}
+	if err := current.Validate(m.State); err != nil {
+		t.Fatalf("repaired state is invalid: %v", err)
+	}
+}
+
+func TestModalLifecycleRejectsInvalidScopeWithoutChangingState(t *testing.T) {
+	g := NewGraph(testTree(t, testNode(t, "app", "application", "App", semantic.Flags{Visible: true}, []semantic.Node{
+		testNode(t, "open", "button", "Open", semantic.Flags{Visible: true, Focusable: true}, nil),
+	})))
+	initial := State{Active: g.Focusable()[0]}
+	m := NewModalLifecycle(initial)
+	if m.Open(g, semantic.NodeID("missing")) {
+		t.Fatal("invalid scope opened")
+	}
+	if !reflect.DeepEqual(m.State, initial) {
+		t.Fatalf("invalid scope changed state: %+v", m.State)
+	}
+}
+
+func TestModalLifecycleReopensWithoutLeakingScopeStack(t *testing.T) {
+	dialog := testNode(t, "dialog", "dialog", "Dialog", semantic.Flags{Visible: true}, []semantic.Node{
+		testNode(t, "dialog.ok", "button", "OK", semantic.Flags{Visible: true, Focusable: true}, nil),
+	})
+	g := NewGraph(testTree(t, testNode(t, "app", "application", "App", semantic.Flags{Visible: true}, []semantic.Node{
+		testNode(t, "open", "button", "Open", semantic.Flags{Visible: true, Focusable: true}, nil), dialog,
+	})))
+	m := NewModalLifecycle(State{Active: g.Focusable()[0]})
+	for attempt := 0; attempt < 2; attempt++ {
+		if !m.Open(g, dialog.ID()) || !m.Close(g, g, dialog.ID()) {
+			t.Fatalf("open/close attempt %d failed", attempt)
+		}
+		if m.State.Scope != "" || len(m.State.Stack) != 0 || m.State.Active.NodeID != g.Focusable()[0].NodeID {
+			t.Fatalf("open/close attempt %d leaked state: %+v", attempt, m.State)
+		}
+	}
+	if m.Close(g, g, dialog.ID()) {
+		t.Fatal("repeated close succeeded")
 	}
 }
