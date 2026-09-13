@@ -71,6 +71,9 @@ func (d *LineDriver) Open(ctx context.Context, _ capability.Policy) (capability.
 	if d.opened {
 		return d.manifest.Clone(), nil
 	}
+	if err := ctx.Err(); err != nil {
+		return capability.Manifest{}, err
+	}
 	d.opened = true
 	d.manifest = honestLineManifest(capability.DetectEnv(d.opt.Environment, d.opt.TTY, d.opt.Width, d.opt.Height))
 	if !d.opt.TTY {
