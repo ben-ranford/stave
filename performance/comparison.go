@@ -282,48 +282,64 @@ func validateTypedJSONValue(decoder *json.Decoder, depth int, typ reflect.Type) 
 	if depth > 64 {
 		return errors.New("performance report JSON nesting exceeds limit")
 	}
-	if delim != '{' && delim != '[' {
-		return errors.New("invalid performance report JSON")
-	}
 	typ = indirectJSONType(typ)
 	switch delim {
 	case '{':
-		fields := jsonStructFields(typ)
-		seen := map[string]struct{}{}
-		for decoder.More() {
-			key, err := validateJSONObjectKey(decoder, seen)
-			if err != nil {
-				return err
-			}
-			fieldType := reflect.Type(nil)
-			if fields != nil {
-				var exists bool
-				fieldType, exists = fields[key]
-				if !exists {
-					for name := range fields {
-						if strings.EqualFold(key, name) {
-							return fmt.Errorf("noncanonical performance report key %q, want %q", key, name)
-						}
-					}
-				}
-			}
-			if err := validateTypedJSONValue(decoder, depth+1, fieldType); err != nil {
-				return err
-			}
-		}
+		return validateTypedJSONObject(decoder, depth, typ)
 	case '[':
-		var element reflect.Type
-		if typ != nil && (typ.Kind() == reflect.Array || typ.Kind() == reflect.Slice) {
-			element = typ.Elem()
+		return validateTypedJSONArray(decoder, depth, typ)
+	default:
+		return errors.New("invalid performance report JSON")
+	}
+}
+
+func validateTypedJSONObject(decoder *json.Decoder, depth int, typ reflect.Type) error {
+	fields := jsonStructFields(typ)
+	seen := map[string]struct{}{}
+	for decoder.More() {
+		key, err := validateJSONObjectKey(decoder, seen)
+		if err != nil {
+			return err
 		}
-		for decoder.More() {
-			if err := validateTypedJSONValue(decoder, depth+1, element); err != nil {
-				return err
-			}
+		fieldType, err := typedJSONField(fields, key)
+		if err != nil {
+			return err
+		}
+		if err := validateTypedJSONValue(decoder, depth+1, fieldType); err != nil {
+			return err
 		}
 	}
-	_, err = decoder.Token()
+	_, err := decoder.Token()
 	return err
+}
+
+func validateTypedJSONArray(decoder *json.Decoder, depth int, typ reflect.Type) error {
+	var element reflect.Type
+	if typ != nil && (typ.Kind() == reflect.Array || typ.Kind() == reflect.Slice) {
+		element = typ.Elem()
+	}
+	for decoder.More() {
+		if err := validateTypedJSONValue(decoder, depth+1, element); err != nil {
+			return err
+		}
+	}
+	_, err := decoder.Token()
+	return err
+}
+
+func typedJSONField(fields map[string]reflect.Type, key string) (reflect.Type, error) {
+	if fields == nil {
+		return nil, nil
+	}
+	if fieldType, exists := fields[key]; exists {
+		return fieldType, nil
+	}
+	for name := range fields {
+		if strings.EqualFold(key, name) {
+			return nil, fmt.Errorf("noncanonical performance report key %q, want %q", key, name)
+		}
+	}
+	return nil, nil
 }
 
 func indirectJSONType(typ reflect.Type) reflect.Type {
