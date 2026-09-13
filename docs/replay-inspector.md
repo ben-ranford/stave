@@ -23,4 +23,9 @@ events, and inconsistent transcript chains. Invalid-input reports intentionally
 do not echo raw input. Mismatch reports use the replay package's existing
 sensitive-event redaction before serialization.
 
+For evidence produced by a session, every event carries the event schema
+version explicitly. A revision advances exactly when the model, tree, or
+surface hash changes; configuration, theme, and capability hashes stay fixed
+for the session. Effect-result records use the session's single delivery mode.
+
 If the command cannot write its report, it exits `1` and emits a bounded diagnostic on standard error. A successful validation or comparison requires successful report output.
