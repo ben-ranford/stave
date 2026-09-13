@@ -224,7 +224,11 @@ module_origin_sha="$(jq -er '.Origin.Hash' "${workdir}/module.json")"
 		"${module_path}" "${module_version}" "${resolved_version}" "${module_origin_sha}" "${source_sha}" >&2
 	exit 1
 }
-grep -qx 'text: public module' "${workdir}/consumer-output.txt"
+if ! grep -qx 'text: public module' "${workdir}/consumer-output.txt"; then
+	consumer_output="$(<"${workdir}/consumer-output.txt")"
+	printf 'consumer output mismatch: got %q, want %q\n' "${consumer_output}" 'text: public module' >&2
+	exit 1
+fi
 
 sha256() {
 	local asset_path="$1"

@@ -98,7 +98,12 @@ case "$1 $2" in
 	if [[ -s "${bin_dir}/origin-override" ]]; then origin_sha="$(<"${bin_dir}/origin-override")"; fi
 	printf '{"Path":"github.com/ben-ranford/stave","Version":"%s","Sum":"h1:publicsum","Origin":{"Hash":"%s"}}\n' "${module_version}" "${origin_sha}"
 	;;
-'run .') printf 'text: public module\n' ;;
+'run .')
+	bin_dir="$(dirname "$0")"
+	consumer_output='text: public module'
+	if [[ -s "${bin_dir}/consumer-output-override" ]]; then consumer_output="$(<"${bin_dir}/consumer-output-override")"; fi
+	printf '%s\n' "${consumer_output}"
+	;;
 *) printf 'unexpected go invocation: %s %s\n' "$1" "$2" >&2; exit 1 ;;
 esac
 EOF
@@ -110,9 +115,18 @@ chmod +x "${workdir}/bin/curl" "${workdir}/bin/go"
 : >"${workdir}/bin/module-version-override"
 : >"${workdir}/bin/resolution-version-override"
 : >"${workdir}/bin/origin-override"
+: >"${workdir}/bin/consumer-output-override"
 
 PATH="${workdir}/bin:${PATH}" RELEASE_PROBE_ATTEMPTS=2 RELEASE_PROBE_RETRY_SECONDS=0 "${script}" v1.0.0-rc.2 >"${workdir}/report.json"
 jq -e '.tag_object_sha == "tag-object" and .source_sha == "source-commit" and .module.sum == "h1:publicsum" and .module.selected_version == "v1.0.0-rc.2" and .module.requested_version == .module.selected_version and .module.origin_sha == .source_sha and (.assets | length == 3)' "${workdir}/report.json" >/dev/null
+
+printf 'text: unexpected module\n' >"${workdir}/bin/consumer-output-override"
+if PATH="${workdir}/bin:${PATH}" "${script}" v1.0.0-rc.2 >"${workdir}/consumer-output-failure.out" 2>"${workdir}/consumer-output-failure.err"; then
+	printf 'expected consumer output mismatch\n' >&2
+	exit 1
+fi
+grep -Fq 'consumer output mismatch: got text:\ unexpected\ module, want text:\ public\ module' "${workdir}/consumer-output-failure.err"
+: >"${workdir}/bin/consumer-output-override"
 
 for tag_name in v1.0.0+build.7 v1.0.0-rc.2+build.7; do
 	PATH="${workdir}/bin:${PATH}" "${script}" "${tag_name}" >"${workdir}/build-metadata.json"
