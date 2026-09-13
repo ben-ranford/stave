@@ -56,12 +56,16 @@ func (b *sessionBridge[M]) snapshot(_ context.Context, mode string, since uint64
 	if err != nil {
 		return SnapshotEnvelope{}, err
 	}
+	if current.Sequence == ^uint64(0) {
+		return SnapshotEnvelope{}, errors.New("agent: session sequence overflow")
+	}
+	sequence := current.Sequence + 1
 	envelope := SnapshotEnvelope{
-		SessionID: current.SessionID, Sequence: current.Sequence, Revision: current.Revision,
+		SessionID: current.SessionID, Sequence: sequence, Revision: current.Revision,
 		TreeHash: current.Tree.Hash(), CapabilityHash: current.Hashes.Capability,
 		SemanticVersion: current.Versions.SemanticSchema, ConfigHash: current.ConfigHash,
 		ThemeHash: current.ThemeHash, WidthVersion: current.WidthPolicy,
-		Diagnostics: bridgeDiagnostics(b.session.Diagnostics(), current.Sequence, current.Revision),
+		Diagnostics: bridgeDiagnostics(b.session.Diagnostics(), sequence, current.Revision),
 	}
 	if b.actions != nil {
 		envelope.Actions = b.actions.Manifest()

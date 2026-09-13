@@ -36,3 +36,7 @@ snapshot envelope and an idempotent cancellation callback, while the
 application continues to supply the action registry, authorization,
 confirmation, and policy callbacks in `agent.Options`. It does not select a
 transport or grant action authority.
+
+The agent snapshot envelope projects the session's internal zero-based sequence
+to the protocol's required one-based wire sequence. Revisions and hashes remain
+unchanged.
