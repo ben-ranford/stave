@@ -134,6 +134,15 @@ download_module() {
 	run_with_timeout "downloading github.com/ben-ranford/stave@${module_version}" env -i "${go_environment[@]}" go mod download -json "github.com/ben-ranford/stave@${module_version}" >"${module_json_path}"
 }
 
+selected_module_provenance() {
+	local module_version="$1" output_path="$2"
+	: >"${output_path}"
+	(
+		cd "${consumer}"
+		run_with_timeout "reading selected github.com/ben-ranford/stave@${module_version} provenance" env -i "${provenance_go_environment[@]}" go list -m -json "github.com/ben-ranford/stave@${module_version}"
+	) >"${output_path}"
+}
+
 api_base="https://api.github.com/repos/${repository}"
 release_json="${workdir}/release.json"
 tag_ref_json="${workdir}/tag-ref.json"
@@ -211,6 +220,18 @@ go_environment=(
 	"GOPRIVATE=" "GONOPROXY=" "GONOSUMDB="
 	"GOMODCACHE=${workdir}/modcache" "GOCACHE=${workdir}/gocache"
 )
+# A fresh cache prevents an earlier noncanonical tag or revision query from
+# supplying provenance for this canonical selected-version query. This command
+# asks the public proxy for metadata for the selected canonical module version
+# itself. Go 1.22 only requires an
+# exact version match for canonical queries:
+# https://github.com/golang/go/blob/release-branch.go1.22/src/cmd/go/internal/modfetch/proxy.go#L369-L388
+provenance_go_environment=(
+	"PATH=${PATH}" "HOME=${workdir}/home" "GOWORK=off"
+	"GOPROXY=https://proxy.golang.org" "GOSUMDB=sum.golang.org"
+	"GOPRIVATE=" "GONOPROXY=" "GONOSUMDB="
+	"GOMODCACHE=${workdir}/provenance-modcache" "GOCACHE=${workdir}/provenance-gocache"
+)
 (
 	cd "${consumer}"
 	env -i "${go_environment[@]}" go mod init example.com/stave-release-probe >/dev/null
@@ -229,11 +250,33 @@ module_version="$(jq -er '.Version' "${workdir}/module.json")"
 resolved_version="$(jq -er '.Version' "${workdir}/resolution.json")"
 module_sum="$(jq -er '.Sum' "${workdir}/module.json")"
 module_origin_sha="$(jq -r '.Origin.Hash // empty' "${workdir}/module.json")"
-[[ "${module_path}" == "github.com/ben-ranford/stave" && "${module_version}" == "${resolved_version}" && -n "${module_sum}" && ( -z "${module_origin_sha}" || "${module_origin_sha}" == "${source_sha}" ) ]] || {
+[[ "${module_path}" == "github.com/ben-ranford/stave" && "${module_version}" == "${resolved_version}" && -n "${module_sum}" ]] || {
 	printf 'module verification mismatch: path=%s selected-version=%s resolved-version=%s origin=%s expected-origin=%s\n' \
 		"${module_path}" "${module_version}" "${resolved_version}" "${module_origin_sha}" "${source_sha}" >&2
 	exit 1
 }
+verified_origin_sha="${module_origin_sha}"
+origin_source="download"
+if [[ -n "${module_origin_sha}" ]]; then
+	[[ "${module_origin_sha}" == "${source_sha}" ]] || {
+		printf 'module verification mismatch: path=%s selected-version=%s resolved-version=%s origin=%s expected-origin=%s\n' \
+			"${module_path}" "${module_version}" "${resolved_version}" "${module_origin_sha}" "${source_sha}" >&2
+		exit 1
+	}
+else
+	selected_provenance_path="${workdir}/selected-module-provenance.json"
+	retry_command "verifying selected github.com/ben-ranford/stave@${module_version} provenance through the public Go proxy" selected_module_provenance "${module_version}" "${selected_provenance_path}"
+	provenance_path="$(jq -r '.Path // empty' "${selected_provenance_path}")"
+	provenance_version="$(jq -r '.Version // empty' "${selected_provenance_path}")"
+	provenance_origin_sha="$(jq -r '.Origin.Hash // empty' "${selected_provenance_path}")"
+	[[ "${provenance_path}" == "github.com/ben-ranford/stave" && "${provenance_version}" == "${module_version}" && -n "${provenance_origin_sha}" && "${provenance_origin_sha}" == "${source_sha}" ]] || {
+		printf 'selected module provenance mismatch: path=%s version=%s origin=%s expected-path=%s expected-version=%s expected-origin=%s\n' \
+			"${provenance_path}" "${provenance_version}" "${provenance_origin_sha}" "github.com/ben-ranford/stave" "${module_version}" "${source_sha}" >&2
+		exit 1
+	}
+	verified_origin_sha="${provenance_origin_sha}"
+	origin_source="selected-version"
+fi
 if ! grep -qx 'text: public module' "${workdir}/consumer-output.txt"; then
 	consumer_output="$(<"${workdir}/consumer-output.txt")"
 	printf 'consumer output mismatch: got %q, want %q\n' "${consumer_output}" 'text: public module' >&2
@@ -263,6 +306,6 @@ done
 
 jq -n \
 	--arg repository "${repository}" --arg tag "${tag}" --arg tag_object_sha "${tag_object_sha}" \
-	--arg source_sha "${source_sha}" --arg module_sum "${module_sum}" --arg module_origin_sha "${module_origin_sha}" --arg module_version "${module_version}" --arg requested_module_version "${resolved_version}" --arg consumer_output "$(<"${workdir}/consumer-output.txt")" \
+	--arg source_sha "${source_sha}" --arg module_sum "${module_sum}" --arg module_origin_sha "${verified_origin_sha}" --arg origin_source "${origin_source}" --arg module_version "${module_version}" --arg requested_module_version "${resolved_version}" --arg consumer_output "$(<"${workdir}/consumer-output.txt")" \
 	--argjson assets "${assets_json}" \
-	'{repository: $repository, tag: $tag, tag_object_sha: $tag_object_sha, source_sha: $source_sha, module: {path: "github.com/ben-ranford/stave", selected_version: $module_version, requested_version: $requested_module_version, sum: $module_sum, origin_sha: $module_origin_sha, proxy: "https://proxy.golang.org", sumdb: "sum.golang.org"}, consumer_output: $consumer_output, assets: $assets}'
+	'{repository: $repository, tag: $tag, tag_object_sha: $tag_object_sha, source_sha: $source_sha, module: {path: "github.com/ben-ranford/stave", selected_version: $module_version, requested_version: $requested_module_version, sum: $module_sum, origin_sha: $module_origin_sha, origin_source: $origin_source, proxy: "https://proxy.golang.org", sumdb: "sum.golang.org"}, consumer_output: $consumer_output, assets: $assets}'

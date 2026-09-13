@@ -96,11 +96,38 @@ case "$1 $2" in
 'list -m')
 	bin_dir="$(dirname "$0")"
 	module_version="$(<"${bin_dir}/module-version")"
-	if [[ "${4:-}" == *@* ]] && [[ -s "${bin_dir}/resolution-version-override" ]]; then module_version="$(<"${bin_dir}/resolution-version-override")"; fi
-	if [[ "${4:-}" != *@* ]] && [[ -s "${bin_dir}/module-version-override" ]]; then module_version="$(<"${bin_dir}/module-version-override")"; fi
+	query="${4:-}"
+	if [[ "${query}" == *@source-commit ]]; then
+		touch "${bin_dir}/sha-query-called"
+		exit 1
+	fi
+	selected_query=false
+	if [[ "${query}" == "github.com/ben-ranford/stave@${module_version}" && "${GOMODCACHE:-}" == */provenance-modcache ]]; then
+		selected_query=true
+		touch "${bin_dir}/provenance-cache-used"
+	fi
+	module_path=github.com/ben-ranford/stave
+	if [[ "${selected_query}" == false && "${query}" == *@* ]] && [[ -s "${bin_dir}/resolution-version-override" ]]; then module_version="$(<"${bin_dir}/resolution-version-override")"; fi
+	if [[ "${query}" != *@* ]] && [[ -s "${bin_dir}/module-version-override" ]]; then module_version="$(<"${bin_dir}/module-version-override")"; fi
+	if [[ "${selected_query}" == true && -s "${bin_dir}/selected-version-override" ]]; then module_version="$(<"${bin_dir}/selected-version-override")"; fi
+	if [[ "${selected_query}" == true && -s "${bin_dir}/selected-path-override" ]]; then module_path="$(<"${bin_dir}/selected-path-override")"; fi
+	if [[ "${selected_query}" == true && -s "${bin_dir}/fail-first-go-provenance" && ! -e "${bin_dir}/go-provenance-failed-once" ]]; then
+		touch "${bin_dir}/go-provenance-failed-once"
+		printf '{"Path":"partial"}\n'
+		exit 1
+	fi
+	if [[ "${selected_query}" == true && "$(<"${bin_dir}/slow-go-provenance")" == 1 ]]; then
+		printf '%s\n' "$$" >"${bin_dir}/slow-go-provenance-pid"
+		sleep 30
+	fi
 	origin_sha=source-commit
 	if [[ -s "${bin_dir}/origin-override" ]]; then origin_sha="$(<"${bin_dir}/origin-override")"; fi
-	printf '{"Path":"github.com/ben-ranford/stave","Version":"%s","Sum":"h1:publicsum","Origin":{"Hash":"%s"}}\n' "${module_version}" "${origin_sha}"
+	if [[ "${selected_query}" == true && -s "${bin_dir}/selected-origin-override" ]]; then origin_sha="$(<"${bin_dir}/selected-origin-override")"; fi
+	if [[ "${selected_query}" == true && -s "${bin_dir}/omit-selected-origin" ]]; then
+		printf '{"Path":"%s","Version":"%s","Sum":"h1:publicsum"}\n' "${module_path}" "${module_version}"
+		exit 0
+	fi
+	printf '{"Path":"%s","Version":"%s","Sum":"h1:publicsum","Origin":{"Hash":"%s"}}\n' "${module_path}" "${module_version}" "${origin_sha}"
 	;;
 	'mod download')
 		bin_dir="$(dirname "$0")"
@@ -147,6 +174,12 @@ chmod +x "${workdir}/bin/curl" "${workdir}/bin/go"
 : >"${workdir}/bin/omit-origin"
 : >"${workdir}/bin/slow-go-download"
 : >"${workdir}/bin/fail-first-go-download"
+: >"${workdir}/bin/selected-origin-override"
+: >"${workdir}/bin/selected-version-override"
+: >"${workdir}/bin/selected-path-override"
+: >"${workdir}/bin/omit-selected-origin"
+: >"${workdir}/bin/slow-go-provenance"
+: >"${workdir}/bin/fail-first-go-provenance"
 
 PATH="${workdir}/bin:${PATH}" RELEASE_PROBE_ATTEMPTS=2 RELEASE_PROBE_RETRY_SECONDS=0 "${script}" v1.0.0-rc.2 >"${workdir}/report.json"
 jq -e '.tag_object_sha == "tag-object" and .source_sha == "source-commit" and .module.sum == "h1:publicsum" and .module.selected_version == "v1.0.0-rc.2" and .module.requested_version == .module.selected_version and .module.origin_sha == .source_sha and (.assets | length == 3)' "${workdir}/report.json" >/dev/null
@@ -196,7 +229,47 @@ fi
 
 printf '1\n' >"${workdir}/bin/omit-origin"
 PATH="${workdir}/bin:${PATH}" "${script}" v1.0.0-rc.2 >"${workdir}/missing-origin.json"
-jq -e '.module.origin_sha == "" and .source_sha == "source-commit"' "${workdir}/missing-origin.json" >/dev/null
+jq -e '.module.origin_sha == .source_sha and .module.origin_source == "selected-version"' "${workdir}/missing-origin.json" >/dev/null
+[[ -e "${workdir}/bin/provenance-cache-used" ]] || { printf 'probe must use a separate provenance module cache\n' >&2; exit 1; }
+[[ ! -e "${workdir}/bin/sha-query-called" ]] || { printf 'probe must not query source SHA through the public proxy\n' >&2; exit 1; }
+
+printf 'wrong-source\n' >"${workdir}/bin/selected-origin-override"
+if PATH="${workdir}/bin:${PATH}" "${script}" v1.0.0-rc.2 >"${workdir}/selected-origin-mismatch.out" 2>"${workdir}/selected-origin-mismatch.err"; then
+	printf 'expected selected module provenance mismatch\n' >&2
+	exit 1
+fi
+grep -q 'selected module provenance mismatch' "${workdir}/selected-origin-mismatch.err"
+: >"${workdir}/bin/selected-origin-override"
+
+printf '1\n' >"${workdir}/bin/omit-selected-origin"
+if PATH="${workdir}/bin:${PATH}" "${script}" v1.0.0-rc.2 >"${workdir}/selected-origin-missing.out" 2>"${workdir}/selected-origin-missing.err"; then
+	printf 'expected selected module provenance absence failure\n' >&2
+	exit 1
+fi
+grep -q 'selected module provenance mismatch' "${workdir}/selected-origin-missing.err"
+: >"${workdir}/bin/omit-selected-origin"
+
+printf 'v9.9.9\n' >"${workdir}/bin/selected-version-override"
+if PATH="${workdir}/bin:${PATH}" "${script}" v1.0.0-rc.2 >"${workdir}/selected-version-mismatch.out" 2>"${workdir}/selected-version-mismatch.err"; then
+	printf 'expected selected module version mismatch\n' >&2
+	exit 1
+fi
+grep -q 'selected module provenance mismatch' "${workdir}/selected-version-mismatch.err"
+: >"${workdir}/bin/selected-version-override"
+
+printf 'example.com/wrong\n' >"${workdir}/bin/selected-path-override"
+if PATH="${workdir}/bin:${PATH}" "${script}" v1.0.0-rc.2 >"${workdir}/selected-path-mismatch.out" 2>"${workdir}/selected-path-mismatch.err"; then
+	printf 'expected selected module path mismatch\n' >&2
+	exit 1
+fi
+grep -q 'selected module provenance mismatch' "${workdir}/selected-path-mismatch.err"
+: >"${workdir}/bin/selected-path-override"
+
+printf '1\n' >"${workdir}/bin/fail-first-go-provenance"
+PATH="${workdir}/bin:${PATH}" RELEASE_PROBE_ATTEMPTS=2 RELEASE_PROBE_RETRY_SECONDS=0 "${script}" v1.0.0-rc.2 >"${workdir}/provenance-retry.json"
+[[ -e "${workdir}/bin/go-provenance-failed-once" ]] || { printf 'expected selected module provenance retry\n' >&2; exit 1; }
+jq -e '.module.origin_source == "selected-version" and .module.origin_sha == .source_sha' "${workdir}/provenance-retry.json" >/dev/null
+: >"${workdir}/bin/fail-first-go-provenance"
 : >"${workdir}/bin/omit-origin"
 
 printf '1\n' >"${workdir}/bin/delay-metadata"
@@ -267,6 +340,23 @@ if kill -0 "${download_pid}" 2>/dev/null; then
 	exit 1
 fi
 : >"${workdir}/bin/slow-go-download"
+
+printf '1\n' >"${workdir}/bin/omit-origin"
+printf '1\n' >"${workdir}/bin/slow-go-provenance"
+SECONDS=0
+if PATH="${workdir}/bin:${PATH}" RELEASE_PROBE_ATTEMPTS=1 RELEASE_PROBE_RETRY_SECONDS=0 RELEASE_PROBE_GO_TIMEOUT_SECONDS=1 RELEASE_PROBE_TERMINATE_GRACE_SECONDS=1 "${script}" v1.0.0-rc.2 >"${workdir}/provenance-timeout-failure.out" 2>"${workdir}/provenance-timeout-failure.err"; then
+	printf 'expected selected module provenance timeout failure\n' >&2
+	exit 1
+fi
+((SECONDS < 5)) || { printf 'selected module provenance exceeded its bounded timeout\n' >&2; exit 1; }
+grep -q 'release probe timed out after 1s while reading selected github.com/ben-ranford/stave@v1.0.0-rc.2 provenance' "${workdir}/provenance-timeout-failure.err"
+provenance_pid="$(<"${workdir}/bin/slow-go-provenance-pid")"
+if kill -0 "${provenance_pid}" 2>/dev/null; then
+	printf 'stalled selected module provenance lookup remained after timeout cleanup\n' >&2
+	exit 1
+fi
+: >"${workdir}/bin/slow-go-provenance"
+: >"${workdir}/bin/omit-origin"
 
 printf '1\n' >"${workdir}/bin/term-ignore-go-get"
 SECONDS=0

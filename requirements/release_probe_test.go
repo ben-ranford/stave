@@ -33,6 +33,10 @@ func TestPublishedReleaseProbeIsAnonymousAndWorkflowGated(t *testing.T) {
 		"release metadata incomplete after %s attempts",
 		"retry_command \"resolving github.com/ben-ranford/stave@${tag}",
 		"retry_command \"downloading github.com/ben-ranford/stave@${module_version}",
+		"retry_command \"verifying selected github.com/ben-ranford/stave@${module_version}",
+		"provenance_go_environment",
+		"GOMODCACHE=${workdir}/provenance-modcache",
+		"selected module provenance mismatch",
 		".Origin.Hash // empty",
 		"release probe failed after %s attempts",
 		"CHANGELOG.md LICENSE report.json",
@@ -99,7 +103,7 @@ func TestReleaseRunbookMakesRepositoryPublicBeforeAnonymousProbe(t *testing.T) {
 	if schedulerProof >= sourceCI || sourceCI >= visibility || visibility >= tag || tag >= probe {
 		t.Fatal("release runbook must require scheduler proof, source CI, and authorized public visibility before tagging and the anonymous probe")
 	}
-	for _, fragment := range []string{"pseudo-version", "requested-tag resolution"} {
+	for _, fragment := range []string{"pseudo-version", "requested-tag resolution", "fresh module cache"} {
 		position(fragment)
 	}
 }

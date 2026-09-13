@@ -59,8 +59,11 @@ merge commit.
    canonical version without that metadata or a pseudo-version, depending on
    the repository and tag state; the probe compares the selected module version
    with the requested-tag resolution and retains the literal tag and source
-   provenance checks. It makes only anonymous public reads and never changes
-   tags, releases, or labels.
+   provenance checks. If a module download omits provenance, the probe reads
+   the selected canonical version's provenance metadata from the public proxy
+   in a fresh module cache; missing or mismatched provenance fails the check.
+   The downloaded module remains verified through the checksum database. It
+   makes only anonymous public reads and never changes tags, releases, or labels.
 7. From a clean module outside this repository, resolve the public module at
    the exact tag, for example:
 
