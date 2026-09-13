@@ -571,12 +571,17 @@ const DivergenceSurfaceHash
 const DivergenceThemeHash
 const DivergenceTreeHash
 const DivergenceWidthPolicy
+const MaxTranscriptBytes
+const MaxTranscriptRecords
 const SchemaVersion
+func DecodeTranscript(data []byte) (Transcript, error)
 func DigestFromState[M any](snapshot state.State[M]) Digest
 func Encode(record Record) ([]byte, error)
 func Execute(ctx context.Context, transcript Transcript, apply ApplyFunc) (Transcript, error)
 func NewTranscript(sessionID string, versions state.Versions, initial state.Checkpoint) Transcript
+func RedactedDivergence(divergence *Divergence) *Divergence
 func Validate(expected, actual Transcript) error
+func ValidateTranscript(transcript Transcript) error
 method (*Divergence) Error() string
 method (*Transcript) Append(record Record)
 method (Transcript) CanonicalJSON() ([]byte, error)

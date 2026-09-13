@@ -103,6 +103,11 @@ human or agent runtimes, continue with the [adoption guide](docs/client-adoption
 - [Security](docs/security.md): authority, confirmation, and secret handling.
 - [Go reference](https://pkg.go.dev/github.com/ben-ranford/stave): package and API documentation.
 
+The unreleased v1.1.0 development checkout also includes a
+[replay transcript inspector](docs/replay-inspector.md) for validating or
+comparing canonical transcript artifacts without re-executing an application
+model.
+
 ## Feedback and contributing
 
 Report bugs or propose features through [GitHub issues](https://github.com/ben-ranford/stave/issues).
