@@ -277,6 +277,18 @@ func TestSessionRecordsCompletionOrderWhenConfigured(t *testing.T) {
 	}
 }
 
+func startBlockedAndQueuePendingBatch(t *testing.T, s *Session[model], firstStarted <-chan struct{}) {
+	t.Helper()
+	if err := s.Send(mustEvent(t, event.Key, event.KeyPayload{Key: "enter"})); err != nil {
+		t.Fatal(err)
+	}
+	<-firstStarted
+	if err := s.Send(mustEvent(t, event.Key, event.KeyPayload{Key: "tab"})); err != nil {
+		t.Fatal(err)
+	}
+	waitSnapshot(t, s, func(snapshot state.State[model]) bool { return snapshot.Sequence == 2 })
+}
+
 func TestSessionEffectAdmissionKeepsLoopResponsiveAndDeliversBatches(t *testing.T) {
 	firstStarted := make(chan struct{})
 	releaseFirst := make(chan struct{})
@@ -309,14 +321,7 @@ func TestSessionEffectAdmissionKeepsLoopResponsiveAndDeliversBatches(t *testing.
 	})
 	defer s.Close()
 
-	if err := s.Send(mustEvent(t, event.Key, event.KeyPayload{Key: "enter"})); err != nil {
-		t.Fatal(err)
-	}
-	<-firstStarted
-	if err := s.Send(mustEvent(t, event.Key, event.KeyPayload{Key: "tab"})); err != nil {
-		t.Fatal(err)
-	}
-	waitSnapshot(t, s, func(snapshot state.State[model]) bool { return snapshot.Sequence == 2 })
+	startBlockedAndQueuePendingBatch(t, s, firstStarted)
 	if err := s.Send(mustEvent(t, event.Key, event.KeyPayload{Key: "escape"})); err != nil {
 		t.Fatal(err)
 	}
@@ -361,14 +366,7 @@ func TestSessionEffectAdmissionSaturationRejectsProducerWithoutStarvingInput(t *
 		s.Close()
 	}()
 
-	if err := s.Send(mustEvent(t, event.Key, event.KeyPayload{Key: "enter"})); err != nil {
-		t.Fatal(err)
-	}
-	<-firstStarted
-	if err := s.Send(mustEvent(t, event.Key, event.KeyPayload{Key: "tab"})); err != nil {
-		t.Fatal(err)
-	}
-	waitSnapshot(t, s, func(snapshot state.State[model]) bool { return snapshot.Sequence == 2 })
+	startBlockedAndQueuePendingBatch(t, s, firstStarted)
 	if err := s.Send(mustEvent(t, event.Key, event.KeyPayload{Key: "escape"})); err != nil {
 		t.Fatal(err)
 	}
@@ -412,14 +410,7 @@ func TestSessionShutdownCancelsPendingEffectAdmission(t *testing.T) {
 		View: testView,
 	})
 
-	if err := s.Send(mustEvent(t, event.Key, event.KeyPayload{Key: "enter"})); err != nil {
-		t.Fatal(err)
-	}
-	<-firstStarted
-	if err := s.Send(mustEvent(t, event.Key, event.KeyPayload{Key: "tab"})); err != nil {
-		t.Fatal(err)
-	}
-	waitSnapshot(t, s, func(snapshot state.State[model]) bool { return snapshot.Sequence == 2 })
+	startBlockedAndQueuePendingBatch(t, s, firstStarted)
 	if err := s.Send(mustEvent(t, event.Shutdown, nil)); err != nil {
 		t.Fatal(err)
 	}
