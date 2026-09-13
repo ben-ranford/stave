@@ -30,5 +30,7 @@ for the session. The initial capability hash must match the saved manifest.
 Non-effect records retain the effect ledger; effect-result records use the
 session's single delivery mode and either retain the prior ledger for a
 rejected event or derive it from the prior ledger and canonical event.
+Validation establishes checkpoint consistency, not checkpoint origin; a saved
+checkpoint can therefore begin with coherent prior ledger and declaration data.
 
 If the command cannot write its report, it exits `1` and emits a bounded diagnostic on standard error. A successful validation or comparison requires successful report output.

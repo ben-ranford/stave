@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/ben-ranford/stave/event"
+	"github.com/ben-ranford/stave/semantic"
 	"github.com/ben-ranford/stave/state"
 )
 
@@ -86,6 +87,115 @@ func TestValidateTranscriptRejectsUnsupportedCheckpointSchema(t *testing.T) {
 	if err := ValidateTranscript(transcript); err == nil {
 		t.Fatal("unsupported checkpoint schema accepted")
 	}
+}
+
+func TestDecodeTranscriptBindsInitialSemanticSnapshot(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		apply func(*Transcript)
+	}{
+		{"invalid snapshot", func(transcript *Transcript) {
+			tree := transcript.Initial.Tree.(map[string]any)
+			tree["treeHash"] = "tampered"
+		}},
+		{"revision mismatch", func(transcript *Transcript) {
+			transcript.Initial.Tree = snapshotWire(t, transcript.Initial.Revision+1, "same-tree", semantic.Value{})
+		}},
+		{"tree hash mismatch", func(transcript *Transcript) {
+			transcript.Initial.Tree = snapshotWire(t, transcript.Initial.Revision, "different-tree", semantic.Value{})
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			transcript := mustTranscript(t)
+			tc.apply(&transcript)
+			refreshInspectorCheckpointChecksum(t, &transcript.Initial)
+			data, err := transcript.CanonicalJSON()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := DecodeTranscript(data); err == nil {
+				t.Fatal("DecodeTranscript() accepted an invalid initial semantic snapshot")
+			}
+		})
+	}
+}
+
+func TestDecodeTranscriptAcceptsRedactedInitialSemanticSnapshot(t *testing.T) {
+	transcript := mustTranscript(t)
+	transcript.Initial.Tree = snapshotWire(t, transcript.Initial.Revision, "redacted-tree", semantic.SecretValue())
+	var snapshot semantic.Snapshot
+	if err := json.Unmarshal(mustJSON(t, transcript.Initial.Tree), &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	transcript.Initial.Hashes.Tree = snapshot.TreeHash
+	transcript.Records[0].Prior.Hashes.Tree = snapshot.TreeHash
+	transcript.Records[0].Result.Hashes.Tree = snapshot.TreeHash
+	refreshInspectorCheckpointChecksum(t, &transcript.Initial)
+	data, err := transcript.CanonicalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := DecodeTranscript(data)
+	if err != nil {
+		t.Fatalf("DecodeTranscript() rejected a redacted initial snapshot: %v", err)
+	}
+	if err := ValidateTranscript(decoded); err != nil {
+		t.Fatalf("ValidateTranscript() rejected a redacted initial snapshot: %v", err)
+	}
+}
+
+func TestDecodeTranscriptAcceptsSeededCheckpointHistory(t *testing.T) {
+	transcript := mustTranscript(t)
+	transcript.Initial.Hashes.EffectLedger = "seeded-ledger"
+	transcript.Initial.Hashes.Declarations = "seeded-declarations"
+	transcript.Records[0].Prior.Hashes.EffectLedger = transcript.Initial.Hashes.EffectLedger
+	transcript.Records[0].Prior.Hashes.Declarations = transcript.Initial.Hashes.Declarations
+	transcript.Records[0].Result.Hashes.EffectLedger = transcript.Initial.Hashes.EffectLedger
+	transcript.Records[0].Result.Hashes.Declarations = transcript.Initial.Hashes.Declarations
+	refreshInspectorCheckpointChecksum(t, &transcript.Initial)
+	data, err := transcript.CanonicalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := DecodeTranscript(data)
+	if err != nil {
+		t.Fatalf("DecodeTranscript() rejected a seeded checkpoint: %v", err)
+	}
+	if err := ValidateTranscript(decoded); err != nil {
+		t.Fatalf("ValidateTranscript() rejected a seeded checkpoint: %v", err)
+	}
+}
+
+func snapshotWire(t *testing.T, revision uint64, entity string, value semantic.Value) any {
+	t.Helper()
+	root, err := semantic.NewNode(semantic.NodeSpec{
+		Key:        &semantic.NodeKey{AppNamespace: "stave", View: "replay", Kind: "root", Entity: entity, Slot: "main"},
+		Generation: 1,
+		Role:       "application",
+		Name:       entity,
+		Value:      value,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree, err := semantic.NewTree(revision, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wire any
+	if err := json.Unmarshal(mustJSON(t, tree.Snapshot()), &wire); err != nil {
+		t.Fatal(err)
+	}
+	return wire
+}
+
+func mustJSON(t *testing.T, value any) []byte {
+	t.Helper()
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
 }
 
 func refreshInspectorCheckpointChecksum(t *testing.T, checkpoint *state.Checkpoint) {
