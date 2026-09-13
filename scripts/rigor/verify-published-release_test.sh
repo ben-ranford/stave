@@ -84,7 +84,8 @@ case "$1 $2" in
 'list -m')
 	bin_dir="$(dirname "$0")"
 	module_version="$(<"${bin_dir}/module-version")"
-	if [[ -s "${bin_dir}/module-version-override" ]]; then module_version="$(<"${bin_dir}/module-version-override")"; fi
+	if [[ "${4:-}" == *@* ]] && [[ -s "${bin_dir}/resolution-version-override" ]]; then module_version="$(<"${bin_dir}/resolution-version-override")"; fi
+	if [[ "${4:-}" != *@* ]] && [[ -s "${bin_dir}/module-version-override" ]]; then module_version="$(<"${bin_dir}/module-version-override")"; fi
 	origin_sha=source-commit
 	if [[ -s "${bin_dir}/origin-override" ]]; then origin_sha="$(<"${bin_dir}/origin-override")"; fi
 	printf '{"Path":"github.com/ben-ranford/stave","Version":"%s","Sum":"h1:publicsum","Origin":{"Hash":"%s"}}\n' "${module_version}" "${origin_sha}"
@@ -99,15 +100,23 @@ chmod +x "${workdir}/bin/curl" "${workdir}/bin/go"
 : >"${workdir}/bin/term-ignore-go-get"
 : >"${workdir}/bin/record-fast-go-get"
 : >"${workdir}/bin/module-version-override"
+: >"${workdir}/bin/resolution-version-override"
 : >"${workdir}/bin/origin-override"
 
 PATH="${workdir}/bin:${PATH}" RELEASE_PROBE_ATTEMPTS=2 RELEASE_PROBE_RETRY_SECONDS=0 "${script}" v1.0.0-rc.2 >"${workdir}/report.json"
-jq -e '.tag_object_sha == "tag-object" and .source_sha == "source-commit" and .module.sum == "h1:publicsum" and .module.canonical_version == "v1.0.0-rc.2" and .module.origin_sha == .source_sha and (.assets | length == 3)' "${workdir}/report.json" >/dev/null
+jq -e '.tag_object_sha == "tag-object" and .source_sha == "source-commit" and .module.sum == "h1:publicsum" and .module.selected_version == "v1.0.0-rc.2" and .module.requested_version == .module.selected_version and .module.origin_sha == .source_sha and (.assets | length == 3)' "${workdir}/report.json" >/dev/null
 
 for tag_name in v1.0.0+build.7 v1.0.0-rc.2+build.7; do
 	PATH="${workdir}/bin:${PATH}" "${script}" "${tag_name}" >"${workdir}/build-metadata.json"
-	jq -e --arg tag_name "${tag_name}" --arg canonical_version "${tag_name%%+*}" '.tag == $tag_name and .module.canonical_version == $canonical_version and .module.origin_sha == .source_sha' "${workdir}/build-metadata.json" >/dev/null
+	jq -e --arg tag_name "${tag_name}" --arg canonical_version "${tag_name%%+*}" '.tag == $tag_name and .module.selected_version == $canonical_version and .module.requested_version == $canonical_version and .module.origin_sha == .source_sha' "${workdir}/build-metadata.json" >/dev/null
 done
+
+printf 'v0.1.1-0.20260101000000-sourcecommit\n' >"${workdir}/bin/module-version-override"
+printf 'v0.1.1-0.20260101000000-sourcecommit\n' >"${workdir}/bin/resolution-version-override"
+PATH="${workdir}/bin:${PATH}" "${script}" v0.1.0+build.7 >"${workdir}/pseudo-version.json"
+jq -e '.module.selected_version == "v0.1.1-0.20260101000000-sourcecommit" and .module.requested_version == .module.selected_version and .module.origin_sha == .source_sha' "${workdir}/pseudo-version.json" >/dev/null
+: >"${workdir}/bin/module-version-override"
+: >"${workdir}/bin/resolution-version-override"
 
 printf 'v9.9.9\n' >"${workdir}/bin/module-version-override"
 if PATH="${workdir}/bin:${PATH}" "${script}" v1.0.0+build.7 >"${workdir}/canonical-mismatch.out" 2>"${workdir}/canonical-mismatch.err"; then

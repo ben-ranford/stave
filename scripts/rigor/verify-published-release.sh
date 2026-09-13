@@ -14,7 +14,6 @@ tag="${1:-}"
 repository="ben-ranford/stave"
 # Go module versions are canonical SemVer and discard build metadata, while the
 # release API and tag provenance continue to use the requested tag verbatim.
-canonical_module_version="${tag%%+*}"
 
 attempts="${RELEASE_PROBE_ATTEMPTS:-3}"
 retry_seconds="${RELEASE_PROBE_RETRY_SECONDS:-5}"
@@ -207,17 +206,20 @@ mkdir "${workdir}/home"
 	env -i "${go_environment[@]}" go mod init example.com/stave-release-probe >/dev/null
 	retry_command "resolving github.com/ben-ranford/stave@${tag} through the public Go proxy and checksum database" run_with_timeout "resolving github.com/ben-ranford/stave@${tag}" env -i "${go_environment[@]}" go get "github.com/ben-ranford/stave@${tag}" >/dev/null
 	! grep -qE '^replace[[:space:]]' go.mod
-	module_json="$(env -i "${go_environment[@]}" go list -m -json "github.com/ben-ranford/stave@${tag}")"
+	resolution_json="$(env -i "${go_environment[@]}" go list -m -json "github.com/ben-ranford/stave@${tag}")"
+	printf '%s\n' "${resolution_json}" >"${workdir}/resolution.json"
+	module_json="$(env -i "${go_environment[@]}" go list -m -json github.com/ben-ranford/stave)"
 	printf '%s\n' "${module_json}" >"${workdir}/module.json"
 	env -i "${go_environment[@]}" go run . >"${workdir}/consumer-output.txt"
 )
 module_path="$(jq -er '.Path' "${workdir}/module.json")"
 module_version="$(jq -er '.Version' "${workdir}/module.json")"
+resolved_version="$(jq -er '.Version' "${workdir}/resolution.json")"
 module_sum="$(jq -er '.Sum' "${workdir}/module.json")"
 module_origin_sha="$(jq -er '.Origin.Hash' "${workdir}/module.json")"
-[[ "${module_path}" == "github.com/ben-ranford/stave" && "${module_version}" == "${canonical_module_version}" && -n "${module_sum}" && "${module_origin_sha}" == "${source_sha}" ]] || {
-	printf 'module verification mismatch: path=%s version=%s expected-version=%s origin=%s expected-origin=%s\n' \
-		"${module_path}" "${module_version}" "${canonical_module_version}" "${module_origin_sha}" "${source_sha}" >&2
+[[ "${module_path}" == "github.com/ben-ranford/stave" && "${module_version}" == "${resolved_version}" && -n "${module_sum}" && "${module_origin_sha}" == "${source_sha}" ]] || {
+	printf 'module verification mismatch: path=%s selected-version=%s resolved-version=%s origin=%s expected-origin=%s\n' \
+		"${module_path}" "${module_version}" "${resolved_version}" "${module_origin_sha}" "${source_sha}" >&2
 	exit 1
 }
 grep -qx 'text: public module' "${workdir}/consumer-output.txt"
@@ -244,6 +246,6 @@ done
 
 jq -n \
 	--arg repository "${repository}" --arg tag "${tag}" --arg tag_object_sha "${tag_object_sha}" \
-	--arg source_sha "${source_sha}" --arg module_sum "${module_sum}" --arg module_origin_sha "${module_origin_sha}" --arg module_version "${module_version}" --arg consumer_output "$(<"${workdir}/consumer-output.txt")" \
+	--arg source_sha "${source_sha}" --arg module_sum "${module_sum}" --arg module_origin_sha "${module_origin_sha}" --arg module_version "${module_version}" --arg requested_module_version "${resolved_version}" --arg consumer_output "$(<"${workdir}/consumer-output.txt")" \
 	--argjson assets "${assets_json}" \
-	'{repository: $repository, tag: $tag, tag_object_sha: $tag_object_sha, source_sha: $source_sha, module: {path: "github.com/ben-ranford/stave", canonical_version: $module_version, sum: $module_sum, origin_sha: $module_origin_sha, proxy: "https://proxy.golang.org", sumdb: "sum.golang.org"}, consumer_output: $consumer_output, assets: $assets}'
+	'{repository: $repository, tag: $tag, tag_object_sha: $tag_object_sha, source_sha: $source_sha, module: {path: "github.com/ben-ranford/stave", selected_version: $module_version, requested_version: $requested_module_version, sum: $module_sum, origin_sha: $module_origin_sha, proxy: "https://proxy.golang.org", sumdb: "sum.golang.org"}, consumer_output: $consumer_output, assets: $assets}'

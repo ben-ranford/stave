@@ -37,8 +37,8 @@ func TestPublishedReleaseProbeIsAnonymousAndWorkflowGated(t *testing.T) {
 		"source_sha",
 		"module_sum",
 		"module_origin_sha",
-		"canonical_module_version=\"${tag%%+*}\"",
-		"canonical_version: $module_version",
+		"requested_module_version",
+		"go list -m -json github.com/ben-ranford/stave",
 	} {
 		if !strings.Contains(string(probe), fragment) {
 			t.Fatalf("published release probe must retain %q", fragment)
