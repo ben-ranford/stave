@@ -8,16 +8,17 @@ trap 'rm -rf "${workdir}"' EXIT
 
 mkdir -p "${workdir}/bin"
 sha256() {
+	local value="$1"
 	if command -v sha256sum >/dev/null 2>&1; then
-		printf '%s' "$1" | sha256sum | awk '{print $1}'
+		printf '%s' "${value}" | sha256sum | awk '{print $1}'
 	else
-		printf '%s' "$1" | shasum -a 256 | awk '{print $1}'
+		printf '%s' "${value}" | shasum -a 256 | awk '{print $1}'
 	fi
 }
-changelog_digest="$(sha256 changelog)"
-license_digest="$(sha256 license)"
-report_digest="$(sha256 report)"
-export changelog_digest license_digest report_digest
+CHANGELOG_DIGEST="$(sha256 changelog)"
+LICENSE_DIGEST="$(sha256 license)"
+REPORT_DIGEST="$(sha256 report)"
+export CHANGELOG_DIGEST LICENSE_DIGEST REPORT_DIGEST
 cat >"${workdir}/bin/curl" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -37,7 +38,7 @@ case "${url}" in
 		printf '%s' '{"tag_name":"v1.0.0-rc.2","assets":[]}' >"${out}"
 	else
 		cat >"${out}" <<JSON
-{"tag_name":"${tag_name}","assets":[{"name":"CHANGELOG.md","digest":"sha256:${changelog_digest}","browser_download_url":"https://assets/CHANGELOG.md"},{"name":"LICENSE","digest":"sha256:${license_digest}","browser_download_url":"https://assets/LICENSE"},{"name":"report.json","digest":"sha256:${report_digest}","browser_download_url":"https://assets/report.json"}]}
+{"tag_name":"${tag_name}","assets":[{"name":"CHANGELOG.md","digest":"sha256:${CHANGELOG_DIGEST}","browser_download_url":"https://assets/CHANGELOG.md"},{"name":"LICENSE","digest":"sha256:${LICENSE_DIGEST}","browser_download_url":"https://assets/LICENSE"},{"name":"report.json","digest":"sha256:${REPORT_DIGEST}","browser_download_url":"https://assets/report.json"}]}
 JSON
 	fi
 	;;

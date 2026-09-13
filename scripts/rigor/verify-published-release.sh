@@ -227,10 +227,11 @@ module_origin_sha="$(jq -er '.Origin.Hash' "${workdir}/module.json")"
 grep -qx 'text: public module' "${workdir}/consumer-output.txt"
 
 sha256() {
+	local asset_path="$1"
 	if command -v sha256sum >/dev/null 2>&1; then
-		sha256sum "$1" | awk '{print $1}'
+		sha256sum "${asset_path}" | awk '{print $1}'
 	else
-		shasum -a 256 "$1" | awk '{print $1}'
+		shasum -a 256 "${asset_path}" | awk '{print $1}'
 	fi
 }
 
