@@ -275,6 +275,149 @@ type Tree struct {
 	hash          [32]byte
 }
 
+// ErrInvalidQuery reports a query with no criteria or invalid criteria or
+// limits. Resource exhaustion is represented as a truncated QueryResult.
+var ErrInvalidQuery = errors.New("invalid semantic query")
+
+// Query selects nodes that satisfy every non-empty criterion. Metadata entries
+// are exact key/value matches. It does not interpret expressions or patterns.
+type Query struct {
+	ID       NodeID
+	Role     Role
+	Action   ActionID
+	Metadata map[string]string
+}
+
+// QueryLimits bound a single query traversal. Visited and result limits must
+// be positive; MaxDepth is non-negative and counts the root as depth zero.
+type QueryLimits struct {
+	MaxVisited int
+	MaxResults int
+	MaxDepth   int
+}
+
+// QueryLimit identifies the budget that ended a partial query result.
+type QueryLimit string
+
+const (
+	QueryLimitNone    QueryLimit = ""
+	QueryLimitVisited QueryLimit = "visited"
+	QueryLimitResults QueryLimit = "results"
+	QueryLimitDepth   QueryLimit = "depth"
+)
+
+// QueryResult contains immutable node values in preorder. Visited counts the
+// nodes inspected. If Truncated is true, Limit identifies the first budget
+// that prevented further deterministic traversal.
+type QueryResult struct {
+	Nodes     []Node
+	Visited   int
+	Truncated bool
+	Limit     QueryLimit
+}
+
+// Query traverses a tree in preorder (root, then each child in declared
+// order). It returns ErrInvalidQuery before traversal for malformed criteria or
+// limits. A valid query whose visited, result, or depth budget is exhausted
+// returns its partial result with Truncated set and no error.
+func (t Tree) Query(query Query, limits QueryLimits) (QueryResult, error) {
+	if err := query.validate(limits); err != nil {
+		return QueryResult{}, err
+	}
+
+	result := QueryResult{Nodes: make([]Node, 0)}
+	var walk func(Node, int) bool
+	walk = func(node Node, depth int) bool {
+		if result.Visited == limits.MaxVisited {
+			result.Truncated = true
+			result.Limit = QueryLimitVisited
+			return false
+		}
+		if depth > limits.MaxDepth {
+			result.Truncated = true
+			result.Limit = QueryLimitDepth
+			return false
+		}
+		result.Visited++
+		if query.matches(node) {
+			if len(result.Nodes) == limits.MaxResults {
+				result.Truncated = true
+				result.Limit = QueryLimitResults
+				return false
+			}
+			result.Nodes = append(result.Nodes, node)
+		}
+		if depth == limits.MaxDepth && len(node.children) > 0 {
+			result.Truncated = true
+			result.Limit = QueryLimitDepth
+			return false
+		}
+		for _, child := range node.children {
+			if !walk(child, depth+1) {
+				return false
+			}
+		}
+		return true
+	}
+	walk(t.root, 0)
+	return result, nil
+}
+
+func (query Query) validate(limits QueryLimits) error {
+	if query.ID == "" && query.Role == "" && query.Action == "" && len(query.Metadata) == 0 {
+		return fmt.Errorf("%w: at least one criterion is required", ErrInvalidQuery)
+	}
+	if query.ID != "" && !query.ID.Valid() {
+		return fmt.Errorf("%w: invalid node ID", ErrInvalidQuery)
+	}
+	if query.Role != "" && !roles[query.Role] {
+		return fmt.Errorf("%w: invalid role %q", ErrInvalidQuery, query.Role)
+	}
+	if query.Action != "" && !validQueryText(string(query.Action)) {
+		return fmt.Errorf("%w: invalid action ID", ErrInvalidQuery)
+	}
+	for key, value := range query.Metadata {
+		if !validQueryText(key) || !validQueryText(value) {
+			return fmt.Errorf("%w: invalid metadata criterion", ErrInvalidQuery)
+		}
+	}
+	if limits.MaxVisited <= 0 || limits.MaxResults <= 0 || limits.MaxDepth < 0 {
+		return fmt.Errorf("%w: limits must be positive", ErrInvalidQuery)
+	}
+	return nil
+}
+
+func validQueryText(value string) bool {
+	return utf8.ValidString(value) && !containsUnsafeControl(value)
+}
+
+func (query Query) matches(node Node) bool {
+	if query.ID != "" && node.id != query.ID {
+		return false
+	}
+	if query.Role != "" && node.role != query.Role {
+		return false
+	}
+	if query.Action != "" {
+		found := false
+		for _, action := range node.actions {
+			if action.ID == query.Action {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	for key, value := range query.Metadata {
+		if actual, ok := node.metadata[key]; !ok || actual != value {
+			return false
+		}
+	}
+	return true
+}
+
 type Snapshot struct {
 	SchemaVersion string `json:"schemaVersion"`
 	Revision      uint64 `json:"revision"`
