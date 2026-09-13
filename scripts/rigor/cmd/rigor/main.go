@@ -310,6 +310,11 @@ func publicAPIEntries(fset *token.FileSet, pkg goListPackage, importer *sourceIm
 	}
 	entries := []string{}
 	for _, files := range parsed {
+		packageName, err := declaredPackageName(files)
+		if err != nil {
+			return nil, err
+		}
+		entries = append(entries, "package "+packageName)
 		current, err := publicAPIEntriesForFiles(fset, pkg.ImportPath, files, importer)
 		if err != nil {
 			return nil, err
@@ -318,6 +323,19 @@ func publicAPIEntries(fset *token.FileSet, pkg goListPackage, importer *sourceIm
 	}
 	sort.Strings(entries)
 	return entries, nil
+}
+
+func declaredPackageName(files []*ast.File) (string, error) {
+	if len(files) == 0 || files[0].Name == nil || files[0].Name.Name == "" {
+		return "", errors.New("public API package has no declared package name")
+	}
+	name := files[0].Name.Name
+	for _, file := range files[1:] {
+		if file.Name == nil || file.Name.Name != name {
+			return "", errors.New("public API package has inconsistent declared package names")
+		}
+	}
+	return name, nil
 }
 
 func parsePublicAPIPackage(fset *token.FileSet, pkg goListPackage) ([][]*ast.File, error) {
@@ -349,12 +367,13 @@ func publicAPIEntriesForFiles(fset *token.FileSet, importPath string, files []*a
 		return nil, err
 	}
 	qualifier := packagePathQualifier(checkedPkg)
+	privateInterfaceMethods := privateInterfaceMethodRequirements(&typeInfo, qualifier)
 	entries := []string{}
 	hiddenTypes := localTypeSpecs(files, &typeInfo)
 	seenHiddenTypes := make(map[types.Object]struct{})
 	for _, file := range files {
 		for _, declaration := range file.Decls {
-			current, err := publicAPIEntriesForDeclaration(fset, declaration, &typeInfo, qualifier)
+			current, err := publicAPIEntriesForDeclaration(fset, declaration, &typeInfo, qualifier, privateInterfaceMethods)
 			if err != nil {
 				return nil, err
 			}
@@ -365,6 +384,34 @@ func publicAPIEntriesForFiles(fset *token.FileSet, importPath string, files []*a
 		}
 	}
 	return entries, nil
+}
+
+func privateInterfaceMethodRequirements(typeInfo *types.Info, qualifier types.Qualifier) map[string]struct{} {
+	requirements := make(map[string]struct{})
+	for _, object := range typeInfo.Defs {
+		typeName, ok := object.(*types.TypeName)
+		if !ok || !typeName.Exported() || typeName.Pkg() == nil || typeName.Parent() != typeName.Pkg().Scope() {
+			continue
+		}
+		interfaceType, ok := typeName.Type().Underlying().(*types.Interface)
+		if !ok {
+			continue
+		}
+		interfaceType.Complete()
+		for index := 0; index < interfaceType.NumMethods(); index++ {
+			method := interfaceType.Method(index)
+			if method.Exported() || method.Pkg() != typeName.Pkg() {
+				continue
+			}
+			requirements[privateMethodRequirement(method, qualifier)] = struct{}{}
+		}
+	}
+	return requirements
+}
+
+func privateMethodRequirement(method *types.Func, qualifier types.Qualifier) string {
+	signature, _ := method.Type().(*types.Signature)
+	return method.Name() + typeSignature(signature, qualifier)
 }
 
 func localTypeSpecs(files []*ast.File, typeInfo *types.Info) map[types.Object]*ast.TypeSpec {
@@ -581,12 +628,12 @@ func (collector *hiddenTypeCollector) visitSpec(spec *ast.TypeSpec) {
 	collector.visitTypeSpec(spec)
 }
 
-func publicAPIEntriesForDeclaration(fset *token.FileSet, declaration ast.Decl, typeInfo *types.Info, qualifier types.Qualifier) ([]string, error) {
+func publicAPIEntriesForDeclaration(fset *token.FileSet, declaration ast.Decl, typeInfo *types.Info, qualifier types.Qualifier, privateInterfaceMethods map[string]struct{}) ([]string, error) {
 	switch declaration := declaration.(type) {
 	case *ast.GenDecl:
 		return publicAPIGeneralDeclarationEntries(fset, declaration, typeInfo, qualifier)
 	case *ast.FuncDecl:
-		return publicAPIFunctionDeclarationEntry(fset, declaration, typeInfo, qualifier), nil
+		return publicAPIFunctionDeclarationEntry(fset, declaration, typeInfo, qualifier, privateInterfaceMethods), nil
 	default:
 		return nil, nil
 	}
@@ -639,16 +686,59 @@ func publicAPITypeDeclarationEntries(fset *token.FileSet, declaration *ast.GenDe
 	return entries
 }
 
-func publicAPIFunctionDeclarationEntry(fset *token.FileSet, declaration *ast.FuncDecl, typeInfo *types.Info, qualifier types.Qualifier) []string {
-	if declaration.Name == nil || !ast.IsExported(declaration.Name.Name) {
+func publicAPIFunctionDeclarationEntry(fset *token.FileSet, declaration *ast.FuncDecl, typeInfo *types.Info, qualifier types.Qualifier, privateInterfaceMethods map[string]struct{}) []string {
+	if declaration.Name == nil {
 		return nil
 	}
 	signature := typedFuncSignature(typeInfo.Defs[declaration.Name], declaration.Type, fset, qualifier)
 	if declaration.Recv == nil || len(declaration.Recv.List) == 0 {
+		if !ast.IsExported(declaration.Name.Name) {
+			return nil
+		}
 		return []string{fmt.Sprintf("func %s%s", declaration.Name.Name, signature)}
 	}
-	receiver := exprString(fset, declaration.Recv.List[0].Type)
+	receiver, method := exportedLocalMethodReceiver(fset, declaration, typeInfo)
+	if !ast.IsExported(declaration.Name.Name) && (method == nil || !exportedLocalReceiver(method) || !privateMethodRequiredByInterface(method, qualifier, privateInterfaceMethods)) {
+		return nil
+	}
 	return []string{fmt.Sprintf("method (%s) %s%s", receiver, declaration.Name.Name, signature)}
+}
+
+func exportedLocalMethodReceiver(fset *token.FileSet, declaration *ast.FuncDecl, typeInfo *types.Info) (string, *types.Func) {
+	receiver := exprString(fset, declaration.Recv.List[0].Type)
+	method, ok := typeInfo.Defs[declaration.Name].(*types.Func)
+	if !ok {
+		return receiver, nil
+	}
+	return receiver, method
+}
+
+func exportedLocalReceiver(method *types.Func) bool {
+	signature, ok := method.Type().(*types.Signature)
+	if !ok || signature.Recv() == nil {
+		return false
+	}
+	named := receiverNamedType(signature.Recv().Type())
+	if named == nil || named.Obj().Pkg() != method.Pkg() {
+		return false
+	}
+	return ast.IsExported(named.Obj().Name())
+}
+
+func privateMethodRequiredByInterface(method *types.Func, qualifier types.Qualifier, requirements map[string]struct{}) bool {
+	_, required := requirements[privateMethodRequirement(method, qualifier)]
+	return required
+}
+
+func receiverNamedType(typ types.Type) *types.Named {
+	switch typ := typ.(type) {
+	case *types.Named:
+		return typ
+	case *types.Pointer:
+		return receiverNamedType(typ.Elem())
+	default:
+		return nil
+	}
 }
 
 func formatPublicAPI(modulePath string, exported map[string][]string) string {

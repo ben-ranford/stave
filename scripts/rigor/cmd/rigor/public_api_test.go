@@ -66,6 +66,110 @@ type ID string
 	}
 }
 
+func TestPublicAPIInventoryRecordsDeclaredPackageName(t *testing.T) {
+	dir := t.TempDir()
+	render := func(source string) string {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, "api.go"), []byte(source), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		inventory, err := renderPublicAPI("example.com/api", []goListPackage{{ImportPath: "example.com/api", Dir: dir, GoFiles: []string{"api.go"}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return inventory
+	}
+
+	before := render("package foo\ntype Value struct{}\n")
+	after := render("package bar\ntype Value struct{}\n")
+	if !strings.Contains(before, "package foo") || !strings.Contains(after, "package bar") {
+		t.Fatalf("declared package name missing from inventory:\n%s\n%s", before, after)
+	}
+	if before == after {
+		t.Fatalf("package name change did not alter inventory:\n%s", before)
+	}
+}
+
+func TestPublicAPIInventoryIncludesPrivateMethodsOnExportedReceivers(t *testing.T) {
+	dir := t.TempDir()
+	render := func(source string) string {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, "api.go"), []byte(source), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		inventory, err := renderPublicAPI("example.com/api", []goListPackage{{ImportPath: "example.com/api", Dir: dir, GoFiles: []string{"api.go"}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return inventory
+	}
+
+	before := render(`package api
+type privateSeal interface { seal() }
+type Sealed interface { privateSeal }
+type privatePointerSeal interface { pointerSeal() }
+type PointerSealed = privatePointerSeal
+type Token struct{}
+func (Token) seal() {}
+func (*Token) pointerSeal() {}
+func (Token) helper() {}
+func privateContract() {
+	type Contract interface { localSeal() }
+	var _ Contract = Token{}
+}
+func (Token) localSeal() {}
+type hidden struct{}
+func (hidden) ignored() {}
+`)
+	for _, want := range []string{"method (Token) seal()", "method (*Token) pointerSeal()"} {
+		if !strings.Contains(before, want) {
+			t.Fatalf("private method needed by exported receiver missing %q:\n%s", want, before)
+		}
+	}
+	if strings.Contains(before, "helper") || strings.Contains(before, "localSeal") || strings.Contains(before, "ignored") {
+		t.Fatalf("unrelated private method leaked into inventory:\n%s", before)
+	}
+	after := render(`package api
+type privateSeal interface { seal() }
+type Sealed interface { privateSeal }
+type privatePointerSeal interface { pointerSeal() }
+type PointerSealed = privatePointerSeal
+type Token struct{}
+func (*Token) pointerSeal() {}
+func (Token) helper() {}
+func privateContract() {
+	type Contract interface { localSeal() }
+	var _ Contract = Token{}
+}
+func (Token) localSeal() {}
+type hidden struct{}
+func (hidden) ignored() {}
+`)
+	if before == after || strings.Contains(after, "method (Token) seal()") {
+		t.Fatalf("removed private method on exported receiver did not alter inventory:\n%s\n%s", before, after)
+	}
+	helperChanged := render(`package api
+type privateSeal interface { seal() }
+type Sealed interface { privateSeal }
+type privatePointerSeal interface { pointerSeal() }
+type PointerSealed = privatePointerSeal
+type Token struct{}
+func (Token) seal() {}
+func (*Token) pointerSeal() {}
+func (Token) helper() int { return 1 }
+func privateContract() {
+	type Contract interface { localSeal() }
+	var _ Contract = Token{}
+}
+func (Token) localSeal() {}
+type hidden struct{}
+func (hidden) ignored() {}
+`)
+	if before != helperChanged {
+		t.Fatalf("unrelated private helper changed inventory:\n%s\n%s", before, helperChanged)
+	}
+}
+
 func TestPublicAPIInventoryIncludesAliasReachableHiddenTypes(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "api.go")

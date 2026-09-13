@@ -66,6 +66,14 @@ type Options struct { Enabled bool; Name string }
 	}
 }
 
+func TestCompareInventoriesRejectsPackageNameChange(t *testing.T) {
+	baseline := "# Public API inventory\nmodule example.com/api\n\n[example.com/api]\npackage api\ntype Value struct {  }\n"
+	candidate := "# Public API inventory\nmodule example.com/api\n\n[example.com/api]\npackage renamed\ntype Value struct {  }\n"
+	if err := compareInventories(baseline, candidate); err == nil {
+		t.Fatal("declared package name change was accepted")
+	}
+}
+
 func TestCompareInventoriesRejectsStructFieldReordering(t *testing.T) {
 	baseline := "# Public API inventory\nmodule example.com/api\n\n[example.com/api]\ntype Pair struct { Left string; Right string }\n"
 	reordered := "# Public API inventory\nmodule example.com/api\n\n[example.com/api]\ntype Pair struct { Right string; Left string }\n"
@@ -199,6 +207,9 @@ func TestConsumerCompilerFixtures(t *testing.T) {
 	baseline := `package api
 
 type Contract interface { Keep() string }
+type Sealed interface { seal() }
+type Token struct{}
+func (Token) seal() {}
 type A struct{}
 func (A) Run() {}
 type B struct{}
@@ -217,6 +228,8 @@ func Keep(value string) string { return value }
 		{name: "removed function", api: strings.Replace(baseline, "func Keep(value string) string { return value }\n", "", 1), passes: false},
 		{name: "signature change", api: strings.Replace(baseline, "func Keep(value string) string", "func Keep(value int) string", 1), passes: false},
 		{name: "interface method addition", api: strings.Replace(baseline, "type Contract interface { Keep() string }", "type Contract interface { Keep() string; Extra() }", 1), passes: false},
+		{name: "removed sealed-interface method", api: strings.Replace(baseline, "func (Token) seal() {}\n", "", 1), passes: false},
+		{name: "package name change", api: strings.Replace(baseline, "package api", "package renamed", 1), passes: false},
 		{name: "variable type change", api: strings.Replace(baseline, "var Limit int", "var Limit string", 1), passes: false},
 		{name: "additive function and keyed field", api: strings.Replace(strings.Replace(baseline, "type Key struct { ID int }", "type Key struct { ID int; Enabled bool }", 1), "func Keep(value string) string { return value }", "func Keep(value string) string { return value }\nfunc Extra() error { return nil }", 1), passes: true},
 		{name: "non-comparable additive field", api: strings.Replace(baseline, "type Key struct { ID int }", "type Key struct { ID int; Values []string }", 1), passes: false},
@@ -254,6 +267,7 @@ func (implementation) Keep() string { return "ok" }
 
 func TestConsumerSurface(t *testing.T) {
 	var _ api.Contract = implementation{}
+	var _ api.Sealed = api.Token{}
 	var _ int = api.Limit
 	if api.Keep("ok") != "ok" { t.Fatal("unexpected result") }
 	_ = api.Options{Name: "keyed"}
