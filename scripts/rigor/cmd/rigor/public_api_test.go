@@ -147,3 +147,35 @@ var(Limit int;Inferred=42;Labels=map[string]int{})
 		t.Fatalf("public API entries are not sorted:\n%s", before)
 	}
 }
+
+func TestPublicAPIInventoryResolvesInModuleDependencyValues(t *testing.T) {
+	t.Parallel()
+	consumer, dependency := t.TempDir(), t.TempDir()
+	for path, source := range map[string]string{
+		filepath.Join(consumer, "api.go"): `package api
+import "example.com/api/dep"
+var Selected = dep.Ready
+const Initial = dep.Ready
+`,
+		filepath.Join(dependency, "dep.go"): `package dep
+type State int
+const Ready State = 7
+`,
+	} {
+		if err := os.WriteFile(path, []byte(source), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	inventory, err := renderPublicAPI("example.com/api", []goListPackage{
+		{ImportPath: "example.com/api", Dir: consumer, GoFiles: []string{"api.go"}},
+		{ImportPath: "example.com/api/dep", Dir: dependency, GoFiles: []string{"dep.go"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"var Selected example.com/api/dep.State", "const Initial example.com/api/dep.State = 7"} {
+		if !strings.Contains(inventory, want) {
+			t.Fatalf("dependency-defined value missing %q:\n%s", want, inventory)
+		}
+	}
+}
