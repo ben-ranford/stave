@@ -226,14 +226,19 @@ func TestModalLifecycleRestoresPreExistingScope(t *testing.T) {
 			if m.State.Scope != outer.ID() || m.State.Active != active || len(m.State.Stack) != len(initial.Stack) {
 				t.Fatalf("enclosing scope or initiating focus lost: got %+v, want %+v", m.State, initial)
 			}
-			for range len(g.Focusable()) + 1 {
-				next, ok := g.Next(m.State)
-				if !ok || next.Active.NodeID == background.ID() {
-					t.Fatal("focus escaped enclosing scope after modal close")
-				}
-				m.State = next
-			}
+			assertFocusRemainsInScope(t, g, m.State, background.ID())
 		})
+	}
+}
+
+func assertFocusRemainsInScope(t *testing.T, g Graph, state State, background semantic.NodeID) {
+	t.Helper()
+	for range len(g.Focusable()) + 1 {
+		next, ok := g.Next(state)
+		if !ok || next.Active.NodeID == background {
+			t.Fatal("focus escaped enclosing scope after modal close")
+		}
+		state = next
 	}
 }
 
