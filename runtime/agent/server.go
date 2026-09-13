@@ -452,7 +452,7 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 				}
 				continue
 			}
-			response, baseline := s.snapshotSubscribe(ctx, r)
+			response, baseline := s.snapshotSubscribe(subscriptionContext, r)
 			if len(r.ID) > 0 {
 				if err := write(response); err != nil {
 					setWriteErr(err)
@@ -607,6 +607,10 @@ func (s *Server) snapshotSubscribe(ctx context.Context, request protocol.Request
 	result, err := s.subscriptionSnapshot(ctx)
 	if err != nil {
 		response.Error = protocol.Errorf(protocol.InternalError, "snapshot subscription unavailable")
+		return response, nil
+	}
+	if ctx.Err() != nil {
+		response.Error = protocol.Errorf(protocol.Cancelled, "subscription is closed")
 		return response, nil
 	}
 	response.Result = protocol.SnapshotSubscribeResult{Snapshot: result}

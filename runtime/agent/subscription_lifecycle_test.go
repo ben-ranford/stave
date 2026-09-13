@@ -678,6 +678,99 @@ func TestSnapshotSubscriptionServerCloseDuringBaselineWriteStopsPump(t *testing.
 	}
 }
 
+func TestSnapshotSubscriptionServerCloseCancelsBlockedBaselineProvider(t *testing.T) {
+	providerStarted := make(chan struct{})
+	providerStopped := make(chan struct{})
+	options := Options{
+		Negotiate: subscriptionNegotiator,
+		SubscriptionSnapshotEnvelope: func(ctx context.Context, _ string, _ uint64) (SnapshotEnvelope, error) {
+			close(providerStarted)
+			<-ctx.Done()
+			close(providerStopped)
+			return lifecycleEnvelope(t, 1, 1), nil
+		},
+		SnapshotPublicationWaiter: func(ctx context.Context, _ uint64) error {
+			<-ctx.Done()
+			return ctx.Err()
+		},
+	}
+	server := New(options)
+	reader, input := io.Pipe()
+	var output bytes.Buffer
+	done := make(chan error, 1)
+	go func() { done <- server.Serve(context.Background(), reader, &output) }()
+	serveJoined := false
+	defer func() {
+		server.Close()
+		_ = input.Close()
+		if serveJoined {
+			return
+		}
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Errorf("Serve cleanup error = %v", err)
+			}
+		case <-time.After(time.Second):
+			t.Error("Serve cleanup did not finish")
+		}
+	}()
+	if _, err := io.WriteString(input, `{"jsonrpc":"2.0","id":1,"method":"stave.initialize","params":{"protocolVersions":["1.0"],"capabilities":{"snapshotSubscriptionVersions":["stave.snapshot.subscribe/v1"]}}}`+"\n"+`{"jsonrpc":"2.0","id":2,"method":"stave.initialized"}`+"\n"); err != nil {
+		t.Fatal(err)
+	}
+	subscribeWritten := make(chan error, 1)
+	go func() {
+		_, err := io.WriteString(input, `{"jsonrpc":"2.0","id":3,"method":"stave.snapshot.subscribe"}`+"\n")
+		subscribeWritten <- err
+	}()
+	select {
+	case <-providerStarted:
+	case <-time.After(time.Second):
+		t.Fatal("baseline provider did not start")
+	}
+	server.Close()
+	select {
+	case <-providerStopped:
+	case <-time.After(time.Second):
+		t.Fatal("Server.Close did not cancel the baseline provider")
+	}
+	select {
+	case err := <-subscribeWritten:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("subscribe request did not finish")
+	}
+	_ = input.Close()
+	select {
+	case err := <-done:
+		serveJoined = true
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Serve did not finish")
+	}
+	var found bool
+	for _, line := range bytes.Split(bytes.TrimSpace(output.Bytes()), []byte{'\n'}) {
+		var response struct {
+			ID    int             `json:"id"`
+			Error *protocol.Error `json:"error"`
+		}
+		if err := json.Unmarshal(line, &response); err != nil || response.ID != 3 {
+			continue
+		}
+		found = true
+		if response.Error == nil || response.Error.Code != protocol.Cancelled {
+			t.Fatalf("cancelled baseline response = %s", line)
+		}
+	}
+	if !found {
+		t.Fatalf("baseline subscription response was not written: %s", output.String())
+	}
+}
+
 func TestSnapshotSubscriptionShutdownAcknowledgementIsTerminal(t *testing.T) {
 	base := lifecycleEnvelope(t, 1, 1)
 	update := lifecycleEnvelope(t, 2, 1)
