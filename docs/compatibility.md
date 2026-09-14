@@ -93,7 +93,8 @@ analysis of Go source compatibility. Its current inventory does not follow
 public aliases into non-public root-local packages ([#112](https://github.com/ben-ranford/stave/issues/112)),
 collect sealed-method requirements from hidden interfaces or hidden concrete
 result types exposed through public signatures ([#113](https://github.com/ben-ranford/stave/issues/113)), detect
-promoted-selector ambiguity caused by newly added methods on embedded types
+promoted-selector ambiguity caused by newly added fields or methods on types
+embedded elsewhere
 ([#114](https://github.com/ben-ranford/stave/issues/114)), or track private methods
 promoted from hidden embedded receivers into exported concrete method sets
 ([#119](https://github.com/ben-ranford/stave/issues/119)). Changes involving these
