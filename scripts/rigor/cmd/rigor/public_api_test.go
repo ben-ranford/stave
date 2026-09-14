@@ -148,6 +148,44 @@ func (hidden) ignored() {}
 	}
 }
 
+func TestPublicAPIInventoryOmitsPrivateMethodsWithoutInterfaceSatisfaction(t *testing.T) {
+	render := newPublicAPIFixture(t)
+	const declarations = `package api
+type Sealed interface { seal(); Public() }
+type Token struct{}
+`
+	before := render(declarations + "func (Token) seal() {}\n")
+	after := render(declarations)
+	if before != after {
+		t.Fatalf("private method on a non-implementing receiver changed inventory:\n%s\n%s", before, after)
+	}
+}
+
+func TestPublicAPIInventoryPrivateMethodSatisfactionControls(t *testing.T) {
+	for _, test := range []struct {
+		name, declarations, method string
+		included                   bool
+	}{
+		{"complete value", "type Sealed interface { seal(); Public() }; type Token struct{}; func (Token) Public() {}", "func (Token) seal() {}", true},
+		{"complete pointer", "type Sealed interface { seal(); Public() }; type Token struct{}; func (*Token) Public() {}", "func (Token) seal() {}", true},
+		{"complete constraint", "type Sealed interface { ~int; seal() }; type Token int", "func (Token) seal() {}", true},
+		{"wrong constraint", "type Sealed interface { ~string; seal() }; type Token int", "func (Token) seal() {}", false},
+		{"different satisfied contract", "type Sealed interface { seal(); Public() }; type Other interface { other() }; type Token struct{}; func (Token) other() {}", "func (Token) seal() {}", false},
+		{"generic receiver", "type Sealed interface { seal() }; type Token[T any] struct{}", "func (Token[T]) seal() {}", true},
+		{"generic requirement spelling", "type Sealed[T any] interface { seal(T) }; type T int; type Token struct{}", "func (Token) seal(T) {}", true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			render := newPublicAPIFixture(t)
+			declarations := "package api\n" + test.declarations + "\n"
+			before := render(declarations + test.method + "\n")
+			after := render(declarations)
+			if changed := before != after; changed != test.included {
+				t.Fatalf("private method inclusion = %t, want %t:\n%s\n%s", changed, test.included, before, after)
+			}
+		})
+	}
+}
+
 func TestPublicAPIInventoryIncludesAliasReachableHiddenTypes(t *testing.T) {
 	render := newPublicAPIFixture(t)
 

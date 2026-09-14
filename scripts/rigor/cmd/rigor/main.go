@@ -383,8 +383,13 @@ func publicAPIEntriesForFiles(fset *token.FileSet, importPath string, files []*a
 	return entries, nil
 }
 
-func privateInterfaceMethodRequirements(typeInfo *types.Info, qualifier types.Qualifier) map[string]struct{} {
-	requirements := make(map[string]struct{})
+type privateInterfaceRequirement struct {
+	interfaceType *types.Interface
+	generic       bool
+}
+
+func privateInterfaceMethodRequirements(typeInfo *types.Info, qualifier types.Qualifier) map[string][]privateInterfaceRequirement {
+	requirements := make(map[string][]privateInterfaceRequirement)
 	for _, object := range typeInfo.Defs {
 		typeName, ok := object.(*types.TypeName)
 		if !ok || !typeName.Exported() || typeName.Pkg() == nil || typeName.Parent() != typeName.Pkg().Scope() {
@@ -395,12 +400,15 @@ func privateInterfaceMethodRequirements(typeInfo *types.Info, qualifier types.Qu
 			continue
 		}
 		interfaceType.Complete()
+		parameters, parameterized := typeName.Type().(interface{ TypeParams() *types.TypeParamList })
+		requirement := privateInterfaceRequirement{interfaceType: interfaceType, generic: parameterized && parameters.TypeParams().Len() > 0}
 		for index := 0; index < interfaceType.NumMethods(); index++ {
 			method := interfaceType.Method(index)
 			if method.Exported() || method.Pkg() != typeName.Pkg() {
 				continue
 			}
-			requirements[privateMethodRequirement(method, qualifier)] = struct{}{}
+			key := privateMethodRequirement(method, qualifier)
+			requirements[key] = append(requirements[key], requirement)
 		}
 	}
 	return requirements
@@ -681,7 +689,7 @@ func (collector *hiddenTypeCollector) visitSpec(spec *ast.TypeSpec) {
 	collector.visitTypeSpec(spec)
 }
 
-func publicAPIEntriesForDeclaration(fset *token.FileSet, declaration ast.Decl, typeInfo *types.Info, qualifier types.Qualifier, privateInterfaceMethods map[string]struct{}, reachableTypes map[types.Object]struct{}) ([]string, error) {
+func publicAPIEntriesForDeclaration(fset *token.FileSet, declaration ast.Decl, typeInfo *types.Info, qualifier types.Qualifier, privateInterfaceMethods map[string][]privateInterfaceRequirement, reachableTypes map[types.Object]struct{}) ([]string, error) {
 	switch declaration := declaration.(type) {
 	case *ast.GenDecl:
 		return publicAPIGeneralDeclarationEntries(fset, declaration, typeInfo, qualifier)
@@ -739,7 +747,7 @@ func publicAPITypeDeclarationEntries(fset *token.FileSet, declaration *ast.GenDe
 	return entries
 }
 
-func publicAPIFunctionDeclarationEntry(fset *token.FileSet, declaration *ast.FuncDecl, typeInfo *types.Info, qualifier types.Qualifier, privateInterfaceMethods map[string]struct{}, reachableTypes map[types.Object]struct{}) []string {
+func publicAPIFunctionDeclarationEntry(fset *token.FileSet, declaration *ast.FuncDecl, typeInfo *types.Info, qualifier types.Qualifier, privateInterfaceMethods map[string][]privateInterfaceRequirement, reachableTypes map[types.Object]struct{}) []string {
 	if declaration.Name == nil {
 		return nil
 	}
@@ -800,9 +808,29 @@ func exportedLocalReceiver(method *types.Func) bool {
 	return ast.IsExported(named.Obj().Name())
 }
 
-func privateMethodRequiredByInterface(method *types.Func, qualifier types.Qualifier, requirements map[string]struct{}) bool {
-	_, required := requirements[privateMethodRequirement(method, qualifier)]
-	return required
+func privateMethodRequiredByInterface(method *types.Func, qualifier types.Qualifier, requirements map[string][]privateInterfaceRequirement) bool {
+	signature, ok := method.Type().(*types.Signature)
+	if !ok || signature.Recv() == nil {
+		return false
+	}
+	named := receiverNamedType(signature.Recv().Type())
+	if named == nil {
+		return false
+	}
+	for _, requirement := range requirements[privateMethodRequirement(method, qualifier)] {
+		// Preserve the existing generic boundary until scoped matching is supported.
+		if requirement.generic || named.TypeParams().Len() > 0 {
+			return true
+		}
+		satisfies := types.Implements
+		if !requirement.interfaceType.IsMethodSet() {
+			satisfies = types.Satisfies
+		}
+		if satisfies(named, requirement.interfaceType) || satisfies(types.NewPointer(named), requirement.interfaceType) {
+			return true
+		}
+	}
+	return false
 }
 
 func receiverNamedType(typ types.Type) *types.Named {
