@@ -368,19 +368,16 @@ func publicAPIEntriesForFiles(fset *token.FileSet, importPath string, files []*a
 	}
 	qualifier := packagePathQualifier(checkedPkg)
 	privateInterfaceMethods := privateInterfaceMethodRequirements(&typeInfo, qualifier)
-	entries := []string{}
-	hiddenTypes := localTypeSpecs(files, &typeInfo)
-	seenHiddenTypes := make(map[types.Object]struct{})
+	collector := hiddenTypeCollector{fset: fset, typeInfo: &typeInfo, qualifier: qualifier, hiddenTypes: localTypeSpecs(files, &typeInfo), seen: make(map[types.Object]struct{}), seenTypes: make(map[types.Type]struct{})}
+	collector.collectFiles(files)
+	entries := append([]string(nil), collector.entries...)
 	for _, file := range files {
 		for _, declaration := range file.Decls {
-			current, err := publicAPIEntriesForDeclaration(fset, declaration, &typeInfo, qualifier, privateInterfaceMethods)
+			current, err := publicAPIEntriesForDeclaration(fset, declaration, &typeInfo, qualifier, privateInterfaceMethods, collector.seen)
 			if err != nil {
 				return nil, err
 			}
 			entries = append(entries, current...)
-			collector := hiddenTypeCollector{fset: fset, typeInfo: &typeInfo, qualifier: qualifier, hiddenTypes: hiddenTypes, seen: seenHiddenTypes, seenTypes: make(map[types.Type]struct{})}
-			collector.collect(declaration)
-			entries = append(entries, collector.entries...)
 		}
 	}
 	return entries, nil
@@ -456,6 +453,21 @@ type hiddenTypeCollector struct {
 	entries     []string
 }
 
+// Repeat the finite local-type walk so method results do not depend on file order.
+func (collector *hiddenTypeCollector) collectFiles(files []*ast.File) {
+	for {
+		before := len(collector.seen)
+		for _, file := range files {
+			for _, declaration := range file.Decls {
+				collector.collect(declaration)
+			}
+		}
+		if len(collector.seen) == before {
+			return
+		}
+	}
+}
+
 func (collector *hiddenTypeCollector) collect(declaration ast.Decl) {
 	if declaration, ok := declaration.(*ast.GenDecl); ok {
 		collector.collectGeneralDeclaration(declaration)
@@ -500,6 +512,12 @@ func (collector *hiddenTypeCollector) collectExportedValueSpecs(specs []ast.Spec
 func (collector *hiddenTypeCollector) collectFunctionDeclaration(declaration *ast.FuncDecl) {
 	if declaration.Name == nil || !ast.IsExported(declaration.Name.Name) {
 		return
+	}
+	if declaration.Recv != nil {
+		method, _ := collector.typeInfo.Defs[declaration.Name].(*types.Func)
+		if !publicLocalReceiver(method, collector.seen) {
+			return
+		}
 	}
 	collector.visitExpression(declaration.Type)
 	if declaration.Recv != nil {
@@ -663,12 +681,12 @@ func (collector *hiddenTypeCollector) visitSpec(spec *ast.TypeSpec) {
 	collector.visitTypeSpec(spec)
 }
 
-func publicAPIEntriesForDeclaration(fset *token.FileSet, declaration ast.Decl, typeInfo *types.Info, qualifier types.Qualifier, privateInterfaceMethods map[string]struct{}) ([]string, error) {
+func publicAPIEntriesForDeclaration(fset *token.FileSet, declaration ast.Decl, typeInfo *types.Info, qualifier types.Qualifier, privateInterfaceMethods map[string]struct{}, reachableTypes map[types.Object]struct{}) ([]string, error) {
 	switch declaration := declaration.(type) {
 	case *ast.GenDecl:
 		return publicAPIGeneralDeclarationEntries(fset, declaration, typeInfo, qualifier)
 	case *ast.FuncDecl:
-		return publicAPIFunctionDeclarationEntry(fset, declaration, typeInfo, qualifier, privateInterfaceMethods), nil
+		return publicAPIFunctionDeclarationEntry(fset, declaration, typeInfo, qualifier, privateInterfaceMethods, reachableTypes), nil
 	default:
 		return nil, nil
 	}
@@ -721,7 +739,7 @@ func publicAPITypeDeclarationEntries(fset *token.FileSet, declaration *ast.GenDe
 	return entries
 }
 
-func publicAPIFunctionDeclarationEntry(fset *token.FileSet, declaration *ast.FuncDecl, typeInfo *types.Info, qualifier types.Qualifier, privateInterfaceMethods map[string]struct{}) []string {
+func publicAPIFunctionDeclarationEntry(fset *token.FileSet, declaration *ast.FuncDecl, typeInfo *types.Info, qualifier types.Qualifier, privateInterfaceMethods map[string]struct{}, reachableTypes map[types.Object]struct{}) []string {
 	if declaration.Name == nil {
 		return nil
 	}
@@ -733,6 +751,9 @@ func publicAPIFunctionDeclarationEntry(fset *token.FileSet, declaration *ast.Fun
 		return []string{fmt.Sprintf("func %s%s", declaration.Name.Name, signature)}
 	}
 	receiver, method := exportedLocalMethodReceiver(fset, declaration, typeInfo)
+	if !publicLocalReceiver(method, reachableTypes) {
+		return nil
+	}
 	if !ast.IsExported(declaration.Name.Name) && (method == nil || !exportedLocalReceiver(method) || !privateMethodRequiredByInterface(method, qualifier, privateInterfaceMethods)) {
 		return nil
 	}
@@ -746,6 +767,25 @@ func exportedLocalMethodReceiver(fset *token.FileSet, declaration *ast.FuncDecl,
 		return receiver, nil
 	}
 	return receiver, method
+}
+
+func publicLocalReceiver(method *types.Func, reachableTypes map[types.Object]struct{}) bool {
+	if method == nil {
+		return false
+	}
+	if exportedLocalReceiver(method) {
+		return true
+	}
+	signature, ok := method.Type().(*types.Signature)
+	if !ok || signature.Recv() == nil {
+		return false
+	}
+	named := receiverNamedType(signature.Recv().Type())
+	if named == nil {
+		return false
+	}
+	_, reachable := reachableTypes[named.Obj()]
+	return reachable
 }
 
 func exportedLocalReceiver(method *types.Func) bool {

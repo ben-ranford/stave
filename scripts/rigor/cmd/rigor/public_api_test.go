@@ -637,3 +637,29 @@ func TestPublicAPIInventoryNormalizesStructTagLiterals(t *testing.T) {
 		t.Fatal("removed struct tag did not change inventory")
 	}
 }
+
+func TestPublicAPIInventoryExcludesUnreachablePrivateReceiverMethods(t *testing.T) {
+	render := newPublicAPIFixture(t)
+	hidden := `type unused struct{}
+func (unused) Exported() privateResult { return privateResult{} }
+type privateResult struct { Value string }
+`
+	reachable := `type first struct{}
+type second struct{}
+func (second) Finish() string { return "" }
+func (first) Next() second { return second{} }
+func New() first { return first{} }
+type Public struct{}
+func (Public) Keep() {}
+`
+	before := render("package api\n" + hidden + reachable)
+	after := render("package api\n" + reachable)
+	if before != after {
+		t.Fatalf("private implementation changes affected inventory:\n%s\n%s", before, after)
+	}
+	for _, want := range []string{"method (first) Next() second", "method (second) Finish() string", "method (Public) Keep()"} {
+		if !strings.Contains(after, want) {
+			t.Fatalf("reachable method %q missing:\n%s", want, after)
+		}
+	}
+}

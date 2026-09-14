@@ -521,12 +521,6 @@ func ReduceCounter(context.Context, int, github.com/ben-ranford/stave/event.Even
 func ResizeStormRecovery(int) error
 func SurfaceFixture(int, int) (github.com/ben-ranford/stave/surface.Surface, error)
 func TerminalRestoreAfterCancellation() error
-method (*measurementDriver) Close() error
-method (*measurementDriver) Draw(context.Context, github.com/ben-ranford/stave/surface.Surface, github.com/ben-ranford/stave/surface.Patch) error
-method (*measurementDriver) Events() <-chan github.com/ben-ranford/stave/event.Event
-method (*measurementDriver) Open(context.Context, github.com/ben-ranford/stave/capability.Policy) (github.com/ben-ranford/stave/capability.Manifest, error)
-method (*measurementDriver) ReadSecret(context.Context, github.com/ben-ranford/stave/input.SecretPrompt) (github.com/ben-ranford/stave/secret.Handle, error)
-method (*measurementDriver) Restore(context.Context) error
 package performance
 struct-comparable Attempt true
 struct-comparable Budget true
@@ -534,14 +528,12 @@ struct-comparable Measurement false
 struct-comparable RatioMeasurement false
 struct-comparable Report false
 struct-comparable Reproducibility false
-struct-comparable measurementDriver false
 type Attempt struct { P50 time.Duration "json:\"p50\""; P95 time.Duration "json:\"p95\""; P99 time.Duration "json:\"p99\"" }
 type Budget struct { Name string "json:\"name\""; Limit time.Duration "json:\"limit\"" }
 type Measurement struct { Name string "json:\"name\""; Samples int "json:\"samples\""; P50 time.Duration "json:\"p50\""; P95 time.Duration "json:\"p95\""; P99 time.Duration "json:\"p99\""; AllWithinBudget bool "json:\"allWithinBudget\""; Limit time.Duration "json:\"limit\""; Disposition string "json:\"disposition,omitempty\""; Attempts []Attempt "json:\"attempts,omitempty\"" }
 type RatioMeasurement struct { Name string "json:\"name\""; Window time.Duration "json:\"window\""; Value float64 "json:\"value\""; Limit float64 "json:\"limit\""; AllWithinBudget bool "json:\"allWithinBudget\""; Disposition string "json:\"disposition,omitempty\""; Attempts []float64 "json:\"attempts,omitempty\"" }
 type Report struct { GeneratedAt time.Time "json:\"generatedAt\""; Host string "json:\"host\""; GoVersion string "json:\"goVersion\""; GOOS string "json:\"goos\""; GOARCH string "json:\"goarch\""; CPUs int "json:\"cpus\""; Nodes int "json:\"nodes\""; NodeShape string "json:\"nodeDistribution\""; Renderer string "json:\"renderer\""; Viewport github.com/ben-ranford/stave/layout.Size "json:\"viewport\""; Capabilities github.com/ben-ranford/stave/capability.Manifest "json:\"capabilities\""; Reproducibility Reproducibility "json:\"reproducibility\""; AllocBytes uint64 "json:\"allocBytes\""; AllocLimit uint64 "json:\"allocLimitBytes\""; AllocWithin bool "json:\"allocWithinBudget\""; IdleCPU RatioMeasurement "json:\"idleCpu\""; Measurements []Measurement "json:\"measurements\""; Invariants []string "json:\"invariants\"" }
 type Reproducibility struct { Invocation []string "json:\"invocation\""; SampleCount int "json:\"sampleCount\""; Strict bool "json:\"strict\""; GOMAXPROCS int "json:\"gomaxprocs\""; VCSRevision string "json:\"vcsRevision,omitempty\""; VCSModified bool "json:\"vcsModified,omitempty\"" }
-type measurementDriver struct {  }
 
 [github.com/ben-ranford/stave/primitive]
 const Grid Direction = "grid"

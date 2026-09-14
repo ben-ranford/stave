@@ -97,6 +97,11 @@ promoted from hidden embedded receivers into exported concrete method sets
 cases require explicit compatibility review and consumer compilation evidence
 before release; a passing inventory comparison alone is insufficient.
 
+Equivalent built-in alias spellings such as `byte`/`uint8` and `rune`/`int32`
+can still produce different inventory text ([#110](https://github.com/ben-ranford/stave/issues/110)).
+Preserve the existing spelling until that normalization is supported; review
+unexpected differences before release.
+
 `make release-baseline` requires an earlier stable v1 tag. When only
 prereleases exist, it fails deliberately; until issue #2 provides a stable
 baseline, a GA release cannot pass it. `make release-baseline-development` is
