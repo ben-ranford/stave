@@ -29,3 +29,26 @@ queue, concurrency, or Program runtime settings.
 
 When a Program has already prepared a session, use `prepared.Config` as that
 validated source before constructing the agent adapter.
+
+## Unreleased local-checkout session bridge
+
+`agent.BindSession` is an opt-in local-checkout API. It supplies a session's
+snapshot envelope and an idempotent cancellation callback, while the
+application continues to supply the action registry, authorization,
+confirmation, and policy callbacks in `agent.Options`. It does not select a
+transport or grant action authority.
+
+The agent snapshot envelope projects the session's internal zero-based sequence
+to the protocol's required one-based wire sequence. Revisions and hashes remain
+unchanged.
+
+Binding requires valid configuration and theme hashes. It projects at most the
+latest 16 session diagnostics with a constant `SESSION_DIAGNOSTIC` code;
+application-supplied codes, messages and attributes are not exposed. This
+projection does not change the host session's retained diagnostic history.
+
+Use a separate binding per snapshot consumer. Request a full snapshot, await its
+response, then request patches sequentially from the most recently returned
+revision. The bridge retains one baseline; stale patch requests are rejected
+and should recover with a full snapshot. Concurrent consumers need separate
+bindings and callbacks.
