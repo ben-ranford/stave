@@ -31,6 +31,9 @@ const (
 	// action or relation object adds two more containers.
 	maxSemanticTreeEdges   = 1024
 	maxTranscriptJSONDepth = 2*maxSemanticTreeEdges + 5
+	// A semantic snapshot is validated twice while decoding: once by NewTree
+	// and once by Snapshot.Validate. Bound each nodes×relations traversal.
+	maxSemanticSnapshotRelationWork uint64 = 500_000
 )
 
 // DecodeTranscript decodes one saved transcript artifact. JSON whitespace and
@@ -524,6 +527,9 @@ func decodeInitialSemanticSnapshot(tree any) (semantic.Snapshot, error) {
 		}
 		return semantic.Snapshot{}, err
 	}
+	if err := wire.Root.validateRelationWork(maxSemanticSnapshotRelationWork); err != nil {
+		return semantic.Snapshot{}, err
+	}
 	root, err := wire.Root.node()
 	if err != nil {
 		return semantic.Snapshot{}, err
@@ -697,6 +703,29 @@ type semanticNodeWire struct {
 	Children    []semanticNodeWire   `json:"children,omitempty"`
 	Flags       semantic.Flags       `json:"flags"`
 	Metadata    map[string]string    `json:"metadata,omitempty"`
+}
+
+func (wire semanticNodeWire) validateRelationWork(limit uint64) error {
+	var nodes, relations uint64
+	var visit func(semanticNodeWire) error
+	visit = func(current semanticNodeWire) error {
+		nodes++
+		relationCount := uint64(len(current.Relations))
+		if relationCount > limit-relations {
+			return errors.New("semantic snapshot relation work exceeds limit")
+		}
+		relations += relationCount
+		if relations != 0 && nodes > limit/relations {
+			return errors.New("semantic snapshot relation work exceeds limit")
+		}
+		for _, child := range current.Children {
+			if err := visit(child); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	return visit(wire)
 }
 
 func (wire semanticNodeWire) node() (semantic.Node, error) {

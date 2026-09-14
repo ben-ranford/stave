@@ -110,6 +110,78 @@ func TestSemanticTreeRejectsDepthBeyondMaximum(t *testing.T) {
 	}
 }
 
+func TestSemanticSnapshotRelationWorkBound(t *testing.T) {
+	tree := semanticTreeWithRelation(t)
+	var wire semanticSnapshotWire
+	if err := json.Unmarshal(mustJSON(t, tree.Snapshot()), &wire); err != nil {
+		t.Fatal(err)
+	}
+	if err := wire.Root.validateRelationWork(2); err != nil {
+		t.Fatalf("validateRelationWork() rejected exact boundary: %v", err)
+	}
+	wire.Root.Relations = append(wire.Root.Relations, wire.Root.Relations[0])
+	if err := wire.Root.validateRelationWork(2); err == nil || !strings.Contains(err.Error(), "relation work") {
+		t.Fatalf("validateRelationWork() error = %v, want relation work limit", err)
+	}
+}
+
+func TestDecodeTranscriptAcceptsAndValidatesSemanticSnapshotRelations(t *testing.T) {
+	tree := semanticTreeWithRelation(t)
+	transcript := mustTranscript(t)
+	snapshot := tree.Snapshot()
+	transcript.Initial.Tree = semanticTreeWire(t, snapshot)
+	transcript.Initial.Hashes.Tree = snapshot.TreeHash
+	transcript.Records[0].Prior.Hashes.Tree = snapshot.TreeHash
+	transcript.Records[0].Result.Hashes.Tree = snapshot.TreeHash
+	refreshInspectorCheckpointChecksum(t, &transcript.Initial)
+	data, err := transcript.CanonicalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := DecodeTranscript(data); err != nil {
+		t.Fatalf("DecodeTranscript() rejected a valid semantic relation: %v", err)
+	}
+
+	treeWire := transcript.Initial.Tree.(map[string]any)
+	relation := treeWire["root"].(map[string]any)["relations"].([]any)[0].(map[string]any)
+	relation["target"] = "invalid"
+	refreshInspectorCheckpointChecksum(t, &transcript.Initial)
+	invalid, err := transcript.CanonicalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := DecodeTranscript(invalid); err == nil {
+		t.Fatal("DecodeTranscript() accepted an invalid semantic relation target")
+	}
+}
+
+func TestDecodeTranscriptRejectsOverBudgetSemanticRelationWork(t *testing.T) {
+	wire := overBudgetSemanticRelationWire(t)
+	if _, err := decodeInitialSemanticSnapshot(wire); err == nil || !strings.Contains(err.Error(), "relation work") {
+		t.Fatalf("decodeInitialSemanticSnapshot() error = %v, want relation work limit before semantic construction", err)
+	}
+	var tree any
+	if err := json.Unmarshal(mustJSON(t, wire), &tree); err != nil {
+		t.Fatal(err)
+	}
+	transcript := mustTranscript(t)
+	transcript.Initial.Tree = tree
+	refreshInspectorCheckpointChecksum(t, &transcript.Initial)
+	data, err := transcript.CanonicalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data) > MaxTranscriptBytes {
+		t.Fatal("over-budget relation fixture exceeded byte limit")
+	}
+	if err := validateUniqueJSONKeys(data, 0); err != nil {
+		t.Fatalf("over-budget relation fixture exceeded a JSON preflight limit: %v", err)
+	}
+	if _, err := DecodeTranscript(data); err == nil {
+		t.Fatal("DecodeTranscript() accepted over-budget semantic relation work")
+	}
+}
+
 func TestValidateUniqueJSONKeysBoundsRootRecordsBeforeRawDecoding(t *testing.T) {
 	if err := validateUniqueJSONKeys(compactRecordsJSON(MaxTranscriptRecords), 0); err != nil {
 		t.Fatalf("validateUniqueJSONKeys() rejected exact record boundary: %v", err)
@@ -291,6 +363,59 @@ func deepSemanticTree(edges int) (semantic.Tree, error) {
 		}
 	}
 	return semantic.NewTree(1, child)
+}
+
+func semanticTreeWithRelation(t testing.TB) semantic.Tree {
+	t.Helper()
+	childID, err := semantic.NodeIDFor(semantic.NodeKey{AppNamespace: "stave", View: "replay", Kind: "node", Entity: "child", Slot: "main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, err := semantic.NewNode(semantic.NodeSpec{ID: childID, Generation: 1, Role: "text", Name: "child"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootID, err := semantic.NodeIDFor(semantic.NodeKey{AppNamespace: "stave", View: "replay", Kind: "node", Entity: "root", Slot: "main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := semantic.NewNode(semantic.NodeSpec{
+		ID: rootID, Generation: 1, Role: "group", Name: "root", Children: []semantic.Node{child},
+		Relations: []semantic.Relation{{Kind: "describedby", Target: childID}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree, err := semantic.NewTree(1, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tree
+}
+
+func overBudgetSemanticRelationWire(t testing.TB) semanticSnapshotWire {
+	t.Helper()
+	const nodes = 750
+	children := make([]semanticNodeWire, nodes-1)
+	for index := range children {
+		id, err := semantic.NodeIDFor(semantic.NodeKey{AppNamespace: "stave", View: "replay", Kind: "node", Entity: strconv.Itoa(index), Slot: "main"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		children[index] = semanticNodeWire{ID: id, Generation: 1, Role: "text", Name: "child"}
+	}
+	rootID, err := semantic.NodeIDFor(semantic.NodeKey{AppNamespace: "stave", View: "replay", Kind: "node", Entity: "root", Slot: "main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	relations := make([]semantic.Relation, nodes)
+	for index := range relations {
+		relations[index] = semantic.Relation{Kind: "describedby", Target: children[index%len(children)].ID}
+	}
+	return semanticSnapshotWire{
+		SchemaVersion: "stave-semantic-v1", Revision: 1, TreeHash: "unvalidated",
+		Root: semanticNodeWire{ID: rootID, Generation: 1, Role: "group", Name: "root", Relations: relations, Children: children},
+	}
 }
 
 func semanticTreeWire(t testing.TB, snapshot semantic.Snapshot) any {
