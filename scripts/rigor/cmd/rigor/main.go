@@ -1545,7 +1545,9 @@ func publicStructFields(fset *token.FileSet, fields *ast.FieldList, typeInfo *ty
 			declaration = strings.Join(names, ", ") + " " + declaration
 		}
 		if field.Tag != nil {
-			declaration += " " + field.Tag.Value
+			// Parsing and type checking already validated the tag literal.
+			tag, _ := strconv.Unquote(field.Tag.Value)
+			declaration += " " + strconv.Quote(tag)
 		}
 		out = append(out, declaration)
 	}

@@ -88,8 +88,8 @@ inventory support is tracked separately in issue #109.
 The gate is a bounded declaration and consumer regression check, not a complete
 analysis of Go source compatibility. Its current inventory does not follow
 public aliases into non-public root-local packages ([#112](https://github.com/ben-ranford/stave/issues/112)),
-collect sealed-method requirements from hidden interfaces exposed through public
-signatures ([#113](https://github.com/ben-ranford/stave/issues/113)), detect
+collect sealed-method requirements from hidden interfaces or hidden concrete
+result types exposed through public signatures ([#113](https://github.com/ben-ranford/stave/issues/113)), detect
 promoted-selector ambiguity caused by newly added methods on embedded types
 ([#114](https://github.com/ben-ranford/stave/issues/114)), or track private methods
 promoted from hidden embedded receivers into exported concrete method sets

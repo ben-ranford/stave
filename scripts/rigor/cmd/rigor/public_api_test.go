@@ -38,7 +38,7 @@ type ID string
 `)
 	before := render()
 	for _, want := range []string{
-		"type Report[T any] struct { Name string `json:\"name\"` }",
+		`type Report[T any] struct { Name string "json:\"name\"" }`,
 		"type Runner[T any] interface { Run(T) error; private() }",
 		"type Label = string",
 		"type ID string",
@@ -618,5 +618,22 @@ func newPublicAPIFixture(t *testing.T) func(string) string {
 			t.Fatal(err)
 		}
 		return inventory
+	}
+}
+
+func TestPublicAPIInventoryNormalizesStructTagLiterals(t *testing.T) {
+	render := newPublicAPIFixture(t)
+	raw := render("package api\ntype Tagged struct { Field string `json:\"x\"` }\n")
+	quoted := render("package api\ntype Tagged struct { Field string \"json:\\\"x\\\"\" }\n")
+	if raw != quoted {
+		t.Fatalf("equivalent struct tags changed inventory:\n%s\n%s", raw, quoted)
+	}
+	changed := render("package api\ntype Tagged struct { Field string `json:\"y\"` }\n")
+	if raw == changed {
+		t.Fatal("changed struct tag did not change inventory")
+	}
+	removed := render("package api\ntype Tagged struct { Field string }\n")
+	if raw == removed {
+		t.Fatal("removed struct tag did not change inventory")
 	}
 }

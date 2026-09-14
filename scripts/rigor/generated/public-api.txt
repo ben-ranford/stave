@@ -75,10 +75,10 @@ struct-comparable Result false
 struct-comparable Schema false
 type Call struct { CallID string; ActionID ID; Target github.com/ben-ranford/stave/semantic.Target; Arguments encoding/json.RawMessage; Confirmation *Confirmation; Deadline time.Time; PolicyID string; PolicyEpoch uint64; SessionID string }
 type Code string
-type Confirmation struct { Token string `json:"token"`; SessionID string `json:"sessionId"`; ActionID ID `json:"actionId"`; Target github.com/ben-ranford/stave/semantic.Target `json:"target"`; ArgHash string `json:"argHash"`; ExpiresAt time.Time `json:"expiresAt"`; Used bool `json:"used"`; ActionVersion string `json:"actionVersion"`; RevisionMin uint64 `json:"revisionMin"`; RevisionMax uint64 `json:"revisionMax"`; Safety Safety `json:"safety"`; PolicyID string `json:"policyId"`; PolicyEpoch uint64 `json:"policyEpoch"` }
-type ConfirmationPolicy struct { Required bool `json:"required"`; SingleUse bool `json:"singleUse"` }
-type Definition struct { ID ID `json:"id"`; Version string `json:"version"`; Title string `json:"title"`; Description string `json:"description,omitempty"`; InputSchema Schema `json:"inputSchema"`; OutputSchema Schema `json:"outputSchema"`; Safety Safety `json:"safety"`; Idempotency Idempotency `json:"idempotency"`; Cancellable bool `json:"cancellable,omitempty"`; TargetRoles []github.com/ben-ranford/stave/semantic.Role `json:"targetRoles,omitempty"`; RequiredCaps []string `json:"requiredCaps,omitempty"`; Confirmation ConfirmationPolicy `json:"confirmation,omitempty"`; Timeout time.Duration `json:"timeout,omitempty"` }
-type Error struct { Code Code `json:"code"`; Message string `json:"message"`; Retryable bool `json:"retryable"`; ActionID ID `json:"actionId,omitempty"`; NodeID github.com/ben-ranford/stave/semantic.NodeID `json:"nodeId,omitempty"`; Revision uint64 `json:"revision,omitempty"`; Details encoding/json.RawMessage `json:"details,omitempty"`; CauseClass string `json:"causeClass,omitempty"` }
+type Confirmation struct { Token string "json:\"token\""; SessionID string "json:\"sessionId\""; ActionID ID "json:\"actionId\""; Target github.com/ben-ranford/stave/semantic.Target "json:\"target\""; ArgHash string "json:\"argHash\""; ExpiresAt time.Time "json:\"expiresAt\""; Used bool "json:\"used\""; ActionVersion string "json:\"actionVersion\""; RevisionMin uint64 "json:\"revisionMin\""; RevisionMax uint64 "json:\"revisionMax\""; Safety Safety "json:\"safety\""; PolicyID string "json:\"policyId\""; PolicyEpoch uint64 "json:\"policyEpoch\"" }
+type ConfirmationPolicy struct { Required bool "json:\"required\""; SingleUse bool "json:\"singleUse\"" }
+type Definition struct { ID ID "json:\"id\""; Version string "json:\"version\""; Title string "json:\"title\""; Description string "json:\"description,omitempty\""; InputSchema Schema "json:\"inputSchema\""; OutputSchema Schema "json:\"outputSchema\""; Safety Safety "json:\"safety\""; Idempotency Idempotency "json:\"idempotency\""; Cancellable bool "json:\"cancellable,omitempty\""; TargetRoles []github.com/ben-ranford/stave/semantic.Role "json:\"targetRoles,omitempty\""; RequiredCaps []string "json:\"requiredCaps,omitempty\""; Confirmation ConfirmationPolicy "json:\"confirmation,omitempty\""; Timeout time.Duration "json:\"timeout,omitempty\"" }
+type Error struct { Code Code "json:\"code\""; Message string "json:\"message\""; Retryable bool "json:\"retryable\""; ActionID ID "json:\"actionId,omitempty\""; NodeID github.com/ben-ranford/stave/semantic.NodeID "json:\"nodeId,omitempty\""; Revision uint64 "json:\"revision,omitempty\""; Details encoding/json.RawMessage "json:\"details,omitempty\""; CauseClass string "json:\"causeClass,omitempty\"" }
 type Handler func(context.Context, Call, any) (any, error)
 type ID string
 type Idempotency string
@@ -86,7 +86,7 @@ type Registry struct {  }
 type Result struct { CallID string; ActionID ID; Target github.com/ben-ranford/stave/semantic.Target; Status ResultStatus; Output encoding/json.RawMessage; Error *Error; Revision uint64; TreeHash string; Diagnostics []github.com/ben-ranford/stave/diag.Diagnostic }
 type ResultStatus string
 type Safety string
-type Schema struct { ID string `json:"id"`; JSON encoding/json.RawMessage `json:"json"`; Decode func(encoding/json.RawMessage) (any, error) `json:"-"`; Encode func(any) (encoding/json.RawMessage, error) `json:"-"` }
+type Schema struct { ID string "json:\"id\""; JSON encoding/json.RawMessage "json:\"json\""; Decode func(encoding/json.RawMessage) (any, error) "json:\"-\""; Encode func(any) (encoding/json.RawMessage, error) "json:\"-\"" }
 var ErrConfirmationLimit error
 var ErrNumericLimit error
 
@@ -151,8 +151,8 @@ type ColorLevel int
 type ColorPolicy string
 type Diagnostic struct { Code string; Field string; Message string }
 type ID string
-type Limits struct { MaxTreeNodes int `json:"maxTreeNodes,omitempty"`; MaxMessageBytes int `json:"maxMessageBytes,omitempty"`; MaxInputBytes int `json:"maxInputBytes,omitempty"` }
-type Manifest struct { ProtocolVersions []string `json:"protocolVersions"`; OutputMode OutputMode `json:"outputMode"`; Interactive bool `json:"interactive"`; TTY bool `json:"tty"`; Width int `json:"width,omitempty"`; Height int `json:"height,omitempty"`; Color ColorLevel `json:"color"`; HardwareColor ColorLevel `json:"hardwareColor"`; ColorDisabled bool `json:"colorDisabled,omitempty"`; Unicode UnicodeLevel `json:"unicode"`; CursorAddressing bool `json:"cursorAddressing"`; AlternateScreen bool `json:"alternateScreen"`; Mouse bool `json:"mouse"`; BracketedPaste bool `json:"bracketedPaste"`; KeyboardLevel string `json:"keyboardLevel,omitempty"`; ReducedMotion bool `json:"reducedMotion"`; ScreenReader bool `json:"screenReader"`; SecureInput bool `json:"secureInput"`; Clipboard bool `json:"clipboard"`; CoordinateFallback bool `json:"coordinateFallback"`; SnapshotModes []string `json:"snapshotModes,omitempty"`; ActionFamilies []string `json:"actionFamilies,omitempty"`; Limits Limits `json:"limits"` }
+type Limits struct { MaxTreeNodes int "json:\"maxTreeNodes,omitempty\""; MaxMessageBytes int "json:\"maxMessageBytes,omitempty\""; MaxInputBytes int "json:\"maxInputBytes,omitempty\"" }
+type Manifest struct { ProtocolVersions []string "json:\"protocolVersions\""; OutputMode OutputMode "json:\"outputMode\""; Interactive bool "json:\"interactive\""; TTY bool "json:\"tty\""; Width int "json:\"width,omitempty\""; Height int "json:\"height,omitempty\""; Color ColorLevel "json:\"color\""; HardwareColor ColorLevel "json:\"hardwareColor\""; ColorDisabled bool "json:\"colorDisabled,omitempty\""; Unicode UnicodeLevel "json:\"unicode\""; CursorAddressing bool "json:\"cursorAddressing\""; AlternateScreen bool "json:\"alternateScreen\""; Mouse bool "json:\"mouse\""; BracketedPaste bool "json:\"bracketedPaste\""; KeyboardLevel string "json:\"keyboardLevel,omitempty\""; ReducedMotion bool "json:\"reducedMotion\""; ScreenReader bool "json:\"screenReader\""; SecureInput bool "json:\"secureInput\""; Clipboard bool "json:\"clipboard\""; CoordinateFallback bool "json:\"coordinateFallback\""; SnapshotModes []string "json:\"snapshotModes,omitempty\""; ActionFamilies []string "json:\"actionFamilies,omitempty\""; Limits Limits "json:\"limits\"" }
 type Negotiation struct { RuntimeDetected Manifest; ClientOffered Manifest; Application Policy; UserOverrides Overrides; Security SecurityPolicy; ClientPresent bool }
 type OutputMode string
 type Overrides struct { OutputMode OutputMode; Color ColorPolicy; Unicode, ReducedMotion, Mouse, AlternateScreen, CursorAddressing, BracketedPaste, Clipboard, SecureInput, ScreenReader *bool; CoordinateFallback *bool }
@@ -194,19 +194,19 @@ struct-comparable Security true
 struct-comparable Theme true
 struct-comparable ValidationError false
 struct-comparable Viewport true
-type App struct { ID string `json:"id,omitempty"`; Version string `json:"version,omitempty"` }
-type Capabilities struct { Color string `json:"color,omitempty"`; Unicode string `json:"unicode,omitempty"`; Motion string `json:"motion,omitempty"`; Mouse string `json:"mouse,omitempty"`; AlternateScreen string `json:"alternateScreen,omitempty"` }
-type Config struct { SchemaVersion string `json:"schemaVersion"`; App App `json:"app"`; Theme Theme `json:"theme"`; Viewport Viewport `json:"viewport"`; Capabilities Capabilities `json:"capabilities"`; Keymap Keymap `json:"keymap"`; Runtime Runtime `json:"runtime"`; Protocol Protocol `json:"protocol"`; Security Security `json:"security"`; Diagnostics Diagnostics `json:"diagnostics"` }
-type Diagnostics struct { Level string `json:"level,omitempty"`; Format string `json:"format,omitempty"` }
-type Keymap struct { Profile string `json:"profile,omitempty"`; Bindings []string `json:"bindings,omitempty"` }
+type App struct { ID string "json:\"id,omitempty\""; Version string "json:\"version,omitempty\"" }
+type Capabilities struct { Color string "json:\"color,omitempty\""; Unicode string "json:\"unicode,omitempty\""; Motion string "json:\"motion,omitempty\""; Mouse string "json:\"mouse,omitempty\""; AlternateScreen string "json:\"alternateScreen,omitempty\"" }
+type Config struct { SchemaVersion string "json:\"schemaVersion\""; App App "json:\"app\""; Theme Theme "json:\"theme\""; Viewport Viewport "json:\"viewport\""; Capabilities Capabilities "json:\"capabilities\""; Keymap Keymap "json:\"keymap\""; Runtime Runtime "json:\"runtime\""; Protocol Protocol "json:\"protocol\""; Security Security "json:\"security\""; Diagnostics Diagnostics "json:\"diagnostics\"" }
+type Diagnostics struct { Level string "json:\"level,omitempty\""; Format string "json:\"format,omitempty\"" }
+type Keymap struct { Profile string "json:\"profile,omitempty\""; Bindings []string "json:\"bindings,omitempty\"" }
 type Layer struct {  }
-type Problem struct { Source string `json:"source"`; Path string `json:"path"`; Code string `json:"code"`; Message string `json:"message"` }
-type Protocol struct { Enabled bool `json:"enabled,omitempty"`; Transport string `json:"transport,omitempty"`; MaxMessageBytes int `json:"maxMessageBytes,omitempty"` }
-type Runtime struct { Mode string `json:"mode,omitempty"`; InputQueue int `json:"inputQueue,omitempty"`; ActionQueue int `json:"actionQueue,omitempty"`; RestoreOnPanic bool `json:"restoreOnPanic,omitempty"` }
-type Security struct { AllowClipboard bool `json:"allowClipboard,omitempty"`; AllowCoordinateFallback bool `json:"allowCoordinateFallback,omitempty"`; ConfirmationTTL string `json:"confirmationTTL,omitempty"`; MaxTreeNodes int `json:"maxTreeNodes,omitempty"` }
-type Theme struct { ID string `json:"id,omitempty"`; Mode string `json:"mode,omitempty"`; Density string `json:"density,omitempty"` }
-type ValidationError struct { Problems []Problem `json:"problems"` }
-type Viewport struct { Width int `json:"width,omitempty"`; Height int `json:"height,omitempty"` }
+type Problem struct { Source string "json:\"source\""; Path string "json:\"path\""; Code string "json:\"code\""; Message string "json:\"message\"" }
+type Protocol struct { Enabled bool "json:\"enabled,omitempty\""; Transport string "json:\"transport,omitempty\""; MaxMessageBytes int "json:\"maxMessageBytes,omitempty\"" }
+type Runtime struct { Mode string "json:\"mode,omitempty\""; InputQueue int "json:\"inputQueue,omitempty\""; ActionQueue int "json:\"actionQueue,omitempty\""; RestoreOnPanic bool "json:\"restoreOnPanic,omitempty\"" }
+type Security struct { AllowClipboard bool "json:\"allowClipboard,omitempty\""; AllowCoordinateFallback bool "json:\"allowCoordinateFallback,omitempty\""; ConfirmationTTL string "json:\"confirmationTTL,omitempty\""; MaxTreeNodes int "json:\"maxTreeNodes,omitempty\"" }
+type Theme struct { ID string "json:\"id,omitempty\""; Mode string "json:\"mode,omitempty\""; Density string "json:\"density,omitempty\"" }
+type ValidationError struct { Problems []Problem "json:\"problems\"" }
+type Viewport struct { Width int "json:\"width,omitempty\""; Height int "json:\"height,omitempty\"" }
 
 [github.com/ben-ranford/stave/conformance]
 func CheckAdapter(Adapter, github.com/ben-ranford/stave/semantic.Node, []Mode) Report
@@ -236,7 +236,7 @@ const Warning Severity = "warning"
 method (Diagnostic) MarshalJSON() ([]byte, error)
 package diag
 struct-comparable Diagnostic false
-type Diagnostic struct { SchemaVersion string `json:"schemaVersion"`; ID string `json:"id"`; Sequence uint64 `json:"sequence,omitempty"`; Revision uint64 `json:"revision,omitempty"`; Time time.Time `json:"time,omitempty"`; Severity Severity `json:"severity"`; Category string `json:"category,omitempty"`; Code string `json:"code,omitempty"`; Message string `json:"message,omitempty"`; NodeID github.com/ben-ranford/stave/semantic.NodeID `json:"nodeId,omitempty"`; Attributes map[string]string `json:"attributes,omitempty"`; Retryable bool `json:"retryable,omitempty"`; Redacted bool `json:"redacted,omitempty"` }
+type Diagnostic struct { SchemaVersion string "json:\"schemaVersion\""; ID string "json:\"id\""; Sequence uint64 "json:\"sequence,omitempty\""; Revision uint64 "json:\"revision,omitempty\""; Time time.Time "json:\"time,omitempty\""; Severity Severity "json:\"severity\""; Category string "json:\"category,omitempty\""; Code string "json:\"code,omitempty\""; Message string "json:\"message,omitempty\""; NodeID github.com/ben-ranford/stave/semantic.NodeID "json:\"nodeId,omitempty\""; Attributes map[string]string "json:\"attributes,omitempty\""; Retryable bool "json:\"retryable,omitempty\""; Redacted bool "json:\"redacted,omitempty\"" }
 type Severity string
 
 [github.com/ben-ranford/stave/effect]
@@ -264,16 +264,16 @@ struct-comparable Options false
 struct-comparable Outcome true
 struct-comparable Request true
 struct-comparable Spec true
-type Call struct { ID string `json:"id"`; Sequence uint64 `json:"sequence"`; Revision uint64 `json:"revision"`; Ordinal uint32 `json:"ordinal"`; Spec Spec `json:"spec"`; Input any `json:"input,omitempty"` }
+type Call struct { ID string "json:\"id\""; Sequence uint64 "json:\"sequence\""; Revision uint64 "json:\"revision\""; Ordinal uint32 "json:\"ordinal\""; Spec Spec "json:\"spec\""; Input any "json:\"input,omitempty\"" }
 type Delivery string
 type Executor struct {  }
 type Options struct { Ports map[string]Port; Parallelism int; Delivery Delivery; MaxBatch int; MaxInputBytes int; MaxOutputBytes int; MaxActiveBatches int; OnSinkError func(error) }
-type Outcome struct { ID string `json:"id"`; Sequence uint64 `json:"sequence"`; Revision uint64 `json:"revision"`; Ordinal uint32 `json:"ordinal"`; Lane string `json:"lane,omitempty"`; Status Status `json:"status"`; Value any `json:"value,omitempty"`; Error string `json:"error,omitempty"`; Sensitive bool `json:"sensitive,omitempty"`; CompletionIndex uint32 `json:"completionIndex,omitempty"` }
+type Outcome struct { ID string "json:\"id\""; Sequence uint64 "json:\"sequence\""; Revision uint64 "json:\"revision\""; Ordinal uint32 "json:\"ordinal\""; Lane string "json:\"lane,omitempty\""; Status Status "json:\"status\""; Value any "json:\"value,omitempty\""; Error string "json:\"error,omitempty\""; Sensitive bool "json:\"sensitive,omitempty\""; CompletionIndex uint32 "json:\"completionIndex,omitempty\"" }
 type Port interface { Run(context.Context, Call) (any, error) }
 type PortFunc func(context.Context, Call) (any, error)
-type Request struct { Spec Spec `json:"spec"`; Input any `json:"input,omitempty"` }
+type Request struct { Spec Spec "json:\"spec\""; Input any "json:\"input,omitempty\"" }
 type Sink func(github.com/ben-ranford/stave/event.Event) error
-type Spec struct { Kind string `json:"kind"`; Lane string `json:"lane,omitempty"`; Cancellable bool `json:"cancellable,omitempty"`; Sensitive bool `json:"sensitive,omitempty"`; Timeout time.Duration `json:"timeout,omitempty"` }
+type Spec struct { Kind string "json:\"kind\""; Lane string "json:\"lane,omitempty\""; Cancellable bool "json:\"cancellable,omitempty\""; Sensitive bool "json:\"sensitive,omitempty\""; Timeout time.Duration "json:\"timeout,omitempty\"" }
 type Status string
 var ErrBackpressure error
 var ErrClosed error
@@ -322,20 +322,20 @@ struct-comparable ResizePayload true
 struct-comparable SecureInputPayload true
 struct-comparable Target true
 struct-comparable TextPayload true
-type ActionInvokedPayload struct { CallID string `json:"callId"`; ActionID string `json:"actionId"`; Target *Target `json:"target,omitempty"`; Arguments any `json:"arguments,omitempty"`; Sensitive bool `json:"sensitive,omitempty"` }
-type DiagnosticPayload struct { Code string `json:"code"`; Message string `json:"message"`; SafeContext map[string]string `json:"safeContext,omitempty"` }
-type EffectResultPayload struct { CallID string `json:"callId"`; Ordinal uint32 `json:"ordinal"`; Lane string `json:"lane,omitempty"`; Status string `json:"status"`; Value any `json:"value,omitempty"`; Error string `json:"error,omitempty"`; Sensitive bool `json:"sensitive,omitempty"` }
-type Event struct { SchemaVersion string `json:"schemaVersion"`; Kind Kind `json:"kind"`; Sequence uint64 `json:"sequence,omitempty"`; Revision uint64 `json:"revision,omitempty"`; Timestamp LogicalTime `json:"timestamp,omitempty"`; Payload any `json:"payload,omitempty"`; Meta Metadata `json:"meta,omitempty"` }
-type KeyPayload struct { Key string `json:"key"`; Rune rune `json:"rune,omitempty"`; Modifiers []string `json:"modifiers,omitempty"` }
+type ActionInvokedPayload struct { CallID string "json:\"callId\""; ActionID string "json:\"actionId\""; Target *Target "json:\"target,omitempty\""; Arguments any "json:\"arguments,omitempty\""; Sensitive bool "json:\"sensitive,omitempty\"" }
+type DiagnosticPayload struct { Code string "json:\"code\""; Message string "json:\"message\""; SafeContext map[string]string "json:\"safeContext,omitempty\"" }
+type EffectResultPayload struct { CallID string "json:\"callId\""; Ordinal uint32 "json:\"ordinal\""; Lane string "json:\"lane,omitempty\""; Status string "json:\"status\""; Value any "json:\"value,omitempty\""; Error string "json:\"error,omitempty\""; Sensitive bool "json:\"sensitive,omitempty\"" }
+type Event struct { SchemaVersion string "json:\"schemaVersion\""; Kind Kind "json:\"kind\""; Sequence uint64 "json:\"sequence,omitempty\""; Revision uint64 "json:\"revision,omitempty\""; Timestamp LogicalTime "json:\"timestamp,omitempty\""; Payload any "json:\"payload,omitempty\""; Meta Metadata "json:\"meta,omitempty\"" }
+type KeyPayload struct { Key string "json:\"key\""; Rune rune "json:\"rune,omitempty\""; Modifiers []string "json:\"modifiers,omitempty\"" }
 type Kind string
-type LogicalTime struct { Tick uint64 `json:"tick,omitempty"` }
-type Metadata struct { Source string `json:"source,omitempty"`; Coalesced bool `json:"coalesced,omitempty"`; CompletionIndex uint32 `json:"completionIndex,omitempty"`; Lane string `json:"lane,omitempty"` }
-type PointerPayload struct { SourceID string `json:"sourceId"`; X int `json:"x"`; Y int `json:"y"`; Phase string `json:"phase,omitempty"`; Buttons []string `json:"buttons,omitempty"` }
-type Redaction struct { Redacted bool `json:"redacted"`; Reason string `json:"reason,omitempty"` }
-type ResizePayload struct { Width int `json:"width"`; Height int `json:"height"` }
-type SecureInputPayload struct { Handle github.com/ben-ranford/stave/secret.Handle `json:"handle"` }
-type Target struct { NodeID string `json:"nodeId,omitempty"`; Generation uint32 `json:"generation,omitempty"`; ObservedRevision uint64 `json:"observedRevision,omitempty"` }
-type TextPayload struct { Text string `json:"text"`; Committed bool `json:"committed,omitempty"` }
+type LogicalTime struct { Tick uint64 "json:\"tick,omitempty\"" }
+type Metadata struct { Source string "json:\"source,omitempty\""; Coalesced bool "json:\"coalesced,omitempty\""; CompletionIndex uint32 "json:\"completionIndex,omitempty\""; Lane string "json:\"lane,omitempty\"" }
+type PointerPayload struct { SourceID string "json:\"sourceId\""; X int "json:\"x\""; Y int "json:\"y\""; Phase string "json:\"phase,omitempty\""; Buttons []string "json:\"buttons,omitempty\"" }
+type Redaction struct { Redacted bool "json:\"redacted\""; Reason string "json:\"reason,omitempty\"" }
+type ResizePayload struct { Width int "json:\"width\""; Height int "json:\"height\"" }
+type SecureInputPayload struct { Handle github.com/ben-ranford/stave/secret.Handle "json:\"handle\"" }
+type Target struct { NodeID string "json:\"nodeId,omitempty\""; Generation uint32 "json:\"generation,omitempty\""; ObservedRevision uint64 "json:\"observedRevision,omitempty\"" }
+type TextPayload struct { Text string "json:\"text\""; Committed bool "json:\"committed,omitempty\"" }
 
 [github.com/ben-ranford/stave/focus]
 func NewGraph(github.com/ben-ranford/stave/semantic.Tree) Graph
@@ -407,19 +407,19 @@ struct-comparable SecretHandle true
 struct-comparable SecretPrompt true
 struct-comparable Signal true
 struct-comparable Text true
-type Diagnostic struct { Code string `json:"code"`; Message string `json:"message"`; Fields map[string]string `json:"fields,omitempty"` }
+type Diagnostic struct { Code string "json:\"code\""; Message string "json:\"message\""; Fields map[string]string "json:\"fields,omitempty\"" }
 type EOF struct {  }
-type KeyChord struct { Code KeyCode `json:"code"`; Rune rune `json:"rune,omitempty"`; Mods Mod `json:"mods,omitempty"` }
+type KeyChord struct { Code KeyCode "json:\"code\""; Rune rune "json:\"rune,omitempty\""; Mods Mod "json:\"mods,omitempty\"" }
 type KeyCode string
 type MemorySecretStore = github.com/ben-ranford/stave/secret.MemoryStore
 type Mod uint8
-type Resize struct { Width int `json:"width"`; Height int `json:"height"` }
+type Resize struct { Width int "json:\"width\""; Height int "json:\"height\"" }
 type SecretHandle = github.com/ben-ranford/stave/secret.Handle
-type SecretPrompt struct { ID string `json:"id"`; Label string `json:"label"`; Description string `json:"description,omitempty"` }
+type SecretPrompt struct { ID string "json:\"id\""; Label string "json:\"label\""; Description string "json:\"description,omitempty\"" }
 type SecretStore = github.com/ben-ranford/stave/secret.Store
 type SecureProvider interface { ReadSecret(context.Context, SecretPrompt) (SecretHandle, error) }
-type Signal struct { Name string `json:"name"` }
-type Text struct { Value string `json:"value"`; Source TextSource `json:"source"`; Truncated bool `json:"truncated,omitempty"` }
+type Signal struct { Name string "json:\"name\"" }
+type Text struct { Value string "json:\"value\""; Source TextSource "json:\"source\""; Truncated bool "json:\"truncated,omitempty\"" }
 type TextSource string
 var ErrSecretNotFound error
 
@@ -458,15 +458,15 @@ struct-comparable Map false
 struct-comparable Mapping false
 struct-comparable Resolution false
 struct-comparable Route false
-type Binding struct { Sequence []github.com/ben-ranford/stave/input.KeyChord `json:"sequence"`; Command CommandID `json:"command"`; Scope github.com/ben-ranford/stave/semantic.NodeID `json:"scope,omitempty"`; Priority int `json:"priority,omitempty"` }
+type Binding struct { Sequence []github.com/ben-ranford/stave/input.KeyChord "json:\"sequence\""; Command CommandID "json:\"command\""; Scope github.com/ben-ranford/stave/semantic.NodeID "json:\"scope,omitempty\""; Priority int "json:\"priority,omitempty\"" }
 type BindingInventory struct { Command CommandID; Sequence []github.com/ben-ranford/stave/input.KeyChord; Scope github.com/ben-ranford/stave/semantic.NodeID; Priority int; Hint string; RouteKind RouteKind; ActionID github.com/ben-ranford/stave/action.ID; EventKind github.com/ben-ranford/stave/event.Kind }
 type CommandID string
 type Dispatcher struct {  }
 type Map struct {  }
-type Mapping struct { Binding Binding `json:"binding"`; Route Route `json:"route"`; Hint string `json:"hint,omitempty"` }
-type Resolution struct { Status ResolutionStatus `json:"status"`; Binding Binding `json:"binding,omitempty"`; Route Route `json:"route,omitempty"`; Hint string `json:"hint,omitempty"`; Call *github.com/ben-ranford/stave/action.Call `json:"-"`; Event *github.com/ben-ranford/stave/event.Event `json:"-"` }
+type Mapping struct { Binding Binding "json:\"binding\""; Route Route "json:\"route\""; Hint string "json:\"hint,omitempty\"" }
+type Resolution struct { Status ResolutionStatus "json:\"status\""; Binding Binding "json:\"binding,omitempty\""; Route Route "json:\"route,omitempty\""; Hint string "json:\"hint,omitempty\""; Call *github.com/ben-ranford/stave/action.Call "json:\"-\""; Event *github.com/ben-ranford/stave/event.Event "json:\"-\"" }
 type ResolutionStatus string
-type Route struct { Kind RouteKind `json:"kind"`; ActionID github.com/ben-ranford/stave/action.ID `json:"actionId,omitempty"`; Arguments encoding/json.RawMessage `json:"arguments,omitempty"`; EventKind github.com/ben-ranford/stave/event.Kind `json:"eventKind,omitempty"`; Payload map[string]string `json:"payload,omitempty"` }
+type Route struct { Kind RouteKind "json:\"kind\""; ActionID github.com/ben-ranford/stave/action.ID "json:\"actionId,omitempty\""; Arguments encoding/json.RawMessage "json:\"arguments,omitempty\""; EventKind github.com/ben-ranford/stave/event.Kind "json:\"eventKind,omitempty\""; Payload map[string]string "json:\"payload,omitempty\"" }
 type RouteKind string
 
 [github.com/ben-ranford/stave/layout]
@@ -503,7 +503,7 @@ method (Nop) Observe(context.Context, Event)
 package observer
 struct-comparable Event false
 struct-comparable Nop true
-type Event struct { Name string `json:"name"`; Time time.Time `json:"time"`; Attributes map[string]string `json:"attributes,omitempty"`; Redacted bool `json:"redacted,omitempty"` }
+type Event struct { Name string "json:\"name\""; Time time.Time "json:\"time\""; Attributes map[string]string "json:\"attributes,omitempty\""; Redacted bool "json:\"redacted,omitempty\"" }
 type Func func(context.Context, Event)
 type Nop struct {  }
 type Observer interface { Observe(context.Context, Event) }
@@ -535,12 +535,12 @@ struct-comparable RatioMeasurement false
 struct-comparable Report false
 struct-comparable Reproducibility false
 struct-comparable measurementDriver false
-type Attempt struct { P50 time.Duration `json:"p50"`; P95 time.Duration `json:"p95"`; P99 time.Duration `json:"p99"` }
-type Budget struct { Name string `json:"name"`; Limit time.Duration `json:"limit"` }
-type Measurement struct { Name string `json:"name"`; Samples int `json:"samples"`; P50 time.Duration `json:"p50"`; P95 time.Duration `json:"p95"`; P99 time.Duration `json:"p99"`; AllWithinBudget bool `json:"allWithinBudget"`; Limit time.Duration `json:"limit"`; Disposition string `json:"disposition,omitempty"`; Attempts []Attempt `json:"attempts,omitempty"` }
-type RatioMeasurement struct { Name string `json:"name"`; Window time.Duration `json:"window"`; Value float64 `json:"value"`; Limit float64 `json:"limit"`; AllWithinBudget bool `json:"allWithinBudget"`; Disposition string `json:"disposition,omitempty"`; Attempts []float64 `json:"attempts,omitempty"` }
-type Report struct { GeneratedAt time.Time `json:"generatedAt"`; Host string `json:"host"`; GoVersion string `json:"goVersion"`; GOOS string `json:"goos"`; GOARCH string `json:"goarch"`; CPUs int `json:"cpus"`; Nodes int `json:"nodes"`; NodeShape string `json:"nodeDistribution"`; Renderer string `json:"renderer"`; Viewport github.com/ben-ranford/stave/layout.Size `json:"viewport"`; Capabilities github.com/ben-ranford/stave/capability.Manifest `json:"capabilities"`; Reproducibility Reproducibility `json:"reproducibility"`; AllocBytes uint64 `json:"allocBytes"`; AllocLimit uint64 `json:"allocLimitBytes"`; AllocWithin bool `json:"allocWithinBudget"`; IdleCPU RatioMeasurement `json:"idleCpu"`; Measurements []Measurement `json:"measurements"`; Invariants []string `json:"invariants"` }
-type Reproducibility struct { Invocation []string `json:"invocation"`; SampleCount int `json:"sampleCount"`; Strict bool `json:"strict"`; GOMAXPROCS int `json:"gomaxprocs"`; VCSRevision string `json:"vcsRevision,omitempty"`; VCSModified bool `json:"vcsModified,omitempty"` }
+type Attempt struct { P50 time.Duration "json:\"p50\""; P95 time.Duration "json:\"p95\""; P99 time.Duration "json:\"p99\"" }
+type Budget struct { Name string "json:\"name\""; Limit time.Duration "json:\"limit\"" }
+type Measurement struct { Name string "json:\"name\""; Samples int "json:\"samples\""; P50 time.Duration "json:\"p50\""; P95 time.Duration "json:\"p95\""; P99 time.Duration "json:\"p99\""; AllWithinBudget bool "json:\"allWithinBudget\""; Limit time.Duration "json:\"limit\""; Disposition string "json:\"disposition,omitempty\""; Attempts []Attempt "json:\"attempts,omitempty\"" }
+type RatioMeasurement struct { Name string "json:\"name\""; Window time.Duration "json:\"window\""; Value float64 "json:\"value\""; Limit float64 "json:\"limit\""; AllWithinBudget bool "json:\"allWithinBudget\""; Disposition string "json:\"disposition,omitempty\""; Attempts []float64 "json:\"attempts,omitempty\"" }
+type Report struct { GeneratedAt time.Time "json:\"generatedAt\""; Host string "json:\"host\""; GoVersion string "json:\"goVersion\""; GOOS string "json:\"goos\""; GOARCH string "json:\"goarch\""; CPUs int "json:\"cpus\""; Nodes int "json:\"nodes\""; NodeShape string "json:\"nodeDistribution\""; Renderer string "json:\"renderer\""; Viewport github.com/ben-ranford/stave/layout.Size "json:\"viewport\""; Capabilities github.com/ben-ranford/stave/capability.Manifest "json:\"capabilities\""; Reproducibility Reproducibility "json:\"reproducibility\""; AllocBytes uint64 "json:\"allocBytes\""; AllocLimit uint64 "json:\"allocLimitBytes\""; AllocWithin bool "json:\"allocWithinBudget\""; IdleCPU RatioMeasurement "json:\"idleCpu\""; Measurements []Measurement "json:\"measurements\""; Invariants []string "json:\"invariants\"" }
+type Reproducibility struct { Invocation []string "json:\"invocation\""; SampleCount int "json:\"sampleCount\""; Strict bool "json:\"strict\""; GOMAXPROCS int "json:\"gomaxprocs\""; VCSRevision string "json:\"vcsRevision,omitempty\""; VCSModified bool "json:\"vcsModified,omitempty\"" }
 type measurementDriver struct {  }
 
 [github.com/ben-ranford/stave/primitive]
@@ -667,22 +667,22 @@ struct-comparable Request false
 struct-comparable Response false
 struct-comparable SnapshotParams true
 struct-comparable SnapshotResult false
-type ActionErrorData struct { StaveCode github.com/ben-ranford/stave/action.Code `json:"staveCode"`; ActionID github.com/ben-ranford/stave/action.ID `json:"actionId,omitempty"`; NodeID github.com/ben-ranford/stave/semantic.NodeID `json:"nodeId,omitempty"`; Revision uint64 `json:"revision,omitempty"`; Retryable bool `json:"retryable"`; CauseClass string `json:"causeClass,omitempty"` }
-type Application struct { ID string `json:"id"`; Version string `json:"version"` }
-type ConfirmParams struct { CallID string `json:"callId"`; ActionID string `json:"actionId"`; Target encoding/json.RawMessage `json:"target,omitempty"`; Arguments encoding/json.RawMessage `json:"arguments,omitempty"`; SessionID string `json:"sessionId,omitempty"` }
-type ConfirmationPresentation struct { Token string `json:"token"`; SessionID string `json:"sessionId"` }
-type Error struct { Code int `json:"code"`; Message string `json:"message"`; Data any `json:"data,omitempty"` }
+type ActionErrorData struct { StaveCode github.com/ben-ranford/stave/action.Code "json:\"staveCode\""; ActionID github.com/ben-ranford/stave/action.ID "json:\"actionId,omitempty\""; NodeID github.com/ben-ranford/stave/semantic.NodeID "json:\"nodeId,omitempty\""; Revision uint64 "json:\"revision,omitempty\""; Retryable bool "json:\"retryable\""; CauseClass string "json:\"causeClass,omitempty\"" }
+type Application struct { ID string "json:\"id\""; Version string "json:\"version\"" }
+type ConfirmParams struct { CallID string "json:\"callId\""; ActionID string "json:\"actionId\""; Target encoding/json.RawMessage "json:\"target,omitempty\""; Arguments encoding/json.RawMessage "json:\"arguments,omitempty\""; SessionID string "json:\"sessionId,omitempty\"" }
+type ConfirmationPresentation struct { Token string "json:\"token\""; SessionID string "json:\"sessionId\"" }
+type Error struct { Code int "json:\"code\""; Message string "json:\"message\""; Data any "json:\"data,omitempty\"" }
 type ID encoding/json.RawMessage
-type InitializeParams struct { ProtocolVersions []string `json:"protocolVersions"`; Client any `json:"client,omitempty"`; Capabilities map[string]any `json:"capabilities,omitempty"`; Limits Limits `json:"limits,omitempty"` }
-type InitializeResult struct { ProtocolVersion string `json:"protocolVersion"`; SessionID string `json:"sessionId"`; Server string `json:"server,omitempty"`; Application Application `json:"application"`; Schemas map[string]string `json:"schemas,omitempty"`; Capabilities any `json:"capabilities,omitempty"`; Limits Limits `json:"limits"`; Manifest any `json:"manifest,omitempty"`; ResolvedManifest any `json:"resolvedManifest,omitempty"` }
-type InvokeParams struct { CallID string `json:"callId"`; ActionID string `json:"actionId"`; Target encoding/json.RawMessage `json:"target,omitempty"`; Arguments encoding/json.RawMessage `json:"arguments,omitempty"`; Confirmation *ConfirmationPresentation `json:"confirmation,omitempty"`; DeadlineMS int64 `json:"deadlineMs,omitempty"`; SessionID string `json:"sessionId,omitempty"` }
-type InvokeResult struct { CallID string `json:"callId"`; ActionID github.com/ben-ranford/stave/action.ID `json:"actionId"`; Target github.com/ben-ranford/stave/semantic.Target `json:"target,omitempty"`; Status github.com/ben-ranford/stave/action.ResultStatus `json:"status"`; Output encoding/json.RawMessage `json:"output,omitempty"`; Revision uint64 `json:"revision,omitempty"`; TreeHash string `json:"treeHash,omitempty"`; Diagnostics []github.com/ben-ranford/stave/diag.Diagnostic `json:"diagnostics,omitempty"` }
-type Limits struct { MaxMessageBytes int `json:"maxMessageBytes,omitempty"`; MaxOutputBytes int `json:"maxOutputBytes,omitempty"`; MaxTreeNodes int `json:"maxTreeNodes,omitempty"` }
-type Notification struct { JSONRPC string `json:"jsonrpc"`; Method string `json:"method"`; Params encoding/json.RawMessage `json:"params,omitempty"` }
-type Request struct { JSONRPC string `json:"jsonrpc"`; ID encoding/json.RawMessage `json:"id,omitempty"`; Method string `json:"method"`; Params encoding/json.RawMessage `json:"params,omitempty"` }
-type Response struct { JSONRPC string `json:"jsonrpc"`; ID encoding/json.RawMessage `json:"id,omitempty"`; Result any `json:"result,omitempty"`; Error *Error `json:"error,omitempty"` }
-type SnapshotParams struct { Mode string `json:"mode,omitempty"`; IncludeActions bool `json:"includeActions,omitempty"`; SinceRevision uint64 `json:"sinceRevision,omitempty"` }
-type SnapshotResult struct { SchemaVersion string `json:"schemaVersion"`; SessionID string `json:"sessionId"`; Sequence uint64 `json:"sequence"`; Mode string `json:"mode"`; Snapshot *github.com/ben-ranford/stave/semantic.Snapshot `json:"snapshot,omitempty"`; Patch *github.com/ben-ranford/stave/semantic.Patch `json:"patch,omitempty"`; Revision uint64 `json:"revision"`; TreeHash string `json:"treeHash"`; CapabilityHash string `json:"capabilityHash"`; SemanticVersion string `json:"semanticVersion"`; ConfigHash string `json:"configHash"`; ThemeHash string `json:"themeHash"`; WidthVersion string `json:"widthVersion"`; Actions []github.com/ben-ranford/stave/action.Definition `json:"actions,omitempty"`; Diagnostics []github.com/ben-ranford/stave/diag.Diagnostic `json:"diagnostics,omitempty"` }
+type InitializeParams struct { ProtocolVersions []string "json:\"protocolVersions\""; Client any "json:\"client,omitempty\""; Capabilities map[string]any "json:\"capabilities,omitempty\""; Limits Limits "json:\"limits,omitempty\"" }
+type InitializeResult struct { ProtocolVersion string "json:\"protocolVersion\""; SessionID string "json:\"sessionId\""; Server string "json:\"server,omitempty\""; Application Application "json:\"application\""; Schemas map[string]string "json:\"schemas,omitempty\""; Capabilities any "json:\"capabilities,omitempty\""; Limits Limits "json:\"limits\""; Manifest any "json:\"manifest,omitempty\""; ResolvedManifest any "json:\"resolvedManifest,omitempty\"" }
+type InvokeParams struct { CallID string "json:\"callId\""; ActionID string "json:\"actionId\""; Target encoding/json.RawMessage "json:\"target,omitempty\""; Arguments encoding/json.RawMessage "json:\"arguments,omitempty\""; Confirmation *ConfirmationPresentation "json:\"confirmation,omitempty\""; DeadlineMS int64 "json:\"deadlineMs,omitempty\""; SessionID string "json:\"sessionId,omitempty\"" }
+type InvokeResult struct { CallID string "json:\"callId\""; ActionID github.com/ben-ranford/stave/action.ID "json:\"actionId\""; Target github.com/ben-ranford/stave/semantic.Target "json:\"target,omitempty\""; Status github.com/ben-ranford/stave/action.ResultStatus "json:\"status\""; Output encoding/json.RawMessage "json:\"output,omitempty\""; Revision uint64 "json:\"revision,omitempty\""; TreeHash string "json:\"treeHash,omitempty\""; Diagnostics []github.com/ben-ranford/stave/diag.Diagnostic "json:\"diagnostics,omitempty\"" }
+type Limits struct { MaxMessageBytes int "json:\"maxMessageBytes,omitempty\""; MaxOutputBytes int "json:\"maxOutputBytes,omitempty\""; MaxTreeNodes int "json:\"maxTreeNodes,omitempty\"" }
+type Notification struct { JSONRPC string "json:\"jsonrpc\""; Method string "json:\"method\""; Params encoding/json.RawMessage "json:\"params,omitempty\"" }
+type Request struct { JSONRPC string "json:\"jsonrpc\""; ID encoding/json.RawMessage "json:\"id,omitempty\""; Method string "json:\"method\""; Params encoding/json.RawMessage "json:\"params,omitempty\"" }
+type Response struct { JSONRPC string "json:\"jsonrpc\""; ID encoding/json.RawMessage "json:\"id,omitempty\""; Result any "json:\"result,omitempty\""; Error *Error "json:\"error,omitempty\"" }
+type SnapshotParams struct { Mode string "json:\"mode,omitempty\""; IncludeActions bool "json:\"includeActions,omitempty\""; SinceRevision uint64 "json:\"sinceRevision,omitempty\"" }
+type SnapshotResult struct { SchemaVersion string "json:\"schemaVersion\""; SessionID string "json:\"sessionId\""; Sequence uint64 "json:\"sequence\""; Mode string "json:\"mode\""; Snapshot *github.com/ben-ranford/stave/semantic.Snapshot "json:\"snapshot,omitempty\""; Patch *github.com/ben-ranford/stave/semantic.Patch "json:\"patch,omitempty\""; Revision uint64 "json:\"revision\""; TreeHash string "json:\"treeHash\""; CapabilityHash string "json:\"capabilityHash\""; SemanticVersion string "json:\"semanticVersion\""; ConfigHash string "json:\"configHash\""; ThemeHash string "json:\"themeHash\""; WidthVersion string "json:\"widthVersion\""; Actions []github.com/ben-ranford/stave/action.Definition "json:\"actions,omitempty\""; Diagnostics []github.com/ben-ranford/stave/diag.Diagnostic "json:\"diagnostics,omitempty\"" }
 var ErrBatch error
 
 [github.com/ben-ranford/stave/render]
@@ -696,7 +696,7 @@ struct-comparable Request false
 struct-comparable Result false
 struct-comparable Writer false
 type Budgets struct { MaxBytes int; MaxCells int; MaxDepth int; MaxWork int }
-type EventContext struct { Reason string `json:"reason,omitempty"`; Focused github.com/ben-ranford/stave/semantic.NodeID `json:"focused,omitempty"`; Hovered github.com/ben-ranford/stave/semantic.NodeID `json:"hovered,omitempty"`; Revision uint64 `json:"revision,omitempty"` }
+type EventContext struct { Reason string "json:\"reason,omitempty\""; Focused github.com/ben-ranford/stave/semantic.NodeID "json:\"focused,omitempty\""; Hovered github.com/ben-ranford/stave/semantic.NodeID "json:\"hovered,omitempty\""; Revision uint64 "json:\"revision,omitempty\"" }
 type Request struct { Context context.Context; Tree github.com/ben-ranford/stave/semantic.Tree; Theme github.com/ben-ranford/stave/theme.Resolved; Capabilities github.com/ben-ranford/stave/capability.Manifest; Viewport github.com/ben-ranford/stave/layout.Size; Window github.com/ben-ranford/stave/layout.Rect; Previous *github.com/ben-ranford/stave/surface.Surface; Event EventContext; Budgets Budgets }
 type Result struct { Viewport github.com/ben-ranford/stave/layout.Size; Capabilities github.com/ben-ranford/stave/capability.Manifest; ThemeHash string; Event EventContext; Plan github.com/ben-ranford/stave/layout.Plan; Surface github.com/ben-ranford/stave/surface.Surface; Patch github.com/ben-ranford/stave/surface.Patch; Plain string; Machine []byte; Terminal string }
 type Writer struct { Manifest github.com/ben-ranford/stave/capability.Manifest; ByteLimit int }
@@ -735,12 +735,12 @@ struct-comparable Record true
 struct-comparable RemapMetadata false
 struct-comparable Transcript false
 type ApplyFunc func(context.Context, github.com/ben-ranford/stave/state.Checkpoint, github.com/ben-ranford/stave/event.Event) (github.com/ben-ranford/stave/state.Checkpoint, error)
-type Digest struct { Sequence uint64 `json:"sequence"`; Revision uint64 `json:"revision"`; Hashes github.com/ben-ranford/stave/state.Hashes `json:"hashes"`; DiagnosticCount uint64 `json:"diagnosticCount,omitempty"` }
-type Divergence struct { Code DivergenceCode `json:"code"`; Index int `json:"index"`; Field string `json:"field"`; Expected any `json:"expected,omitempty"`; Actual any `json:"actual,omitempty"`; Remap *RemapMetadata `json:"remap,omitempty"` }
+type Digest struct { Sequence uint64 "json:\"sequence\""; Revision uint64 "json:\"revision\""; Hashes github.com/ben-ranford/stave/state.Hashes "json:\"hashes\""; DiagnosticCount uint64 "json:\"diagnosticCount,omitempty\"" }
+type Divergence struct { Code DivergenceCode "json:\"code\""; Index int "json:\"index\""; Field string "json:\"field\""; Expected any "json:\"expected,omitempty\""; Actual any "json:\"actual,omitempty\""; Remap *RemapMetadata "json:\"remap,omitempty\"" }
 type DivergenceCode string
-type Record struct { SchemaVersion string `json:"schemaVersion"`; Event github.com/ben-ranford/stave/event.Event `json:"event"`; Prior Digest `json:"prior"`; Result Digest `json:"result"`; Delivery string `json:"delivery,omitempty"`; CompletionIndex uint32 `json:"completionIndex,omitempty"` }
-type RemapMetadata struct { NodeID string `json:"nodeId,omitempty"`; Generation uint32 `json:"generation,omitempty"`; ObservedRevision uint64 `json:"observedRevision,omitempty"`; Hints []string `json:"hints,omitempty"` }
-type Transcript struct { SchemaVersion string `json:"schemaVersion"`; SessionID string `json:"sessionId"`; Versions github.com/ben-ranford/stave/state.Versions `json:"versions"`; Initial github.com/ben-ranford/stave/state.Checkpoint `json:"initial"`; Records []Record `json:"records"` }
+type Record struct { SchemaVersion string "json:\"schemaVersion\""; Event github.com/ben-ranford/stave/event.Event "json:\"event\""; Prior Digest "json:\"prior\""; Result Digest "json:\"result\""; Delivery string "json:\"delivery,omitempty\""; CompletionIndex uint32 "json:\"completionIndex,omitempty\"" }
+type RemapMetadata struct { NodeID string "json:\"nodeId,omitempty\""; Generation uint32 "json:\"generation,omitempty\""; ObservedRevision uint64 "json:\"observedRevision,omitempty\""; Hints []string "json:\"hints,omitempty\"" }
+type Transcript struct { SchemaVersion string "json:\"schemaVersion\""; SessionID string "json:\"sessionId\""; Versions github.com/ben-ranford/stave/state.Versions "json:\"versions\""; Initial github.com/ben-ranford/stave/state.Checkpoint "json:\"initial\""; Records []Record "json:\"records\"" }
 
 [github.com/ben-ranford/stave/requirements]
 
@@ -835,7 +835,7 @@ method (*MemoryStore) Use(Handle, func([]byte) error) error
 package secret
 struct-comparable Handle true
 struct-comparable MemoryStore false
-type Handle struct { ID string `json:"id"` }
+type Handle struct { ID string "json:\"id\"" }
 type MemoryStore struct {  }
 type Store interface { Destroy(Handle) error; Put([]byte) (Handle, error); Use(Handle, func([]byte) error) error }
 var ErrEmptySecret error
@@ -907,27 +907,27 @@ struct-comparable Tombstones false
 struct-comparable Tree false
 struct-comparable Value true
 type ActionID string
-type ActionRef struct { ID ActionID `json:"id"`; Label string `json:"label,omitempty"`; Default bool `json:"default,omitempty"` }
-type Flags struct { Visible bool `json:"visible"`; Focusable bool `json:"focusable"`; Disabled bool `json:"disabled"`; Sensitive bool `json:"sensitive"`; Offscreen bool `json:"offscreen"`; Live LiveMode `json:"live,omitempty"`; Stability Stability `json:"stability,omitempty"` }
-type LayoutSpec struct { Width int `json:"width,omitempty"`; Height int `json:"height,omitempty"` }
+type ActionRef struct { ID ActionID "json:\"id\""; Label string "json:\"label,omitempty\""; Default bool "json:\"default,omitempty\"" }
+type Flags struct { Visible bool "json:\"visible\""; Focusable bool "json:\"focusable\""; Disabled bool "json:\"disabled\""; Sensitive bool "json:\"sensitive\""; Offscreen bool "json:\"offscreen\""; Live LiveMode "json:\"live,omitempty\""; Stability Stability "json:\"stability,omitempty\"" }
+type LayoutSpec struct { Width int "json:\"width,omitempty\""; Height int "json:\"height,omitempty\"" }
 type LiveMode string
 type Node struct {  }
 type NodeID string
-type NodeKey struct { AppNamespace string `json:"appNamespace"`; View string `json:"view"`; Kind string `json:"kind"`; Entity string `json:"entity"`; Slot string `json:"slot"` }
+type NodeKey struct { AppNamespace string "json:\"appNamespace\""; View string "json:\"view\""; Kind string "json:\"kind\""; Entity string "json:\"entity\""; Slot string "json:\"slot\"" }
 type NodeSpec struct { ID NodeID; Key *NodeKey; Generation uint32; Role Role; Name, Description string; Value Value; States []State; Relations []Relation; Actions []ActionRef; Layout LayoutSpec; Style StyleIntent; Children []Node; Flags Flags; Metadata map[string]string }
-type Patch struct { FromRevision uint64 `json:"fromRevision"`; ToRevision uint64 `json:"toRevision"`; Added []NodeID `json:"added,omitempty"`; Removed []NodeID `json:"removed,omitempty"`; GenerationChanged []NodeID `json:"generationChanged,omitempty"` }
-type Relation struct { Kind RelationKind `json:"kind"`; Target NodeID `json:"target"` }
+type Patch struct { FromRevision uint64 "json:\"fromRevision\""; ToRevision uint64 "json:\"toRevision\""; Added []NodeID "json:\"added,omitempty\""; Removed []NodeID "json:\"removed,omitempty\""; GenerationChanged []NodeID "json:\"generationChanged,omitempty\"" }
+type Relation struct { Kind RelationKind "json:\"kind\""; Target NodeID "json:\"target\"" }
 type RelationKind string
 type Role string
-type Snapshot struct { SchemaVersion string `json:"schemaVersion"`; Revision uint64 `json:"revision"`; TreeHash string `json:"treeHash"`; Root Node `json:"root"` }
+type Snapshot struct { SchemaVersion string "json:\"schemaVersion\""; Revision uint64 "json:\"revision\""; TreeHash string "json:\"treeHash\""; Root Node "json:\"root\"" }
 type Stability string
 type State string
-type StyleIntent struct { Role string `json:"role,omitempty"` }
-type Target struct { NodeID NodeID `json:"nodeId"`; Generation uint32 `json:"generation"`; ObservedRevision uint64 `json:"observedRevision"` }
-type Tombstone struct { ID NodeID `json:"id"`; Generation uint32 `json:"generation"`; RemovedRevision uint64 `json:"removedRevision"` }
+type StyleIntent struct { Role string "json:\"role,omitempty\"" }
+type Target struct { NodeID NodeID "json:\"nodeId\""; Generation uint32 "json:\"generation\""; ObservedRevision uint64 "json:\"observedRevision\"" }
+type Tombstone struct { ID NodeID "json:\"id\""; Generation uint32 "json:\"generation\""; RemovedRevision uint64 "json:\"removedRevision\"" }
 type Tombstones struct {  }
 type Tree struct {  }
-type Value struct { Text string `json:"text,omitempty"`; Redacted bool `json:"redacted,omitempty"`; HasValue bool `json:"hasValue,omitempty"` }
+type Value struct { Text string "json:\"text,omitempty\""; Redacted bool "json:\"redacted,omitempty\""; HasValue bool "json:\"hasValue,omitempty\"" }
 
 [github.com/ben-ranford/stave/session]
 const LifecycleCancelling Lifecycle = "cancelling"
@@ -980,12 +980,12 @@ struct-comparable Meta false
 struct-comparable ModelPolicy false
 struct-comparable State false
 struct-comparable Versions true
-type Checkpoint struct { SchemaVersion string `json:"schemaVersion"`; SessionID string `json:"sessionId"`; Sequence uint64 `json:"sequence"`; Revision uint64 `json:"revision"`; Versions Versions `json:"versions"`; Hashes Hashes `json:"hashes"`; Capabilities github.com/ben-ranford/stave/capability.Manifest `json:"capabilities"`; Model any `json:"model,omitempty"`; Tree any `json:"tree,omitempty"`; DiagnosticCount uint64 `json:"diagnosticCount,omitempty"`; Checksum string `json:"checksum"` }
-type Hashes struct { Config string `json:"config,omitempty"`; Theme string `json:"theme,omitempty"`; Capability string `json:"capability,omitempty"`; Model string `json:"model,omitempty"`; Tree string `json:"tree,omitempty"`; Surface string `json:"surface,omitempty"`; EffectLedger string `json:"effectLedger,omitempty"`; Declarations string `json:"declarations,omitempty"` }
+type Checkpoint struct { SchemaVersion string "json:\"schemaVersion\""; SessionID string "json:\"sessionId\""; Sequence uint64 "json:\"sequence\""; Revision uint64 "json:\"revision\""; Versions Versions "json:\"versions\""; Hashes Hashes "json:\"hashes\""; Capabilities github.com/ben-ranford/stave/capability.Manifest "json:\"capabilities\""; Model any "json:\"model,omitempty\""; Tree any "json:\"tree,omitempty\""; DiagnosticCount uint64 "json:\"diagnosticCount,omitempty\""; Checksum string "json:\"checksum\"" }
+type Hashes struct { Config string "json:\"config,omitempty\""; Theme string "json:\"theme,omitempty\""; Capability string "json:\"capability,omitempty\""; Model string "json:\"model,omitempty\""; Tree string "json:\"tree,omitempty\""; Surface string "json:\"surface,omitempty\""; EffectLedger string "json:\"effectLedger,omitempty\""; Declarations string "json:\"declarations,omitempty\"" }
 type Meta struct { Sequence uint64; Revision uint64; Capabilities github.com/ben-ranford/stave/capability.Manifest; ConfigHash string; ThemeHash string; SurfaceHash string; WidthPolicy string; Versions Versions; DiagnosticCount uint64; EffectLedger string; Declarations string }
 type ModelPolicy[M any] struct { Clone func(M) (M, error); Sanitize func(M) (M, error); Hash func(M) ([32]byte, error) }
 type State[M any] struct { SessionID string; Sequence uint64; Revision uint64; Model M; Tree github.com/ben-ranford/stave/semantic.Tree; Capabilities github.com/ben-ranford/stave/capability.Manifest; ConfigHash string; ThemeHash string; WidthPolicy string; SurfaceHash string; Hashes Hashes; Versions Versions; DiagnosticCount uint64 }
-type Versions struct { CheckpointSchema string `json:"checkpointSchema"`; SemanticSchema string `json:"semanticSchema"`; EventSchema string `json:"eventSchema"`; ReplaySchema string `json:"replaySchema"`; JSONPolicy string `json:"jsonPolicy"`; NodeIDAlgorithm string `json:"nodeIdAlgorithm"`; WidthPolicy string `json:"widthPolicy"`; KeymapSchema string `json:"keymapSchema"`; ModuleSchema string `json:"moduleSchema"`; ProtocolSchema string `json:"protocolSchema"`; CanonicalSchema string `json:"canonicalSchema"`; EffectSchema string `json:"effectSchema"`; EventAlgorithm string `json:"eventAlgorithm"`; CheckpointSchemaVersion string `json:"checkpointVersion"` }
+type Versions struct { CheckpointSchema string "json:\"checkpointSchema\""; SemanticSchema string "json:\"semanticSchema\""; EventSchema string "json:\"eventSchema\""; ReplaySchema string "json:\"replaySchema\""; JSONPolicy string "json:\"jsonPolicy\""; NodeIDAlgorithm string "json:\"nodeIdAlgorithm\""; WidthPolicy string "json:\"widthPolicy\""; KeymapSchema string "json:\"keymapSchema\""; ModuleSchema string "json:\"moduleSchema\""; ProtocolSchema string "json:\"protocolSchema\""; CanonicalSchema string "json:\"canonicalSchema\""; EffectSchema string "json:\"effectSchema\""; EventAlgorithm string "json:\"eventAlgorithm\""; CheckpointSchemaVersion string "json:\"checkpointVersion\"" }
 
 [github.com/ben-ranford/stave/surface]
 func Diff(Surface, Surface) Patch
@@ -1017,12 +1017,12 @@ struct-comparable ResolvedStyle true
 struct-comparable Run false
 struct-comparable Surface false
 type Builder struct {  }
-type Cell struct { Grapheme string `json:"grapheme,omitempty"`; Width uint8 `json:"width,omitempty"`; Continuation bool `json:"continuation,omitempty"`; Style StyleID `json:"style,omitempty"`; Link LinkID `json:"link,omitempty"`; NodeID github.com/ben-ranford/stave/semantic.NodeID `json:"nodeId,omitempty"`; Generation uint32 `json:"generation,omitempty"` }
+type Cell struct { Grapheme string "json:\"grapheme,omitempty\""; Width uint8 "json:\"width,omitempty\""; Continuation bool "json:\"continuation,omitempty\""; Style StyleID "json:\"style,omitempty\""; Link LinkID "json:\"link,omitempty\""; NodeID github.com/ben-ranford/stave/semantic.NodeID "json:\"nodeId,omitempty\""; Generation uint32 "json:\"generation,omitempty\"" }
 type LinkID uint32
-type Patch struct { FromHash [32]byte `json:"fromHash"`; ToHash [32]byte `json:"toHash"`; Resize bool `json:"resize,omitempty"`; Width int `json:"width,omitempty"`; Height int `json:"height,omitempty"`; Runs []Run `json:"runs,omitempty"`; Dirty []Region `json:"dirty,omitempty"`; Styles []ResolvedStyle `json:"styles,omitempty"`; Links []string `json:"links,omitempty"` }
+type Patch struct { FromHash [32]byte "json:\"fromHash\""; ToHash [32]byte "json:\"toHash\""; Resize bool "json:\"resize,omitempty\""; Width int "json:\"width,omitempty\""; Height int "json:\"height,omitempty\""; Runs []Run "json:\"runs,omitempty\""; Dirty []Region "json:\"dirty,omitempty\""; Styles []ResolvedStyle "json:\"styles,omitempty\""; Links []string "json:\"links,omitempty\"" }
 type Region struct { X, Y, Width, Height int }
-type ResolvedStyle struct { Foreground string `json:"foreground,omitempty"`; Background string `json:"background,omitempty"`; Bold bool `json:"bold,omitempty"`; Dim bool `json:"dim,omitempty"`; Italic bool `json:"italic,omitempty"`; Underline bool `json:"underline,omitempty"`; Blink bool `json:"blink,omitempty"`; Reverse bool `json:"reverse,omitempty"` }
-type Run struct { Offset int `json:"offset"`; Cells []Cell `json:"cells"` }
+type ResolvedStyle struct { Foreground string "json:\"foreground,omitempty\""; Background string "json:\"background,omitempty\""; Bold bool "json:\"bold,omitempty\""; Dim bool "json:\"dim,omitempty\""; Italic bool "json:\"italic,omitempty\""; Underline bool "json:\"underline,omitempty\""; Blink bool "json:\"blink,omitempty\""; Reverse bool "json:\"reverse,omitempty\"" }
+type Run struct { Offset int "json:\"offset\""; Cells []Cell "json:\"cells\"" }
 type StyleID uint32
 type Surface struct { Width, Height int }
 
@@ -1079,20 +1079,20 @@ struct-comparable Resolved false
 struct-comparable ResolvedValue true
 struct-comparable Theme false
 struct-comparable Value true
-type AssetRef struct { ID string `json:"id,omitempty"`; Text string `json:"text,omitempty"` }
+type AssetRef struct { ID string "json:\"id,omitempty\""; Text string "json:\"text,omitempty\"" }
 type ContrastPair struct { Foreground TokenID; Background TokenID }
 type Density string
-type Glyph struct { Unicode string `json:"unicode,omitempty"`; ASCII string `json:"ascii,omitempty"`; Name string `json:"name,omitempty"`; Width int `json:"width,omitempty"` }
+type Glyph struct { Unicode string "json:\"unicode,omitempty\""; ASCII string "json:\"ascii,omitempty\""; Name string "json:\"name,omitempty\""; Width int "json:\"width,omitempty\"" }
 type GlyphSet map[string]Glyph
 type Kind string
 type Metadata map[string]string
 type Mode string
 type Resolved struct { ThemeID, Version string; Mode Mode; Density Density; Hash [32]byte }
-type ResolvedValue struct { Value any `json:"value"`; Kind Kind `json:"kind"` }
+type ResolvedValue struct { Value any "json:\"value\""; Kind Kind "json:\"kind\"" }
 type Theme struct { ID, Version string; Modes map[Mode]TokenSet; Densities map[Density]TokenSet; Glyphs map[string]GlyphSet; Assets map[string]AssetRef; Metadata Metadata }
 type TokenID string
 type TokenSet map[TokenID]Value
-type Value struct { Kind Kind `json:"kind,omitempty"`; Literal any `json:"value,omitempty"`; Reference *TokenID `json:"$ref,omitempty"` }
+type Value struct { Kind Kind "json:\"kind,omitempty\""; Literal any "json:\"value,omitempty\""; Reference *TokenID "json:\"$ref,omitempty\"" }
 
 [github.com/ben-ranford/stave/tools/prcheck]
 package main
