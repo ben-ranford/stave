@@ -159,8 +159,9 @@ func New[M any](ctx context.Context, opts Options[M]) (*Session[M], error) {
 // without changing state or transcript. A completed effect result runs the normal
 // event transaction: successful output and follow-up declarations are published;
 // callback failures retain the prior model and effect hashes under normal
-// rejection semantics. Either outcome closes the overloaded session and cancels
-// unadmitted work.
+// rejection semantics. Either outcome closes the overloaded session, cancels
+// active and pending effect work, and discards queued unpublished events,
+// including sibling effect results. Queue acceptance is not durable publication.
 // Successfully published results remain replayable; replay does not reproduce
 // overload-driven lifecycle closure. Effectless input remains processable, and
 // Cancel or Shutdown still closes a saturated session.
