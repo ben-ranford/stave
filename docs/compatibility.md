@@ -107,10 +107,22 @@ can break consumer assignments without changing the inventory. These generic
 relationships require explicit compatibility review and consumer compilation
 until scoped type matching is supported.
 
+The inventory does not follow exposed named types into external dependency
+modules ([#122](https://github.com/ben-ranford/stave/issues/122)). Stave's root
+API boundary currently rejects third-party imports. Any future dependency
+types exposed through public aliases or signatures need consumer compilation
+evidence against the candidate dependency graph; unchanged inventory text
+alone does not establish their compatibility.
+
 Equivalent built-in alias spellings such as `byte`/`uint8` and `rune`/`int32`
 can still produce different inventory text ([#110](https://github.com/ben-ranford/stave/issues/110)).
 Preserve the existing spelling until that normalization is supported; review
 unexpected differences before release.
+
+Equivalent interface embedding rewrites can also change inventory text
+([#123](https://github.com/ben-ranford/stave/issues/123)). Preserve the existing
+embedding form until completed method-set normalization is supported; review
+differences with consumer compilation evidence.
 
 `make release-baseline` requires an earlier stable v1 tag. When only
 prereleases exist, it fails deliberately; until issue #2 provides a stable
