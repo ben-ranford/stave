@@ -9,6 +9,9 @@ Keep a Changelog and Stave uses Semantic Versioning.
 
 - Add an opt-in session bridge for agent snapshots and idempotent cancellation,
   preserving application authorization and exposing bounded redacted diagnostics.
+- Add a compiled local-checkout dual-runtime tutorial that runs one typed,
+  application-authorized action through either the human line or JSONL agent
+  host.
 
 ## [1.0.0-rc.2] - 2026-09-10
 
