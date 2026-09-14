@@ -881,6 +881,10 @@ func validateDeliveryEvidence(index int, record Record) error {
 	if record.CompletionIndex != record.Event.Meta.CompletionIndex {
 		return fmt.Errorf("replay record %d completion index does not match its event", index)
 	}
+	payload := record.Event.Payload.(event.EffectResultPayload)
+	if payload.Lane != record.Event.Meta.Lane {
+		return &Divergence{Code: DivergenceEvent, Index: index, Field: "event.meta.lane", Expected: payload.Lane, Actual: record.Event.Meta.Lane}
+	}
 	return nil
 }
 

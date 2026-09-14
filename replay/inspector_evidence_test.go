@@ -133,6 +133,47 @@ func TestValidateTranscriptDeliveryEvidence(t *testing.T) {
 	}
 }
 
+func TestValidateTranscriptBindsEffectResultLane(t *testing.T) {
+	newTranscript := func(lane string) Transcript {
+		transcript := mustTranscript(t)
+		record := &transcript.Records[0]
+		record.Event.Kind = event.EffectResult
+		record.Event.Payload = event.EffectResultPayload{CallID: "effect", Status: "ok", Lane: lane}
+		record.Event.Meta.Lane = lane
+		record.Delivery = "declaration_order"
+		record.Result.Hashes.EffectLedger = sessionEffectLedger(t, record.Prior.Hashes.EffectLedger, record.Event)
+		refreshInspectorCheckpointChecksum(t, &transcript.Initial)
+		return transcript
+	}
+
+	for _, lane := range []string{"", "background"} {
+		if err := ValidateTranscript(newTranscript(lane)); err != nil {
+			t.Fatalf("ValidateTranscript() rejected matching lane %q: %v", lane, err)
+		}
+	}
+
+	transcript := newTranscript("background")
+	record := &transcript.Records[0]
+	record.Event.Meta.Lane = "foreground"
+	record.Result.Hashes.EffectLedger = sessionEffectLedger(t, record.Prior.Hashes.EffectLedger, record.Event)
+	refreshInspectorCheckpointChecksum(t, &transcript.Initial)
+	if err := ValidateTranscript(transcript); err == nil {
+		t.Fatal("ValidateTranscript() accepted an effect result whose lanes differ")
+	} else {
+		var divergence *Divergence
+		if !errors.As(err, &divergence) || divergence.Field != "event.meta.lane" {
+			t.Fatalf("ValidateTranscript() error = %v, want lane divergence", err)
+		}
+	}
+	data, err := transcript.CanonicalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := DecodeTranscript(data); err == nil {
+		t.Fatal("DecodeTranscript() accepted an effect result whose lanes differ")
+	}
+}
+
 func TestValidateTranscriptRequiresProducerStateTransitions(t *testing.T) {
 	for _, field := range []string{"model", "tree", "surface"} {
 		t.Run("changed "+field+" with revision", func(t *testing.T) {
