@@ -5,6 +5,11 @@ Keep a Changelog and Stave uses Semantic Versioning.
 
 ## [Unreleased]
 
+### Security
+
+- Redact unknown and duplicate JSON-RPC envelope field names from protocol
+  errors so attacker-controlled keys do not enter client diagnostics.
+
 ## [1.0.0-rc.2] - 2026-09-10
 
 ### Security

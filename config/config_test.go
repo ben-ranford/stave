@@ -132,7 +132,7 @@ func TestCanonicalRoundTripAndHashDeterminism(t *testing.T) {
 	cfg.Theme.ID = "brand"
 	cfg.Viewport = Viewport{Width: 100, Height: 40}
 	data := CanonicalJSON(cfg)
-	roundTrip, err := Parse(data)
+	roundTrip, err := decodeCanonicalConfig(data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,6 +141,16 @@ func TestCanonicalRoundTripAndHashDeterminism(t *testing.T) {
 	}
 	if HashString(cfg) != HashString(roundTrip) {
 		t.Fatalf("hash mismatch: %s != %s", HashString(cfg), HashString(roundTrip))
+	}
+}
+
+func TestCanonicalV1Bytes(t *testing.T) {
+	cfg := Defaults()
+	cfg.Theme.ID = "brand"
+	cfg.Viewport = Viewport{Width: 100, Height: 40}
+	const want = `{"schemaVersion":"stave.config/v1","app":{},"theme":{"id":"brand","mode":"auto","density":"comfortable"},"viewport":{"width":100,"height":40},"capabilities":{"color":"auto","unicode":"auto","motion":"auto","mouse":"auto","alternateScreen":"auto"},"keymap":{},"runtime":{"mode":"auto","inputQueue":256,"actionQueue":64,"restoreOnPanic":true},"protocol":{"enabled":true,"transport":"stdio-jsonl","maxMessageBytes":4194304},"security":{"confirmationTTL":"60s","maxTreeNodes":100000},"diagnostics":{"level":"warn","format":"text"}}`
+	if got := string(CanonicalJSON(cfg)); got != want {
+		t.Fatalf("canonical v1 bytes changed:\nwant %s\n got %s", want, got)
 	}
 }
 
