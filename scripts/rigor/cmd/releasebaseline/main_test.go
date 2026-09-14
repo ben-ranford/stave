@@ -171,6 +171,49 @@ func TestReadGoFloorAcceptsInlineCommentAndRejectsMissingDirective(t *testing.T)
 	}
 }
 
+func TestCompareGoFloors(t *testing.T) {
+	for _, tc := range []struct {
+		name, baseline, candidate string
+		wantError                 bool
+	}{
+		{"equal language", "1.22", "1.22", false},
+		{"equal patch", "1.22.1", "1.22.1", false},
+		{"lower minor", "1.23", "1.22", false},
+		{"lower patch", "1.22.2", "1.22.1", false},
+		{"release to language", "1.22.0", "1.22", false},
+		{"higher major", "1.22", "2.0", true},
+		{"higher minor", "1.22", "1.23", true},
+		{"higher patch", "1.22.1", "1.22.2", true},
+		{"language to release", "1.22", "1.22.0", true},
+		{"language to prerelease", "1.22", "1.22rc1", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := compareGoFloors(tc.baseline, tc.candidate); (err != nil) != tc.wantError {
+				t.Fatalf("compareGoFloors(%q, %q) = %v; want error %v", tc.baseline, tc.candidate, err, tc.wantError)
+			}
+		})
+	}
+}
+
+func TestReadGoFloorValidatesVersion(t *testing.T) {
+	for _, floor := range []string{"1.22", "1.22.0", "nonsense", "1.22.0.1", "go1.22"} {
+		t.Run(floor, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/api\n\ngo "+floor+"\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			got, err := readGoFloor(dir)
+			valid := floor == "1.22" || floor == "1.22.0"
+			if valid && (err != nil || got != floor) {
+				t.Fatalf("floor=%q err=%v", got, err)
+			}
+			if !valid && err == nil {
+				t.Fatalf("invalid floor %q accepted", floor)
+			}
+		})
+	}
+}
+
 func TestPrereleaseV1TagRejectsLeadingZeroNumericIdentifiers(t *testing.T) {
 	for _, tag := range []string{"v1.2.3-01", "v1.2.3-rc.01"} {
 		if prereleaseV1Tag.MatchString(tag) {

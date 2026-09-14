@@ -12,6 +12,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"go/version"
 	"io"
 	"os"
 	"os/exec"
@@ -86,6 +87,13 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
+	candidateFloor, err := readGoFloor(mustRepoRoot())
+	if err != nil {
+		return err
+	}
+	if err := compareGoFloors(base.GoFloor, candidateFloor); err != nil {
+		return fmt.Errorf("minor-release Go compatibility failed against %s (%s): %w", base.Tag, base.Commit, err)
+	}
 	candidate, err := currentInventory(ctx, *goBinary, *goos, *goarch)
 	if err != nil {
 		return err
@@ -96,10 +104,6 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 	mode := "stable"
 	if *development {
 		mode = "development-prerelease"
-	}
-	candidateFloor, err := readGoFloor(mustRepoRoot())
-	if err != nil {
-		return err
 	}
 	_, err = fmt.Fprintf(stdout, "mode=%s\nbaseline_tag=%s\nbaseline_commit=%s\nbaseline_go_floor=%s\ncandidate_go_floor=%s\nstatus=compatible\n", mode, base.Tag, base.Commit, base.GoFloor, candidateFloor)
 	return err
@@ -157,13 +161,13 @@ func loadBaseline(ctx context.Context, tag, goBinary, goos, goarch string) (base
 		return baseline{}, err
 	}
 	defer os.RemoveAll(directory)
-	inventory, err := inventoryForDir(ctx, directory, goBinary, goos, goarch)
-	if err != nil {
-		return baseline{}, fmt.Errorf("inventory baseline tag %q: %w", tag, err)
-	}
 	floor, err := readGoFloor(directory)
 	if err != nil {
 		return baseline{}, err
+	}
+	inventory, err := inventoryForDir(ctx, directory, goBinary, goos, goarch)
+	if err != nil {
+		return baseline{}, fmt.Errorf("inventory baseline tag %q: %w", tag, err)
 	}
 	return baseline{Tag: tag, Commit: strings.TrimSpace(string(commit)), GoFloor: floor, Inventory: inventory}, nil
 }
@@ -277,10 +281,22 @@ func readGoFloor(directory string) (string, error) {
 		line = strings.TrimSpace(strings.SplitN(line, "//", 2)[0])
 		fields := strings.Fields(line)
 		if len(fields) == 2 && fields[0] == "go" {
+			if !version.IsValid("go" + fields[1]) {
+				return "", fmt.Errorf("invalid Go floor %q in go.mod", fields[1])
+			}
 			return fields[1], nil
 		}
 	}
 	return "", errors.New("go floor is missing from go.mod")
+}
+
+// compareGoFloors uses Go's version ordering, including language versions:
+// go1.22 precedes both go1.22rc1 and go1.22.0. Inputs are validated by readGoFloor.
+func compareGoFloors(baselineFloor, candidateFloor string) error {
+	if version.Compare("go"+candidateFloor, "go"+baselineFloor) > 0 {
+		return fmt.Errorf("minimum Go version increased from %s to %s", baselineFloor, candidateFloor)
+	}
+	return nil
 }
 
 func compareInventories(baselineInventory, candidateInventory string) error {

@@ -532,6 +532,7 @@
         "go/ast",
         "go/parser",
         "go/token",
+        "go/version",
         "io",
         "os",
         "os/exec",
