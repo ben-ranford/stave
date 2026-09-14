@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -31,14 +32,14 @@ type Report[T any] struct {
 	Name string ` + "`json:\"name\"`" + `
 	hidden int
 }
-type Runner[T any] interface { Run(T) error }
+type Runner[T any] interface { Run(value T) error; private() }
 type Label = string
 type ID string
 `)
 	before := render()
 	for _, want := range []string{
-		"type Report[T any] struct { Name string `json:\"name\"` }",
-		"type Runner[T any] interface { Run(T) error }",
+		`type Report[T any] struct { Name string "json:\"name\"" }`,
+		"type Runner[T any] interface { Run(T) error; private() }",
 		"type Label = string",
 		"type ID string",
 	} {
@@ -65,21 +66,468 @@ type ID string
 	}
 }
 
-func TestPublicAPIInventoryIncludesExportedValueSemantics(t *testing.T) {
-	t.Parallel()
+func TestPublicAPIInventoryRecordsDeclaredPackageName(t *testing.T) {
+	render := newPublicAPIFixture(t)
+
+	before := render("package foo\ntype Value struct{}\n")
+	after := render("package bar\ntype Value struct{}\n")
+	if !strings.Contains(before, "package foo") || !strings.Contains(after, "package bar") {
+		t.Fatalf("declared package name missing from inventory:\n%s\n%s", before, after)
+	}
+	if before == after {
+		t.Fatalf("package name change did not alter inventory:\n%s", before)
+	}
+}
+
+func TestPublicAPIInventoryIncludesPrivateMethodsOnExportedReceivers(t *testing.T) {
+	render := newPublicAPIFixture(t)
+
+	before := render(`package api
+type privateSeal interface { seal() }
+type Sealed interface { privateSeal }
+type privatePointerSeal interface { pointerSeal() }
+type PointerSealed = privatePointerSeal
+type Token struct{}
+func (Token) seal() {}
+func (*Token) pointerSeal() {}
+func (Token) helper() {}
+func privateContract() {
+	type Contract interface { localSeal() }
+	var _ Contract = Token{}
+}
+func (Token) localSeal() {}
+type hidden struct{}
+func (hidden) ignored() {}
+`)
+	for _, want := range []string{"method (Token) seal()", "method (*Token) pointerSeal()"} {
+		if !strings.Contains(before, want) {
+			t.Fatalf("private method needed by exported receiver missing %q:\n%s", want, before)
+		}
+	}
+	if strings.Contains(before, "helper") || strings.Contains(before, "localSeal") || strings.Contains(before, "ignored") {
+		t.Fatalf("unrelated private method leaked into inventory:\n%s", before)
+	}
+	after := render(`package api
+type privateSeal interface { seal() }
+type Sealed interface { privateSeal }
+type privatePointerSeal interface { pointerSeal() }
+type PointerSealed = privatePointerSeal
+type Token struct{}
+func (*Token) pointerSeal() {}
+func (Token) helper() {}
+func privateContract() {
+	type Contract interface { localSeal() }
+	var _ Contract = Token{}
+}
+func (Token) localSeal() {}
+type hidden struct{}
+func (hidden) ignored() {}
+`)
+	if before == after || strings.Contains(after, "method (Token) seal()") {
+		t.Fatalf("removed private method on exported receiver did not alter inventory:\n%s\n%s", before, after)
+	}
+	helperChanged := render(`package api
+type privateSeal interface { seal() }
+type Sealed interface { privateSeal }
+type privatePointerSeal interface { pointerSeal() }
+type PointerSealed = privatePointerSeal
+type Token struct{}
+func (Token) seal() {}
+func (*Token) pointerSeal() {}
+func (Token) helper() int { return 1 }
+func privateContract() {
+	type Contract interface { localSeal() }
+	var _ Contract = Token{}
+}
+func (Token) localSeal() {}
+type hidden struct{}
+func (hidden) ignored() {}
+`)
+	if before != helperChanged {
+		t.Fatalf("unrelated private helper changed inventory:\n%s\n%s", before, helperChanged)
+	}
+}
+
+func TestPublicAPIInventoryOmitsPrivateMethodsWithoutInterfaceSatisfaction(t *testing.T) {
+	render := newPublicAPIFixture(t)
+	const declarations = `package api
+type Sealed interface { seal(); Public() }
+type Token struct{}
+`
+	before := render(declarations + "func (Token) seal() {}\n")
+	after := render(declarations)
+	if before != after {
+		t.Fatalf("private method on a non-implementing receiver changed inventory:\n%s\n%s", before, after)
+	}
+}
+
+func TestPublicAPIInventoryPrivateMethodSatisfactionControls(t *testing.T) {
+	for _, test := range []struct {
+		name, declarations, method string
+		included                   bool
+	}{
+		{"complete value", "type Sealed interface { seal(); Public() }; type Token struct{}; func (Token) Public() {}", "func (Token) seal() {}", true},
+		{"complete pointer", "type Sealed interface { seal(); Public() }; type Token struct{}; func (*Token) Public() {}", "func (Token) seal() {}", true},
+		{"complete constraint", "type Sealed interface { ~int; seal() }; type Token int", "func (Token) seal() {}", true},
+		{"wrong constraint", "type Sealed interface { ~string; seal() }; type Token int", "func (Token) seal() {}", false},
+		{"different satisfied contract", "type Sealed interface { seal(); Public() }; type Other interface { other() }; type Token struct{}; func (Token) other() {}", "func (Token) seal() {}", false},
+		{"generic receiver", "type Sealed interface { seal() }; type Token[T any] struct{}", "func (Token[T]) seal() {}", true},
+		{"generic requirement spelling", "type Sealed[T any] interface { seal(T) }; type T int; type Token struct{}", "func (Token) seal(T) {}", true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			render := newPublicAPIFixture(t)
+			declarations := "package api\n" + test.declarations + "\n"
+			before := render(declarations + test.method + "\n")
+			after := render(declarations)
+			if changed := before != after; changed != test.included {
+				t.Fatalf("private method inclusion = %t, want %t:\n%s\n%s", changed, test.included, before, after)
+			}
+		})
+	}
+}
+
+func TestPublicAPIInventoryIncludesAliasReachableHiddenTypes(t *testing.T) {
+	render := newPublicAPIFixture(t)
+
+	before := render(`package api
+type hidden struct { Value string }
+type Public = hidden
+type Wrapped = []hidden
+type Again = hidden
+type recursive struct { Next *recursive; Value string }
+type Recursive = recursive
+`)
+	for _, want := range []string{
+		"type Public = hidden",
+		"type Wrapped = []hidden",
+		"type hidden struct { Value string }",
+		"type recursive struct { Next *recursive; Value string }",
+	} {
+		if !strings.Contains(before, want) {
+			t.Fatalf("public alias inventory missing %q:\n%s", want, before)
+		}
+	}
+	if strings.Count(before, "type hidden struct") != 1 {
+		t.Fatalf("repeated aliases duplicated hidden definition:\n%s", before)
+	}
+	if strings.Count(before, "type recursive struct") != 1 {
+		t.Fatalf("recursive hidden definition was duplicated:\n%s", before)
+	}
+
+	fieldChanged := render(`package api
+type hidden struct { Value int }
+type Public = hidden
+type Wrapped = []hidden
+type Again = hidden
+type recursive struct { Next *recursive; Value string }
+type Recursive = recursive
+`)
+	if before == fieldChanged {
+		t.Fatalf("hidden field change reachable through exported alias did not change inventory:\n%s", before)
+	}
+	nominalBefore := render(`package api
+type hiddenOne struct { Value string }
+type Public = hiddenOne
+`)
+	nominallyChanged := render(`package api
+type hiddenTwo struct { Value string }
+type Public = hiddenTwo
+	`)
+	if nominalBefore == nominallyChanged {
+		t.Fatalf("same-underlying hidden type replacement did not change inventory:\n%s", nominalBefore)
+	}
+}
+
+func TestPublicAPIInventoryIncludesHiddenTypesReachableFromPublicDeclarations(t *testing.T) {
+	for name, source := range map[string][2]string{
+		"field": {
+			"type hidden string\ntype Public struct { Value hidden }",
+			"type hidden int\ntype Public struct { Value hidden }",
+		},
+		"function": {
+			"type hidden string\nfunc Convert(value hidden) hidden { return value }",
+			"type hidden int\nfunc Convert(value hidden) hidden { return value }",
+		},
+		"inferred variable": {
+			"type hidden string\nvar Default = hidden(\"default\")",
+			"type hidden int\nvar Default = hidden(1)",
+		},
+		"typed variable": {
+			"type hidden string\nvar Default hidden",
+			"type hidden int\nvar Default hidden",
+		},
+		"named type": {
+			"type hidden struct { Value string }\ntype Public hidden",
+			"type hidden struct { Value int }\ntype Public hidden",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "api.go")
+			render := func(declarations string) string {
+				t.Helper()
+				if err := os.WriteFile(path, []byte("package api\n"+declarations+"\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				inventory, err := renderPublicAPI("example.com/api", []goListPackage{{ImportPath: "example.com/api", Dir: dir, GoFiles: []string{"api.go"}}})
+				if err != nil {
+					t.Fatal(err)
+				}
+				return inventory
+			}
+			before := render(source[0])
+			after := render(source[1])
+			if before == after || !strings.Contains(before, "type hidden") || !strings.Contains(after, "type hidden") {
+				t.Fatalf("reachable hidden type change did not alter inventory:\n%s\n%s", before, after)
+			}
+		})
+	}
+}
+
+func TestPublicAPIInventoryRecordsStructComparabilityWithoutPrivateFields(t *testing.T) {
+	render := newPublicAPIFixture(t)
+
+	before := render(`package api
+type keyBody struct { ID int; private int }
+type Key keyBody
+type Labels struct { Values []string }
+`)
+	for _, want := range []string{"struct-comparable Key true", "struct-comparable Labels false"} {
+		if !strings.Contains(before, want) {
+			t.Fatalf("comparability marker missing %q:\n%s", want, before)
+		}
+	}
+	if strings.Contains(before, "private") {
+		t.Fatalf("private field leaked into inventory:\n%s", before)
+	}
+
+	after := render(`package api
+type keyBody struct { ID int; private []int }
+type Key keyBody
+type Labels struct { Values []string }
+`)
+	if before == after || !strings.Contains(after, "struct-comparable Key false") {
+		t.Fatalf("private-field comparability change did not alter inventory:\n%s\n%s", before, after)
+	}
+}
+
+func TestPublicAPIInventoryNormalizesParameterNamesAndInterfaceOrder(t *testing.T) {
+	render := newPublicAPIFixture(t)
+	before := render("package api\ntype Contract interface { Zebra(value string) error; Alpha() }\nfunc Keep(value string) string { return value }\n")
+	after := render("package api\ntype Contract interface { Alpha(); Zebra(input string) error }\nfunc Keep(input string) string { return input }\n")
+	if before != after {
+		t.Fatalf("semantic-equivalent declarations changed inventory:\n%s\n%s", before, after)
+	}
+	grouped := render("package api\nfunc Keep(first, second string) (left, right string) { return first, second }\n")
+	ungrouped := render("package api\nfunc Keep(string, string) (string, string) { return \"\", \"\" }\n")
+	if grouped != ungrouped {
+		t.Fatalf("grouped parameters or results changed inventory:\n%s\n%s", grouped, ungrouped)
+	}
+	changedArity := render("package api\nfunc Keep(string, string) string { return \"\" }\n")
+	if grouped == changedArity {
+		t.Fatalf("result arity change did not change inventory:\n%s", grouped)
+	}
+	nestedBefore := render("package api\nfunc Keep(callback func(value string) string) {}\n")
+	nestedAfter := render("package api\nfunc Keep(callback func(input string) string) {}\n")
+	if nestedBefore != nestedAfter {
+		t.Fatalf("nested function parameter names changed inventory:\n%s\n%s", nestedBefore, nestedAfter)
+	}
+	nestedResultBefore := render("package api\nfunc Keep() func(value string) string { return nil }\n")
+	nestedResultAfter := render("package api\nfunc Keep() func(input string) string { return nil }\n")
+	if nestedResultBefore != nestedResultAfter {
+		t.Fatalf("nested function result parameter names changed inventory:\n%s\n%s", nestedResultBefore, nestedResultAfter)
+	}
+}
+
+func TestPublicAPIInventoryNormalizesNestedFunctionParameterNames(t *testing.T) {
+	render := newPublicAPIFixture(t)
+	for name, declarations := range map[string][2]string{
+		"slice":   {"func Keep(value []func(value string) string) {}", "func Keep(input []func(input string) string) {}"},
+		"array":   {"func Keep(value [1]func(value string) string) {}", "func Keep(input [1]func(input string) string) {}"},
+		"map":     {"func Keep(value map[string]func(value string) string) {}", "func Keep(input map[string]func(input string) string) {}"},
+		"channel": {"func Keep(value chan func(value string) string) {}", "func Keep(input chan func(input string) string) {}"},
+		"generic": {"type Box[T any] struct{}\nfunc Keep(value Box[func(value string) string]) {}", "type Box[T any] struct{}\nfunc Keep(input Box[func(input string) string]) {}"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			before := render("package api\n" + declarations[0] + "\n")
+			after := render("package api\n" + declarations[1] + "\n")
+			if before != after {
+				t.Fatalf("nested function parameter rename changed inventory:\n%s\n%s", before, after)
+			}
+		})
+	}
+}
+
+func TestPublicAPIInventoryNormalizesAnonymousTypeParameterNames(t *testing.T) {
+	render := newPublicAPIFixture(t)
+	for name, declarations := range map[string][2]string{
+		"struct": {
+			"func Keep(value struct { Callback func(value string) string }) {}",
+			"func Keep(value struct { Callback func(input string) string }) {}",
+		},
+		"interface": {
+			"func Keep(value interface { Zebra(func(value string) string); Alpha() }) {}",
+			"func Keep(value interface { Alpha(); Zebra(func(input string) string) }) {}",
+		},
+		"constraint": {
+			"func Keep[T interface { ~func(value string) string }](value T) {}",
+			"func Keep[T interface { ~func(input string) string }](value T) {}",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			before := render("package api\n" + declarations[0] + "\n")
+			after := render("package api\n" + declarations[1] + "\n")
+			if before != after {
+				t.Fatalf("anonymous %s parameter rename changed inventory:\n%s\n%s", name, before, after)
+			}
+		})
+	}
+}
+
+func TestPublicAPIInventoryPreservesAnonymousStructFieldsTagsAndEmbeddings(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "api.go")
-	render := func(source string) string {
+	source := "package api\ntype Embedded struct{}\nfunc Keep(value struct { Embedded; private string `json:\"private\"`; Callback func(value string) string `json:\"callback\"` }) {}\n"
+	if err := os.WriteFile(filepath.Join(dir, "api.go"), []byte(source), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	inventory, err := renderPublicAPI("example.com/api", []goListPackage{{ImportPath: "example.com/api", Dir: dir, GoFiles: []string{"api.go"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `func Keep(struct{Embedded; private string "json:\"private\""; Callback func(string) string "json:\"callback\""})`
+	if !strings.Contains(inventory, want) {
+		t.Fatalf("anonymous struct details were not preserved:\n%s", inventory)
+	}
+}
+
+func TestPublicAPIInventoryParenthesizesReceiveOnlyChannelElement(t *testing.T) {
+	render := newPublicAPIFixture(t)
+
+	receiveElement := render("package api\nfunc Keep(value chan (<-chan int)) {}\n")
+	if !strings.Contains(receiveElement, "func Keep(chan (<-chan int))") {
+		t.Fatalf("receive-only channel element was not parenthesized:\n%s", receiveElement)
+	}
+	sendOuter := render("package api\nfunc Keep(value chan<- chan int) {}\n")
+	if receiveElement == sendOuter {
+		t.Fatalf("distinct nested channel types produced identical inventory:\n%s", receiveElement)
+	}
+}
+
+func TestPublicAPIInventorySelectsRequestedBuildTarget(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, source string) {
 		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(source), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("go.mod", "module example.com/api\n\ngo 1.22\n")
+	write("api.go", "package api\ntype Common struct{}\n")
+	write("api_linux.go", "//go:build linux\n\npackage api\ntype LinuxOnly struct{}\n")
+	write("api_windows.go", "//go:build windows\n\npackage api\n\nimport \"syscall\"\n\nvar _ = syscall.UTF16FromString\ntype WindowsOnly struct{}\n")
+	for _, target := range []struct {
+		goos string
+		want string
+		omit string
+	}{
+		{goos: "linux", want: "type LinuxOnly struct {  }", omit: "WindowsOnly"},
+		{goos: "windows", want: "type WindowsOnly struct {  }", omit: "LinuxOnly"},
+	} {
+		t.Run(target.goos, func(t *testing.T) {
+			pkgs, err := listPackagesInDirForTarget(context.Background(), dir, false, target.goos, "amd64")
+			if err != nil {
+				t.Fatal(err)
+			}
+			inventory, err := renderPublicAPIForTarget(context.Background(), "example.com/api", pkgs, target.goos, "amd64")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(inventory, target.want) || strings.Contains(inventory, target.omit) {
+				t.Fatalf("target %s inventory selected wrong files:\n%s", target.goos, inventory)
+			}
+		})
+	}
+}
+
+func TestPublicAPIInventoryRejectsCgoSources(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := renderPublicAPI("example.com/api", []goListPackage{{ImportPath: "example.com/api", Dir: dir, CgoFiles: []string{"api_cgo.go"}}}); err == nil || !strings.Contains(err.Error(), "example.com/api") || !strings.Contains(err.Error(), "api_cgo.go") {
+		t.Fatalf("public cgo source error = %v", err)
+	}
+}
+
+func TestPublicAPIInventoryRejectsCgoLocalDependency(t *testing.T) {
+	dir := t.TempDir()
+	apiDir := filepath.Join(dir, "api")
+	if err := os.MkdirAll(apiDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(apiDir, "api.go"), []byte("package api\nimport \"example.com/api/internal/hidden\"\ntype Public = hidden.Value\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := renderPublicAPI("example.com/api", []goListPackage{
+		{ImportPath: "example.com/api", Dir: apiDir, GoFiles: []string{"api.go"}},
+		{ImportPath: "example.com/api/internal/hidden", Dir: filepath.Join(dir, "hidden"), CgoFiles: []string{"hidden_cgo.go"}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "example.com/api/internal/hidden") || !strings.Contains(err.Error(), "hidden_cgo.go") {
+		t.Fatalf("local cgo dependency error = %v", err)
+	}
+}
+
+func TestPublicAPIInventoryPreservesImportedTypePackageIdentity(t *testing.T) {
+	dir := t.TempDir()
+	write := func(relative, source string) {
+		t.Helper()
+		path := filepath.Join(dir, relative)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
 		if err := os.WriteFile(path, []byte(source), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		got, err := renderPublicAPI("example.com/api", []goListPackage{{ImportPath: "example.com/api", Dir: dir, GoFiles: []string{"api.go"}}})
+	}
+	write("one/model.go", "package model\ntype ID string\ntype Constraint interface { ~string }\n")
+	write("two/model.go", "package model\ntype ID string\ntype Constraint interface { ~string }\n")
+	apiDir := filepath.Join(dir, "api")
+	render := func(path, alias, declaration string) string {
+		t.Helper()
+		source := strings.ReplaceAll(declaration, "$ID", alias+".ID")
+		source = strings.ReplaceAll(source, "$Constraint", alias+".Constraint")
+		write("api/api.go", "package api\nimport "+alias+" \""+path+"\"\n"+source)
+		modelDir := filepath.Join(dir, map[string]string{"example.com/model/one": "one", "example.com/model/two": "two"}[path])
+		inventory, err := renderPublicAPI("example.com/api", []goListPackage{
+			{ImportPath: "example.com/api", Dir: apiDir, GoFiles: []string{"api.go"}},
+			{ImportPath: path, Dir: modelDir, GoFiles: []string{"model.go"}},
+		})
 		if err != nil {
 			t.Fatal(err)
 		}
-		return got
+		return inventory
 	}
+	for name, declaration := range map[string]string{
+		"function":         "func Keep(value $ID) $ID { return value }\n",
+		"interface":        "type Contract interface { Keep($ID) $ID }\n",
+		"struct":           "type Record struct { ID $ID }\n",
+		"anonymous-struct": "func Keep(value struct { id $ID }) {}\n",
+		"variable":         "var Default $ID\n",
+		"constraint":       "type Holder[T $Constraint] struct { Value T }\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			one := render("example.com/model/one", "model", declaration)
+			two := render("example.com/model/two", "model", declaration)
+			if one == two {
+				t.Fatalf("imported type package change did not alter inventory:\n%s", one)
+			}
+			if equivalent := render("example.com/model/one", "identity", declaration); one != equivalent {
+				t.Fatalf("import alias changed inventory:\n%s\n%s", one, equivalent)
+			}
+		})
+	}
+}
+
+func TestPublicAPIInventoryIncludesExportedValueSemantics(t *testing.T) {
+	t.Parallel()
+	render := newPublicAPIFixture(t)
 
 	before := render(`package api
 type State int
@@ -181,6 +629,75 @@ const Ready State = 7
 	for _, want := range []string{"var Selected example.com/api/dep.State", "const Initial example.com/api/dep.State = 7"} {
 		if !strings.Contains(inventory, want) {
 			t.Fatalf("dependency-defined value missing %q:\n%s", want, inventory)
+		}
+	}
+}
+
+func TestPublicAPIInventoryNormalizesExportedFunctionValueParameterNames(t *testing.T) {
+	render := newPublicAPIFixture(t)
+
+	before := render("package api\nvar Hook func(value string) func(result string) error\n")
+	after := render("package api\nvar Hook func(input string) func(output string) error\n")
+	if before != after {
+		t.Fatalf("exported function value parameter names changed inventory:\n%s\n%s", before, after)
+	}
+}
+
+func newPublicAPIFixture(t *testing.T) func(string) string {
+	t.Helper()
+	dir := t.TempDir()
+	return func(source string) string {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, "api.go"), []byte(source), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		inventory, err := renderPublicAPI("example.com/api", []goListPackage{{ImportPath: "example.com/api", Dir: dir, GoFiles: []string{"api.go"}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return inventory
+	}
+}
+
+func TestPublicAPIInventoryNormalizesStructTagLiterals(t *testing.T) {
+	render := newPublicAPIFixture(t)
+	raw := render("package api\ntype Tagged struct { Field string `json:\"x\"` }\n")
+	quoted := render("package api\ntype Tagged struct { Field string \"json:\\\"x\\\"\" }\n")
+	if raw != quoted {
+		t.Fatalf("equivalent struct tags changed inventory:\n%s\n%s", raw, quoted)
+	}
+	changed := render("package api\ntype Tagged struct { Field string `json:\"y\"` }\n")
+	if raw == changed {
+		t.Fatal("changed struct tag did not change inventory")
+	}
+	removed := render("package api\ntype Tagged struct { Field string }\n")
+	if raw == removed {
+		t.Fatal("removed struct tag did not change inventory")
+	}
+}
+
+func TestPublicAPIInventoryExcludesUnreachablePrivateReceiverMethods(t *testing.T) {
+	render := newPublicAPIFixture(t)
+	hidden := `type unused struct{}
+func (unused) Exported() privateResult { return privateResult{} }
+type privateResult struct { Value string }
+`
+	reachable := `type first struct{}
+type second struct{}
+func (second) Finish() string { return "" }
+func (first) Next() second { return second{} }
+func New() first { return first{} }
+type Public struct{}
+func (Public) Keep() {}
+`
+	before := render("package api\n" + hidden + reachable)
+	after := render("package api\n" + reachable)
+	if before != after {
+		t.Fatalf("private implementation changes affected inventory:\n%s\n%s", before, after)
+	}
+	for _, want := range []string{"method (first) Next() second", "method (second) Finish() string", "method (Public) Keep()"} {
+		if !strings.Contains(after, want) {
+			t.Fatalf("reachable method %q missing:\n%s", want, after)
 		}
 	}
 }

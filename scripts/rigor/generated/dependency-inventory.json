@@ -520,6 +520,29 @@
       "dir": "schema/protocol"
     },
     {
+      "importPath": "github.com/ben-ranford/stave/scripts/rigor/cmd/releasebaseline",
+      "dir": "scripts/rigor/cmd/releasebaseline",
+      "imports": [
+        "archive/tar",
+        "bytes",
+        "context",
+        "errors",
+        "flag",
+        "fmt",
+        "go/ast",
+        "go/parser",
+        "go/token",
+        "go/version",
+        "io",
+        "os",
+        "os/exec",
+        "path/filepath",
+        "regexp",
+        "sort",
+        "strings"
+      ]
+    },
+    {
       "importPath": "github.com/ben-ranford/stave/scripts/rigor/cmd/rigor",
       "dir": "scripts/rigor/cmd/rigor",
       "imports": [
@@ -546,6 +569,7 @@
         "path/filepath",
         "regexp",
         "sort",
+        "strconv",
         "strings"
       ]
     },

@@ -56,12 +56,16 @@ jobs:
         env:
           CGO_ENABLED: "1"
           RELEASE_CHANNEL: ${{ steps.release_tag.outputs.channel }}
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
           make ci
           if [[ "${RELEASE_CHANNEL}" == prerelease ]]; then
             make release-contract
           else
             make release-ga-contract
+            if [[ "${RELEASE_TAG}" == v1.* ]]; then
+              make release-baseline
+            fi
           fi
       - name: Upload performance evidence
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

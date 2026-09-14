@@ -62,6 +62,89 @@ The following are additive when existing meaning remains intact:
 - Optional adapters have their own versions; a root-module major version is
   required only when the Stave-facing adapter contract changes.
 
+## Minor-release baseline gate
+
+`make release-baseline` runs the focused consumer fixture matrix and compares
+the native build with its inherited cgo setting. It then sets `CGO_ENABLED=0`
+for each supported public build target (`linux/amd64`, `darwin/amd64`,
+`darwin/arm64`, and `windows/amd64`). For each comparison, it regenerates the
+candidate public API inventory from source and compares it with the newest
+annotated stable `v1.x.y` tag on a strict
+ancestor of the candidate. Tags on the candidate itself or unrelated/future
+commits cannot serve as its baseline. It
+records the baseline tag, immutable commit, and both Go floors, and rejects a
+candidate Go floor newer than the baseline. It uses Go version ordering, where
+`1.22` precedes `1.22.0`. The same rule applies to development comparisons.
+A regenerated
+candidate inventory cannot waive a removed declaration, changed signature,
+interface method addition, or exported variable type change.
+
+Adding an exported function or a field to a defined struct while retaining
+existing keyed fields and struct comparability is accepted. Field additions to
+an alias of an anonymous struct are rejected because they change type identity.
+Adding a field can still break consumers using unkeyed composite literals or
+explicit conversions to the previous underlying struct shape
+([#124](https://github.com/ben-ranford/stave/issues/124)). Keyed construction
+remains supported; gate acceptance does not establish compatibility for those
+other uses. Maintainers must review field additions and compile affected
+consumers before release. The
+baseline rejects every field addition to a struct that already embeds a field,
+as well as embedded-field additions to a plain struct, because either can
+change promoted selectors. The source inventory also fails closed when selected
+public packages or their root-local source dependencies use cgo; cgo-aware
+inventory support is tracked separately in issue #109.
+
+The gate is a bounded declaration and consumer regression check, not a complete
+analysis of Go source compatibility. Its current inventory does not follow
+public aliases into non-public root-local packages ([#112](https://github.com/ben-ranford/stave/issues/112)),
+collect sealed-method requirements from hidden interfaces or hidden concrete
+result types exposed through public signatures ([#113](https://github.com/ben-ranford/stave/issues/113)), detect
+promoted-selector ambiguity caused by newly added fields or methods on types
+embedded elsewhere
+([#114](https://github.com/ben-ranford/stave/issues/114)), or track private methods
+promoted from hidden embedded receivers into exported concrete method sets
+([#119](https://github.com/ben-ranford/stave/issues/119)). Changes involving these
+cases require explicit compatibility review and consumer compilation evidence
+before release; a passing inventory comparison alone is insufficient.
+
+Consistent generic type-parameter renames can change inventory text even when
+consumer code remains compatible ([#107](https://github.com/ben-ranford/stave/issues/107)).
+Preserve existing parameter names until scoped normalization is supported;
+review unexpected differences with consumer compilation evidence.
+
+Generic sealed-method matching can also omit an implementation method when
+the interface and receiver use different type-parameter names
+([#107](https://github.com/ben-ranford/stave/issues/107)). Removing that method
+can break consumer assignments without changing the inventory. These generic
+relationships require explicit compatibility review and consumer compilation
+until scoped type matching is supported.
+
+The inventory does not follow exposed named types into external dependency
+modules ([#122](https://github.com/ben-ranford/stave/issues/122)). Stave's root
+API boundary currently rejects third-party imports. Any future dependency
+types exposed through public aliases or signatures need consumer compilation
+evidence against the candidate dependency graph; unchanged inventory text
+alone does not establish their compatibility.
+
+Equivalent built-in alias spellings such as `byte`/`uint8` and `rune`/`int32`
+can still produce different inventory text ([#110](https://github.com/ben-ranford/stave/issues/110)).
+Preserve the existing spelling until that normalization is supported; review
+unexpected differences before release.
+
+Equivalent interface embedding rewrites can also change inventory text
+([#123](https://github.com/ben-ranford/stave/issues/123)). Preserve the existing
+embedding form until completed method-set normalization is supported; review
+differences with consumer compilation evidence.
+
+`make release-baseline` requires an earlier stable v1 tag. When only
+prereleases exist, it fails deliberately; until issue #2 provides a stable
+baseline, a GA release cannot pass it. `make release-baseline-development` is
+an opt-in, explicitly labelled comparison with `v1.0.0-rc.2`; it is
+development evidence only and cannot serve as a GA baseline.
+
+The baseline applies to v1 GA minor releases only. A future major release must
+introduce its own major-version compatibility policy rather than reuse v1.
+
 ## Related guides
 
 - [Adopt Stave in an application](client-adoption.md)

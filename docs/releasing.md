@@ -106,3 +106,11 @@ Homebrew, if used, ships a separately released Lopper binary only after Lopper
 CI passes; it is not a Stave distribution channel. Record the immutable Lopper
 revision and its passing parity and rollback evidence with the GA release
 decision.
+
+For a v1 GA tag, release verification also runs `make release-baseline`. It selects the newest
+annotated stable v1 tag, regenerates both public API inventories from source
+for Linux, Darwin, and Windows supported targets, and records the tag commit
+and Go floors before allowing a minor release. If
+only release candidates exist, this is an intentional blocker. The opt-in
+`make release-baseline-development` comparison against `v1.0.0-rc.2` is not a
+substitute for that stable baseline.

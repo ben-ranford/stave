@@ -7,6 +7,7 @@ COVERAGE_DIR := .coverage
 COVERAGE_PROFILE := $(COVERAGE_DIR)/coverage.out
 GO_FILES := $(shell rg --files -g '*.go' .)
 RIGOR := $(GO) run ./scripts/rigor/cmd/rigor
+RELEASE_BASELINE_TARGETS := linux/amd64 darwin/amd64 darwin/arm64 windows/amd64
 
 .PHONY: help tools fmt fmt-check lint vet test race coverage coverage-threshold \
 	fuzz-smoke benchmark-smoke verify-performance govulncheck dependency-inventory license-inventory \
@@ -14,7 +15,7 @@ RIGOR := $(GO) run ./scripts/rigor/cmd/rigor
 	suppression-check \
 	api-refresh api-boundary traceability-refresh schema-freshness generated-refresh \
 	adapters conformance-check atlas-check workflow-validate hooks-install hooks-pre-commit-dry-run \
-	hooks-pre-push-dry-run fast verify ci release-contract release-ga-contract release-dry-run release-probe-test clean \
+	hooks-pre-push-dry-run fast verify ci release-contract release-ga-contract release-baseline release-baseline-development release-dry-run release-probe-test clean \
 	queue-me-check
 
 help:
@@ -23,6 +24,8 @@ help:
 		'  make fast                  # local fast gate (fmt, lint, vet, API/schema checks)' \
 		'  make verify                # full local verification suite' \
 		'  make ci                    # canonical local CI entrypoint' \
+		'  make release-baseline      # compare against the last stable v1 API tag (GA gate)' \
+		'  make release-baseline-development # explicitly compare with v1.0.0-rc.2 during development' \
 		'  make generated-refresh     # refresh tracked rigor inventories'
 
 tools:
@@ -145,6 +148,16 @@ release-contract:
 
 release-ga-contract:
 	STAVE_GA_RELEASE_GATE=1 $(GO) test ./requirements -count=1
+
+release-baseline:
+	$(GO) test ./scripts/rigor/cmd/releasebaseline -run '^TestConsumerCompilerFixtures$$' -count=1
+	$(GO) run ./scripts/rigor/cmd/releasebaseline --go "$(GO)"
+	@for target in $(RELEASE_BASELINE_TARGETS); do \
+		CGO_ENABLED=0 $(GO) run ./scripts/rigor/cmd/releasebaseline --go "$(GO)" --goos "$${target%/*}" --goarch "$${target#*/}" || exit $$?; \
+	done
+
+release-baseline-development:
+	$(GO) run ./scripts/rigor/cmd/releasebaseline --go "$(GO)" --development --baseline-tag v1.0.0-rc.2
 
 ci: verify release-probe-test govulncheck workflow-validate release-contract
 
