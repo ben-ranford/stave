@@ -192,7 +192,7 @@ func TestTranscriptRoundTrip(t *testing.T) {
 	}
 }
 
-func mustTranscript(t *testing.T) Transcript {
+func mustTranscript(t testing.TB) Transcript {
 	t.Helper()
 	tree := mustTree(t)
 	st, err := state.New("session-1", map[string]any{"status": "ok"}, tree, state.Meta{
@@ -224,7 +224,7 @@ func mustTranscript(t *testing.T) Transcript {
 	return tr
 }
 
-func mustTree(t *testing.T) semantic.Tree {
+func mustTree(t testing.TB) semantic.Tree {
 	t.Helper()
 	id, err := semantic.NodeIDFor(semantic.NodeKey{
 		AppNamespace: "stave",
