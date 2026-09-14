@@ -25,8 +25,9 @@ sensitive-event redaction before serialization.
 
 For evidence produced by a session, every event carries the event schema
 version explicitly. A revision advances exactly when the model, tree, or
-surface hash changes; configuration, theme, and capability hashes stay fixed
-for the session. The initial capability hash must match the saved manifest.
+surface hash changes, and every revision advance changes the tree hash;
+configuration, theme, and capability hashes stay fixed for the session. The
+initial capability hash must match the saved manifest.
 Non-effect records retain the effect ledger; effect-result records use the
 session's single delivery mode and either retain the prior ledger for a
 rejected event or derive it from the prior ledger and canonical event.

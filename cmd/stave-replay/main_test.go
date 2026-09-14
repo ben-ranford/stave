@@ -30,6 +30,7 @@ func TestRunReportsDistinctValidateCompareAndInvalidStatuses(t *testing.T) {
 		t.Fatalf("compare code=%d report=%+v", code, result)
 	}
 	transcript.Records[0].Result.Hashes.Model = "different"
+	transcript.Records[0].Result.Hashes.Tree = "different-tree"
 	transcript.Records[0].Result.Revision++
 	transcript.Records[0].Event.Revision = transcript.Records[0].Result.Revision
 	if err := replay.ValidateTranscript(transcript); err != nil {
@@ -63,6 +64,7 @@ func TestRunFailsWhenReportCannotBeWritten(t *testing.T) {
 	transcript := testTranscript(t)
 	writeTranscript(t, valid, transcript)
 	transcript.Records[0].Result.Hashes.Model = "different"
+	transcript.Records[0].Result.Hashes.Tree = "different-tree"
 	transcript.Records[0].Result.Revision++
 	transcript.Records[0].Event.Revision = transcript.Records[0].Result.Revision
 	if err := replay.ValidateTranscript(transcript); err != nil {
