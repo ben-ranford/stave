@@ -37,4 +37,9 @@ rejected event or derive it from the prior ledger and canonical event.
 Validation establishes checkpoint consistency, not checkpoint origin; a saved
 checkpoint can therefore begin with coherent prior ledger and declaration data.
 
+Known producer limitation: an invalid effect request after a rendered state
+change can produce mismatched event and result revisions
+([#100](https://github.com/ben-ranford/stave/issues/100)). The inspector rejects
+these inconsistent artifacts even if they use canonical JSON formatting.
+
 If the command cannot write its report, it exits `1` and emits a bounded diagnostic on standard error. A successful validation or comparison requires successful report output.
