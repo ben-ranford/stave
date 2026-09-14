@@ -67,18 +67,7 @@ type ID string
 }
 
 func TestPublicAPIInventoryRecordsDeclaredPackageName(t *testing.T) {
-	dir := t.TempDir()
-	render := func(source string) string {
-		t.Helper()
-		if err := os.WriteFile(filepath.Join(dir, "api.go"), []byte(source), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		inventory, err := renderPublicAPI("example.com/api", []goListPackage{{ImportPath: "example.com/api", Dir: dir, GoFiles: []string{"api.go"}}})
-		if err != nil {
-			t.Fatal(err)
-		}
-		return inventory
-	}
+	render := newPublicAPIFixture(t)
 
 	before := render("package foo\ntype Value struct{}\n")
 	after := render("package bar\ntype Value struct{}\n")
@@ -91,18 +80,7 @@ func TestPublicAPIInventoryRecordsDeclaredPackageName(t *testing.T) {
 }
 
 func TestPublicAPIInventoryIncludesPrivateMethodsOnExportedReceivers(t *testing.T) {
-	dir := t.TempDir()
-	render := func(source string) string {
-		t.Helper()
-		if err := os.WriteFile(filepath.Join(dir, "api.go"), []byte(source), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		inventory, err := renderPublicAPI("example.com/api", []goListPackage{{ImportPath: "example.com/api", Dir: dir, GoFiles: []string{"api.go"}}})
-		if err != nil {
-			t.Fatal(err)
-		}
-		return inventory
-	}
+	render := newPublicAPIFixture(t)
 
 	before := render(`package api
 type privateSeal interface { seal() }
@@ -171,19 +149,7 @@ func (hidden) ignored() {}
 }
 
 func TestPublicAPIInventoryIncludesAliasReachableHiddenTypes(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "api.go")
-	render := func(source string) string {
-		t.Helper()
-		if err := os.WriteFile(path, []byte(source), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		inventory, err := renderPublicAPI("example.com/api", []goListPackage{{ImportPath: "example.com/api", Dir: dir, GoFiles: []string{"api.go"}}})
-		if err != nil {
-			t.Fatal(err)
-		}
-		return inventory
-	}
+	render := newPublicAPIFixture(t)
 
 	before := render(`package api
 type hidden struct { Value string }
@@ -281,19 +247,7 @@ func TestPublicAPIInventoryIncludesHiddenTypesReachableFromPublicDeclarations(t 
 }
 
 func TestPublicAPIInventoryRecordsStructComparabilityWithoutPrivateFields(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "api.go")
-	render := func(source string) string {
-		t.Helper()
-		if err := os.WriteFile(path, []byte(source), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		inventory, err := renderPublicAPI("example.com/api", []goListPackage{{ImportPath: "example.com/api", Dir: dir, GoFiles: []string{"api.go"}}})
-		if err != nil {
-			t.Fatal(err)
-		}
-		return inventory
-	}
+	render := newPublicAPIFixture(t)
 
 	before := render(`package api
 type keyBody struct { ID int; private int }
@@ -320,19 +274,7 @@ type Labels struct { Values []string }
 }
 
 func TestPublicAPIInventoryNormalizesParameterNamesAndInterfaceOrder(t *testing.T) {
-	dir := t.TempDir()
-	render := func(source string) string {
-		t.Helper()
-		path := filepath.Join(dir, "api.go")
-		if err := os.WriteFile(path, []byte(source), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		got, err := renderPublicAPI("example.com/api", []goListPackage{{ImportPath: "example.com/api", Dir: dir, GoFiles: []string{"api.go"}}})
-		if err != nil {
-			t.Fatal(err)
-		}
-		return got
-	}
+	render := newPublicAPIFixture(t)
 	before := render("package api\ntype Contract interface { Zebra(value string) error; Alpha() }\nfunc Keep(value string) string { return value }\n")
 	after := render("package api\ntype Contract interface { Alpha(); Zebra(input string) error }\nfunc Keep(input string) string { return input }\n")
 	if before != after {
@@ -360,19 +302,7 @@ func TestPublicAPIInventoryNormalizesParameterNamesAndInterfaceOrder(t *testing.
 }
 
 func TestPublicAPIInventoryNormalizesNestedFunctionParameterNames(t *testing.T) {
-	dir := t.TempDir()
-	render := func(source string) string {
-		t.Helper()
-		path := filepath.Join(dir, "api.go")
-		if err := os.WriteFile(path, []byte(source), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		got, err := renderPublicAPI("example.com/api", []goListPackage{{ImportPath: "example.com/api", Dir: dir, GoFiles: []string{"api.go"}}})
-		if err != nil {
-			t.Fatal(err)
-		}
-		return got
-	}
+	render := newPublicAPIFixture(t)
 	for name, declarations := range map[string][2]string{
 		"slice":   {"func Keep(value []func(value string) string) {}", "func Keep(input []func(input string) string) {}"},
 		"array":   {"func Keep(value [1]func(value string) string) {}", "func Keep(input [1]func(input string) string) {}"},
@@ -391,19 +321,7 @@ func TestPublicAPIInventoryNormalizesNestedFunctionParameterNames(t *testing.T) 
 }
 
 func TestPublicAPIInventoryNormalizesAnonymousTypeParameterNames(t *testing.T) {
-	dir := t.TempDir()
-	render := func(source string) string {
-		t.Helper()
-		path := filepath.Join(dir, "api.go")
-		if err := os.WriteFile(path, []byte(source), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		got, err := renderPublicAPI("example.com/api", []goListPackage{{ImportPath: "example.com/api", Dir: dir, GoFiles: []string{"api.go"}}})
-		if err != nil {
-			t.Fatal(err)
-		}
-		return got
-	}
+	render := newPublicAPIFixture(t)
 	for name, declarations := range map[string][2]string{
 		"struct": {
 			"func Keep(value struct { Callback func(value string) string }) {}",
@@ -445,19 +363,7 @@ func TestPublicAPIInventoryPreservesAnonymousStructFieldsTagsAndEmbeddings(t *te
 }
 
 func TestPublicAPIInventoryParenthesizesReceiveOnlyChannelElement(t *testing.T) {
-	dir := t.TempDir()
-	render := func(source string) string {
-		t.Helper()
-		path := filepath.Join(dir, "api.go")
-		if err := os.WriteFile(path, []byte(source), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		got, err := renderPublicAPI("example.com/api", []goListPackage{{ImportPath: "example.com/api", Dir: dir, GoFiles: []string{"api.go"}}})
-		if err != nil {
-			t.Fatal(err)
-		}
-		return got
-	}
+	render := newPublicAPIFixture(t)
 
 	receiveElement := render("package api\nfunc Keep(value chan (<-chan int)) {}\n")
 	if !strings.Contains(receiveElement, "func Keep(chan (<-chan int))") {
@@ -583,19 +489,7 @@ func TestPublicAPIInventoryPreservesImportedTypePackageIdentity(t *testing.T) {
 
 func TestPublicAPIInventoryIncludesExportedValueSemantics(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "api.go")
-	render := func(source string) string {
-		t.Helper()
-		if err := os.WriteFile(path, []byte(source), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		got, err := renderPublicAPI("example.com/api", []goListPackage{{ImportPath: "example.com/api", Dir: dir, GoFiles: []string{"api.go"}}})
-		if err != nil {
-			t.Fatal(err)
-		}
-		return got
-	}
+	render := newPublicAPIFixture(t)
 
 	before := render(`package api
 type State int
@@ -702,8 +596,19 @@ const Ready State = 7
 }
 
 func TestPublicAPIInventoryNormalizesExportedFunctionValueParameterNames(t *testing.T) {
+	render := newPublicAPIFixture(t)
+
+	before := render("package api\nvar Hook func(value string) func(result string) error\n")
+	after := render("package api\nvar Hook func(input string) func(output string) error\n")
+	if before != after {
+		t.Fatalf("exported function value parameter names changed inventory:\n%s\n%s", before, after)
+	}
+}
+
+func newPublicAPIFixture(t *testing.T) func(string) string {
+	t.Helper()
 	dir := t.TempDir()
-	render := func(source string) string {
+	return func(source string) string {
 		t.Helper()
 		if err := os.WriteFile(filepath.Join(dir, "api.go"), []byte(source), 0o600); err != nil {
 			t.Fatal(err)
@@ -713,11 +618,5 @@ func TestPublicAPIInventoryNormalizesExportedFunctionValueParameterNames(t *test
 			t.Fatal(err)
 		}
 		return inventory
-	}
-
-	before := render("package api\nvar Hook func(value string) func(result string) error\n")
-	after := render("package api\nvar Hook func(input string) func(output string) error\n")
-	if before != after {
-		t.Fatalf("exported function value parameter names changed inventory:\n%s\n%s", before, after)
 	}
 }
