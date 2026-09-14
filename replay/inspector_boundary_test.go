@@ -38,13 +38,8 @@ func TestDecodeTranscriptAcceptsMaximumSemanticTreeDepth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	transcript := mustTranscript(t)
 	snapshot := tree.Snapshot()
-	transcript.Initial.Tree = semanticTreeWire(t, snapshot)
-	transcript.Initial.Hashes.Tree = snapshot.TreeHash
-	transcript.Records[0].Prior.Hashes.Tree = snapshot.TreeHash
-	transcript.Records[0].Result.Hashes.Tree = snapshot.TreeHash
-	refreshInspectorCheckpointChecksum(t, &transcript.Initial)
+	transcript := transcriptWithSemanticSnapshot(t, snapshot)
 	data, err := transcript.CanonicalJSON()
 	if err != nil {
 		t.Fatal(err)
@@ -127,13 +122,8 @@ func TestSemanticSnapshotRelationWorkBound(t *testing.T) {
 
 func TestDecodeTranscriptAcceptsAndValidatesSemanticSnapshotRelations(t *testing.T) {
 	tree := semanticTreeWithRelation(t)
-	transcript := mustTranscript(t)
 	snapshot := tree.Snapshot()
-	transcript.Initial.Tree = semanticTreeWire(t, snapshot)
-	transcript.Initial.Hashes.Tree = snapshot.TreeHash
-	transcript.Records[0].Prior.Hashes.Tree = snapshot.TreeHash
-	transcript.Records[0].Result.Hashes.Tree = snapshot.TreeHash
-	refreshInspectorCheckpointChecksum(t, &transcript.Initial)
+	transcript := transcriptWithSemanticSnapshot(t, snapshot)
 	data, err := transcript.CanonicalJSON()
 	if err != nil {
 		t.Fatal(err)
@@ -325,13 +315,8 @@ func BenchmarkDecodeTranscriptMaximumSemanticTreeDepth(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	transcript := mustTranscript(b)
 	snapshot := tree.Snapshot()
-	transcript.Initial.Tree = semanticTreeWire(b, snapshot)
-	transcript.Initial.Hashes.Tree = snapshot.TreeHash
-	transcript.Records[0].Prior.Hashes.Tree = snapshot.TreeHash
-	transcript.Records[0].Result.Hashes.Tree = snapshot.TreeHash
-	refreshInspectorCheckpointChecksum(b, &transcript.Initial)
+	transcript := transcriptWithSemanticSnapshot(b, snapshot)
 	data, err := transcript.CanonicalJSON()
 	if err != nil {
 		b.Fatal(err)
@@ -425,4 +410,15 @@ func semanticTreeWire(t testing.TB, snapshot semantic.Snapshot) any {
 		t.Fatal(err)
 	}
 	return wire
+}
+
+func transcriptWithSemanticSnapshot(t testing.TB, snapshot semantic.Snapshot) Transcript {
+	t.Helper()
+	transcript := mustTranscript(t)
+	transcript.Initial.Tree = semanticTreeWire(t, snapshot)
+	transcript.Initial.Hashes.Tree = snapshot.TreeHash
+	transcript.Records[0].Prior.Hashes.Tree = snapshot.TreeHash
+	transcript.Records[0].Result.Hashes.Tree = snapshot.TreeHash
+	refreshInspectorCheckpointChecksum(t, &transcript.Initial)
+	return transcript
 }
