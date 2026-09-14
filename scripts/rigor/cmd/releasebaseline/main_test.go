@@ -1,6 +1,8 @@
 package main
 
 import (
+	"archive/tar"
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -355,5 +357,133 @@ func TestArchiveEntryTargetPreservesNestedLocalPaths(t *testing.T) {
 		if err != nil || target != filepath.Join(root, name) {
 			t.Fatalf("archive path %q: target=%q err=%v", name, target, err)
 		}
+	}
+}
+
+func TestExtractArchiveWritesNestedRegularFiles(t *testing.T) {
+	root := t.TempDir()
+	archive := tarFixture(t, []tarFixtureEntry{
+		{header: tar.Header{Name: "nested/", Typeflag: tar.TypeDir, Mode: 0o755}},
+		{header: tar.Header{Name: "nested/../file.go", Typeflag: tar.TypeReg, Mode: 0o644, Size: int64(len("package fixture\n"))}, content: "package fixture\n"},
+	})
+	if err := extractArchive(root, bytes.NewReader(archive)); err != nil {
+		t.Fatalf("extract archive: %v", err)
+	}
+	content, err := os.ReadFile(filepath.Join(root, "file.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(content), "package fixture\n"; got != want {
+		t.Fatalf("file content = %q, want %q", got, want)
+	}
+}
+
+func TestExtractArchiveRejectsUnsafeEntries(t *testing.T) {
+	tests := []struct {
+		name         string
+		header       func(outside string) tar.Header
+		content      string
+		materialized string
+	}{
+		{name: "root escape", header: func(string) tar.Header {
+			return tar.Header{Name: "../releasebaseline-escape", Typeflag: tar.TypeReg, Mode: 0o644, Size: 1}
+		}, content: "x"},
+		{name: "absolute path", header: func(outside string) tar.Header {
+			return tar.Header{Name: outside, Typeflag: tar.TypeReg, Mode: 0o644, Size: 1}
+		}, content: "x"},
+		{name: "symbolic link", header: func(string) tar.Header {
+			return tar.Header{Name: "link", Typeflag: tar.TypeSymlink, Linkname: "../releasebaseline-escape"}
+		}, materialized: "link"},
+		{name: "hard link", header: func(string) tar.Header { return tar.Header{Name: "link", Typeflag: tar.TypeLink, Linkname: "target"} }, materialized: "link"},
+		{name: "fifo", header: func(string) tar.Header { return tar.Header{Name: "pipe", Typeflag: tar.TypeFifo} }, materialized: "pipe"},
+		{name: "character device", header: func(string) tar.Header { return tar.Header{Name: "device", Typeflag: tar.TypeChar} }, materialized: "device"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			parent := t.TempDir()
+			root := filepath.Join(parent, "extract")
+			if err := os.Mkdir(root, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			outside := filepath.Join(parent, "releasebaseline-escape")
+			header := test.header(outside)
+			if err := extractArchive(root, bytes.NewReader(tarFixture(t, []tarFixtureEntry{{header: header, content: test.content}}))); err == nil {
+				t.Fatal("unsafe archive entry was accepted")
+			}
+			if _, err := os.Lstat(outside); !os.IsNotExist(err) {
+				t.Fatalf("archive wrote outside extraction root: %v", err)
+			}
+			if test.materialized != "" {
+				if _, err := os.Lstat(filepath.Join(root, test.materialized)); !os.IsNotExist(err) {
+					t.Fatalf("unsupported archive entry was materialized: %v", err)
+				}
+			}
+		})
+	}
+}
+
+type tarFixtureEntry struct {
+	header  tar.Header
+	content string
+}
+
+func tarFixture(t *testing.T, entries []tarFixtureEntry) []byte {
+	t.Helper()
+	var archive bytes.Buffer
+	writer := tar.NewWriter(&archive)
+	for _, entry := range entries {
+		if err := writer.WriteHeader(&entry.header); err != nil {
+			t.Fatal(err)
+		}
+		if entry.content != "" {
+			if _, err := writer.Write([]byte(entry.content)); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return archive.Bytes()
+}
+
+func TestGitExecutableResolvesAbsolutePath(t *testing.T) {
+	executable, err := gitExecutable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !filepath.IsAbs(executable) {
+		t.Fatalf("git executable path %q is not absolute", executable)
+	}
+}
+
+func TestGitExecutableRejectsRelativePathResolution(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("relative executable lookup is platform specific")
+	}
+	directory := t.TempDir()
+	bin := filepath.Join(directory, "bin")
+	if err := os.Mkdir(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bin, "git"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	workingDirectory, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(directory); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := os.Chdir(workingDirectory); err != nil {
+			t.Error(err)
+		}
+	}()
+	t.Setenv("PATH", "bin")
+	t.Setenv("GODEBUG", "execerrdot=0")
+	if _, err := gitExecutable(); err == nil || !strings.Contains(err.Error(), "must be absolute") {
+		t.Fatalf("relative Git path was not rejected: %v", err)
 	}
 }

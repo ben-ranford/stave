@@ -178,59 +178,72 @@ func archiveTag(ctx context.Context, tag string) (string, error) {
 		_ = os.RemoveAll(directory)
 		return "", err
 	}
-	reader := tar.NewReader(bytes.NewReader(archive))
+	if err := extractArchive(directory, bytes.NewReader(archive)); err != nil {
+		_ = os.RemoveAll(directory)
+		return "", err
+	}
+	return directory, nil
+}
+
+// extractArchive writes only regular files and directories below directory.
+// directory is created by os.MkdirTemp in archiveTag and is therefore the
+// trusted extraction root; archive entry names are not trusted.
+func extractArchive(directory string, archive io.Reader) error {
+	reader := tar.NewReader(archive)
 	for {
 		header, err := reader.Next()
 		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
-			_ = os.RemoveAll(directory)
-			return "", err
-		}
-		target, err := archiveEntryTarget(directory, header.Name)
-		if err != nil {
-			_ = os.RemoveAll(directory)
-			return "", err
+			return err
 		}
 		switch header.Typeflag {
 		case tar.TypeXGlobalHeader:
 			continue
 		case tar.TypeDir:
+			target, err := archiveEntryTarget(directory, header.Name)
+			if err != nil {
+				return err
+			}
 			if err := os.MkdirAll(target, 0o755); err != nil {
-				_ = os.RemoveAll(directory)
-				return "", err
+				return err
 			}
 		case tar.TypeReg:
+			// The temporary root is fresh and links are rejected below. Validate
+			// this untrusted entry name before using the contained target at the
+			// directory and file creation sinks.
+			target, err := archiveEntryTarget(directory, header.Name)
+			if err != nil {
+				return err
+			}
 			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-				_ = os.RemoveAll(directory)
-				return "", err
+				return err
 			}
 			file, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 			if err != nil {
-				_ = os.RemoveAll(directory)
-				return "", err
+				return err
 			}
 			_, copyErr := io.Copy(file, reader)
 			closeErr := file.Close()
 			if copyErr != nil || closeErr != nil {
-				_ = os.RemoveAll(directory)
-				return "", errors.Join(copyErr, closeErr)
+				return errors.Join(copyErr, closeErr)
 			}
 		default:
-			_ = os.RemoveAll(directory)
-			return "", fmt.Errorf("baseline archive contains unsupported entry %q", header.Name)
+			return fmt.Errorf("baseline archive contains unsupported entry %q", header.Name)
 		}
 	}
-	return directory, nil
+	return nil
 }
 
 func archiveEntryTarget(directory, name string) (string, error) {
-	if !filepath.IsLocal(name) {
+	cleanName := filepath.Clean(name)
+	if cleanName == "." || !filepath.IsLocal(cleanName) {
 		return "", fmt.Errorf("baseline archive has unsafe path %q", name)
 	}
-	target := filepath.Join(directory, name)
-	if !strings.HasPrefix(target, directory+string(filepath.Separator)) {
+	target := filepath.Join(directory, cleanName)
+	relative, err := filepath.Rel(directory, target)
+	if err != nil || relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
 		return "", fmt.Errorf("baseline archive has unsafe path %q", name)
 	}
 	return target, nil
@@ -519,13 +532,31 @@ func groupedFieldNames(names string) bool {
 }
 
 func git(ctx context.Context, args ...string) ([]byte, error) {
-	command := exec.CommandContext(ctx, "git", args...)
+	executable, err := gitExecutable()
+	if err != nil {
+		return nil, err
+	}
+	command := exec.CommandContext(ctx, executable, args...)
 	command.Dir = mustRepoRoot()
 	output, err := command.CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf("git %s: %w\n%s", strings.Join(args, " "), err, output)
 	}
 	return output, nil
+}
+
+// gitExecutable preserves the operator-selected Git installation while
+// resolving it before execution. A relative PATH entry is not a stable trust
+// boundary for a release gate, so only an absolute executable is accepted.
+func gitExecutable() (string, error) {
+	executable, err := exec.LookPath("git")
+	if err != nil {
+		return "", fmt.Errorf("locate git executable: %w", err)
+	}
+	if !filepath.IsAbs(executable) {
+		return "", fmt.Errorf("git executable path %q must be absolute", executable)
+	}
+	return executable, nil
 }
 
 func mustRepoRoot() string {
