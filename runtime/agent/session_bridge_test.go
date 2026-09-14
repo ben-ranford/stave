@@ -93,18 +93,7 @@ func bridgeSessionWithHashes(t *testing.T, sessionID, configHash, themeHash stri
 		Reduce: func(_ context.Context, current int, _ event.Event) (int, []effect.Request, error) {
 			return current + 1, nil, nil
 		},
-		View: func(_ context.Context, current int) (session.ViewResult, error) {
-			id, err := semantic.NodeIDFor(semantic.NodeKey{AppNamespace: "test", View: "bridge", Kind: "root", Entity: fmt.Sprint(current), Slot: "main"})
-			if err != nil {
-				return session.ViewResult{}, err
-			}
-			node, err := semantic.NewNode(semantic.NodeSpec{ID: id, Generation: 1, Role: "application", Name: "bridge"})
-			if err != nil {
-				return session.ViewResult{}, err
-			}
-			tree, err := semantic.NewTree(uint64(current+1), node)
-			return session.ViewResult{Tree: tree, SurfaceHash: fmt.Sprintf("surface-%d", current)}, err
-		},
+		View: bridgeView,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -119,6 +108,19 @@ func bridgeEvent(t *testing.T) event.Event {
 		t.Fatal(err)
 	}
 	return ev
+}
+
+func bridgeView(_ context.Context, current int) (session.ViewResult, error) {
+	id, err := semantic.NodeIDFor(semantic.NodeKey{AppNamespace: "test", View: "bridge", Kind: "root", Entity: fmt.Sprint(current), Slot: "main"})
+	if err != nil {
+		return session.ViewResult{}, err
+	}
+	node, err := semantic.NewNode(semantic.NodeSpec{ID: id, Generation: 1, Role: "application", Name: "bridge"})
+	if err != nil {
+		return session.ViewResult{}, err
+	}
+	tree, err := semantic.NewTree(uint64(current+1), node)
+	return session.ViewResult{Tree: tree, SurfaceHash: fmt.Sprintf("surface-%d", current)}, err
 }
 
 func TestBindSessionRejectsUnusableHashMetadata(t *testing.T) {
@@ -168,18 +170,7 @@ func TestBindSessionIncludesTransientDiagnosticTail(t *testing.T) {
 			<-release
 			return current + 1, nil, nil
 		},
-		View: func(_ context.Context, current int) (session.ViewResult, error) {
-			id, err := semantic.NodeIDFor(semantic.NodeKey{AppNamespace: "test", View: "bridge", Kind: "root", Entity: fmt.Sprint(current), Slot: "main"})
-			if err != nil {
-				return session.ViewResult{}, err
-			}
-			node, err := semantic.NewNode(semantic.NodeSpec{ID: id, Generation: 1, Role: "application", Name: "bridge"})
-			if err != nil {
-				return session.ViewResult{}, err
-			}
-			tree, err := semantic.NewTree(uint64(current+1), node)
-			return session.ViewResult{Tree: tree, SurfaceHash: fmt.Sprintf("surface-%d", current)}, err
-		},
+		View: bridgeView,
 	})
 	if err != nil {
 		t.Fatal(err)
