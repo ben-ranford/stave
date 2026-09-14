@@ -22,8 +22,9 @@ const (
 	// MaxTranscriptBytes bounds an inspector input before JSON decoding.
 	MaxTranscriptBytes = 16 << 20
 	// MaxTranscriptRecords bounds the amount of saved evidence an inspector accepts.
-	MaxTranscriptRecords = 100_000
-	maxGenericJSONDepth  = 64
+	MaxTranscriptRecords    = 100_000
+	maxGenericJSONDepth     = 64
+	maxTranscriptJSONValues = 400_000
 	// semantic.Tree accepts a root-to-leaf path of 1024 edges. A transcript
 	// wraps its root node in the transcript, initial checkpoint, and snapshot
 	// objects; every edge then adds a children array and node object. A deepest
@@ -67,11 +68,7 @@ func DecodeTranscript(data []byte) (Transcript, error) {
 	if err := decoder.Decode(&transcript); err != nil {
 		return Transcript{}, fmt.Errorf("decode replay transcript: %w", err)
 	}
-	var extra any
-	if err := decoder.Decode(&extra); err != io.EOF {
-		if err == nil {
-			return Transcript{}, fmt.Errorf("decode replay transcript: trailing JSON")
-		}
+	if err := requireJSONEOF(decoder); err != nil {
 		return Transcript{}, fmt.Errorf("decode replay transcript: %w", err)
 	}
 	if len(transcript.Records) > MaxTranscriptRecords {
@@ -94,13 +91,21 @@ func DecodeTranscript(data []byte) (Transcript, error) {
 // and caps nesting before typed decoding. It mirrors the strict protocol input
 // boundary, so a duplicate cannot silently replace earlier saved evidence.
 func validateUniqueJSONKeys(data []byte, depth int) error {
+	return validateUniqueJSONKeysWithValueLimit(data, depth, maxTranscriptJSONValues)
+}
+
+func validateUniqueJSONKeysWithValueLimit(data []byte, depth, valueLimit int) error {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.UseNumber()
-	if err := validateUniqueJSONValue(decoder, depth); err != nil {
+	budget := jsonValueBudget{limit: valueLimit}
+	if err := validateUniqueJSONValueInScope(decoder, depth, maxGenericJSONDepth, false, &budget); err != nil {
 		return err
 	}
-	var extra any
-	if err := decoder.Decode(&extra); err != io.EOF {
+	return requireJSONEOF(decoder)
+}
+
+func requireJSONEOF(decoder *json.Decoder) error {
+	if _, err := decoder.Token(); err != io.EOF {
 		if err == nil {
 			return errors.New("trailing JSON")
 		}
@@ -109,13 +114,25 @@ func validateUniqueJSONKeys(data []byte, depth int) error {
 	return nil
 }
 
-func validateUniqueJSONValue(decoder *json.Decoder, depth int) error {
-	return validateUniqueJSONValueInScope(decoder, depth, maxGenericJSONDepth, false)
+type jsonValueBudget struct {
+	limit  int
+	values int
 }
 
-func validateUniqueJSONValueInScope(decoder *json.Decoder, depth, maxDepth int, initialCheckpoint bool) error {
+func (budget *jsonValueBudget) consume() error {
+	budget.values++
+	if budget.values > budget.limit {
+		return errors.New("replay transcript JSON value count exceeds limit")
+	}
+	return nil
+}
+
+func validateUniqueJSONValueInScope(decoder *json.Decoder, depth, maxDepth int, initialCheckpoint bool, budget *jsonValueBudget) error {
 	token, err := decoder.Token()
 	if err != nil {
+		return err
+	}
+	if err := budget.consume(); err != nil {
 		return err
 	}
 	delim, ok := token.(json.Delim)
@@ -127,12 +144,12 @@ func validateUniqueJSONValueInScope(decoder *json.Decoder, depth, maxDepth int, 
 	}
 	switch delim {
 	case '{':
-		if err := validateTranscriptObjectInScope(decoder, depth, maxDepth, initialCheckpoint); err != nil {
+		if err := validateTranscriptObjectInScope(decoder, depth, maxDepth, initialCheckpoint, budget); err != nil {
 			return err
 		}
 	case '[':
 		for decoder.More() {
-			if err := validateUniqueJSONValueInScope(decoder, depth+1, maxDepth, false); err != nil {
+			if err := validateUniqueJSONValueInScope(decoder, depth+1, maxDepth, false, budget); err != nil {
 				return err
 			}
 		}
@@ -143,7 +160,7 @@ func validateUniqueJSONValueInScope(decoder *json.Decoder, depth, maxDepth int, 
 	return err
 }
 
-func validateTranscriptObjectInScope(decoder *json.Decoder, depth, maxDepth int, initialCheckpoint bool) error {
+func validateTranscriptObjectInScope(decoder *json.Decoder, depth, maxDepth int, initialCheckpoint bool, budget *jsonValueBudget) error {
 	seen := map[string]struct{}{}
 	for decoder.More() {
 		key, err := validateUniqueJSONObjectKey(decoder, seen)
@@ -154,33 +171,36 @@ func validateTranscriptObjectInScope(decoder *json.Decoder, depth, maxDepth int,
 			return errors.New("noncanonical replay transcript records key")
 		}
 		if depth == 0 && key == "records" {
-			if err := validateTranscriptRecords(decoder, depth+1); err != nil {
+			if err := validateTranscriptRecords(decoder, depth+1, budget); err != nil {
 				return err
 			}
 			continue
 		}
 		if depth == 0 && key == "initial" {
-			if err := validateUniqueJSONValueInScope(decoder, depth+1, maxGenericJSONDepth, true); err != nil {
+			if err := validateUniqueJSONValueInScope(decoder, depth+1, maxGenericJSONDepth, true, budget); err != nil {
 				return err
 			}
 			continue
 		}
 		if initialCheckpoint && key == "tree" {
-			if err := validateUniqueJSONValueInScope(decoder, depth+1, maxTranscriptJSONDepth, false); err != nil {
+			if err := validateUniqueJSONValueInScope(decoder, depth+1, maxTranscriptJSONDepth, false, budget); err != nil {
 				return err
 			}
 			continue
 		}
-		if err := validateUniqueJSONValueInScope(decoder, depth+1, maxDepth, false); err != nil {
+		if err := validateUniqueJSONValueInScope(decoder, depth+1, maxDepth, false, budget); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func validateTranscriptRecords(decoder *json.Decoder, depth int) error {
+func validateTranscriptRecords(decoder *json.Decoder, depth int, budget *jsonValueBudget) error {
 	token, err := decoder.Token()
 	if err != nil {
+		return err
+	}
+	if err := budget.consume(); err != nil {
 		return err
 	}
 	if token == nil {
@@ -196,7 +216,7 @@ func validateTranscriptRecords(decoder *json.Decoder, depth int) error {
 		if count >= MaxTranscriptRecords {
 			return fmt.Errorf("replay transcript exceeds %d-record limit", MaxTranscriptRecords)
 		}
-		if err := validateUniqueJSONValueInScope(decoder, depth+1, maxGenericJSONDepth, false); err != nil {
+		if err := validateUniqueJSONValueInScope(decoder, depth+1, maxGenericJSONDepth, false, budget); err != nil {
 			return err
 		}
 	}

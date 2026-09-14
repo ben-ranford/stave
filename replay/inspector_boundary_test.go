@@ -151,7 +151,47 @@ func TestDecodeTranscriptRejectsCaseFoldedRootRecordsBeforeRawDecoding(t *testin
 func TestValidateUniqueJSONKeysDoesNotCapOpaqueArrays(t *testing.T) {
 	data := []byte(`{"model":` + string(compactEmptyObjects(MaxTranscriptRecords+1)) + `}`)
 	if err := validateUniqueJSONKeys(data, 0); err != nil {
-		t.Fatalf("validateUniqueJSONKeys() capped opaque application array: %v", err)
+		t.Fatalf("validateUniqueJSONKeys() rejected an opaque array below the value limit: %v", err)
+	}
+}
+
+func TestValidateUniqueJSONKeysBoundsCumulativeValues(t *testing.T) {
+	data := []byte(`{"model":[0,1]}`)
+	if err := validateUniqueJSONKeysWithValueLimit(data, 0, 4); err != nil {
+		t.Fatalf("validateUniqueJSONKeysWithValueLimit() rejected exact value boundary: %v", err)
+	}
+	if err := validateUniqueJSONKeysWithValueLimit(data, 0, 3); err == nil || !strings.Contains(err.Error(), "value count") {
+		t.Fatalf("validateUniqueJSONKeysWithValueLimit() error = %v, want value limit", err)
+	}
+}
+
+func TestValidateUniqueJSONKeysBoundsActionArguments(t *testing.T) {
+	data := []byte(`{"records":[{"event":{"payload":{"arguments":[{},{}]}}}]}`)
+	if err := validateUniqueJSONKeysWithValueLimit(data, 0, 7); err == nil || !strings.Contains(err.Error(), "value count") {
+		t.Fatalf("validateUniqueJSONKeysWithValueLimit() error = %v, want value limit in action arguments", err)
+	}
+}
+
+func TestDecodeTranscriptRejectsOverBudgetOpaqueModelBeforeCheckpointValidation(t *testing.T) {
+	transcript := mustTranscript(t)
+	data, err := transcript.CanonicalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	model := []byte(`"model":` + string(compactEmptyObjects(maxTranscriptJSONValues)))
+	updated := bytes.Replace(data, []byte(`"model":{"status":"ok"}`), model, 1)
+	if bytes.Equal(updated, data) {
+		t.Fatal("test fixture did not replace initial.model")
+	}
+	if _, err := DecodeTranscript(updated); err == nil || !strings.Contains(err.Error(), "value count") || strings.Contains(err.Error(), "CHECKPOINT") {
+		t.Fatalf("DecodeTranscript() error = %v, want pre-checkpoint value limit", err)
+	}
+}
+
+func TestValidateUniqueJSONKeysRejectsLargeTrailingValue(t *testing.T) {
+	data := append([]byte(`{"records":[]}`), compactEmptyObjects(maxTranscriptJSONValues)...)
+	if err := validateUniqueJSONKeys(data, 0); err == nil || !strings.Contains(err.Error(), "trailing") {
+		t.Fatalf("validateUniqueJSONKeys() error = %v, want trailing JSON", err)
 	}
 }
 
@@ -192,6 +232,18 @@ func BenchmarkValidateUniqueJSONKeysNestedScalar(b *testing.B) {
 	for range b.N {
 		if err := validateUniqueJSONKeys(data, 0); err != nil {
 			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkValidateUniqueJSONKeysRejectsLargeTrailingValue(b *testing.B) {
+	data := append([]byte(`{"records":[]}`), compactEmptyObjects(maxTranscriptJSONValues)...)
+	b.ReportAllocs()
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for range b.N {
+		if err := validateUniqueJSONKeys(data, 0); err == nil {
+			b.Fatal("validateUniqueJSONKeys() accepted trailing JSON")
 		}
 	}
 }

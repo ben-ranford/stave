@@ -16,8 +16,9 @@ valid transcript or matching evidence, `2` for a valid evidence mismatch, and
 `3` for invalid input. Usage errors return `64`.
 
 Validation checks transcript content; JSON whitespace and field order need not
-match the canonical serializer output. Inputs are bounded to 16 MiB and
-100,000 records. The decoder rejects trailing
+match the canonical serializer output. Inputs are bounded to 16 MiB, 100,000
+records, and 400,000 JSON values (scalars and containers; object keys do not
+count separately). The decoder rejects trailing
 JSON, duplicate or unknown fields, unsupported schema versions, malformed
 events, and inconsistent transcript chains. Invalid-input reports intentionally
 do not echo raw input. Mismatch reports use the replay package's existing
