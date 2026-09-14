@@ -35,6 +35,10 @@ type SnapshotEnvelope struct {
 }
 type SnapshotEnvelopeProvider func(context.Context, string, uint64) (SnapshotEnvelope, error)
 
+// snapshotTreeLimitKey carries the negotiated request bound to built-in providers.
+// It leaves the public provider signature and snapshot wire format unchanged.
+type snapshotTreeLimitKey struct{}
+
 // AuthorizeCall runs before Registry.Invoke.
 // It is the authority boundary for target generation/revision, capabilities,
 // authorization, and policy. A non-nil error prevents handler work.
@@ -103,7 +107,10 @@ type callSlot struct {
 	cancel context.CancelFunc
 }
 
-const minimumOutputBytes = 128
+const (
+	minimumOutputBytes  = 128
+	defaultMaxTreeNodes = 100_000
+)
 
 var (
 	ErrBackpressure = errors.New("protocol request queue full")
@@ -118,7 +125,7 @@ func New(opts Options) *Server {
 		opts.MaxOutputBytes = opts.MaxMessageBytes
 	}
 	if opts.MaxTreeNodes <= 0 {
-		opts.MaxTreeNodes = 100_000
+		opts.MaxTreeNodes = defaultMaxTreeNodes
 	}
 	if opts.Queue <= 0 {
 		opts.Queue = 64
@@ -581,7 +588,11 @@ func (s *Server) handle(parent context.Context, r protocol.Request) protocol.Res
 		if !s.snapshotModeAllowed(p.Mode) {
 			return fail(protocol.CapabilityMismatch, "snapshot mode was not negotiated")
 		}
-		env, e := s.opt.SnapshotEnvelope(parent, p.Mode, p.SinceRevision)
+		s.mu.Lock()
+		treeLimit := s.limits.MaxTreeNodes
+		s.mu.Unlock()
+		snapshotContext := context.WithValue(parent, snapshotTreeLimitKey{}, treeLimit)
+		env, e := s.opt.SnapshotEnvelope(snapshotContext, p.Mode, p.SinceRevision)
 		if e != nil {
 			s.observe(parent, "snapshot.failed", map[string]string{"cause": "provider"})
 			return fail(protocol.InternalError, "snapshot failed")
@@ -607,7 +618,7 @@ func (s *Server) handle(parent context.Context, r protocol.Request) protocol.Res
 		if env.Revision == 0 || env.Sequence == 0 || (env.Mode == "full" && (env.Snapshot == nil || env.Patch != nil)) || (env.Mode == "patch" && (env.Patch == nil || env.Snapshot != nil || p.SinceRevision == 0)) {
 			return fail(protocol.InternalError, "invalid snapshot envelope")
 		}
-		if env.Snapshot != nil && (env.Snapshot.Validate() != nil || env.Snapshot.Revision != env.Revision || env.Snapshot.TreeHash != env.TreeHash || countSnapshotNodes(env.Snapshot.Root, s.limits.MaxTreeNodes) < 0) {
+		if env.Snapshot != nil && (env.Snapshot.Validate() != nil || env.Snapshot.Revision != env.Revision || env.Snapshot.TreeHash != env.TreeHash || countSnapshotNodes(env.Snapshot.Root, treeLimit) < 0) {
 			return fail(protocol.InternalError, "invalid full snapshot")
 		}
 		if env.Patch != nil && (env.Patch.Validate() != nil || env.Patch.FromRevision != p.SinceRevision || env.Patch.ToRevision != env.Revision) {

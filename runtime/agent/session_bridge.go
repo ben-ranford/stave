@@ -30,7 +30,11 @@ func BindSession[M any](s *session.Session[M], options Options) (Options, error)
 	if !validHash(current.ConfigHash) || !validHash(current.ThemeHash) {
 		return Options{}, errors.New("agent: bound session requires valid config and theme hashes")
 	}
-	bridge := &sessionBridge[M]{session: s, actions: options.Actions}
+	treeLimit := options.MaxTreeNodes
+	if treeLimit <= 0 {
+		treeLimit = defaultMaxTreeNodes
+	}
+	bridge := &sessionBridge[M]{session: s, actions: options.Actions, maxTreeNodes: treeLimit}
 	options.SessionID = current.SessionID
 	options.SnapshotEnvelope = bridge.snapshot
 	options.CancelSession = bridge.cancel
@@ -40,6 +44,7 @@ func BindSession[M any](s *session.Session[M], options Options) (Options, error)
 type sessionBridge[M any] struct {
 	session          *session.Session[M]
 	actions          *action.Registry
+	maxTreeNodes     int
 	mu               sync.Mutex
 	previousTree     semantic.Tree
 	previousRevision uint64
@@ -54,12 +59,19 @@ func (b *sessionBridge[M]) cancel(context.Context) error {
 	return nil
 }
 
-func (b *sessionBridge[M]) snapshot(_ context.Context, mode string, since uint64) (SnapshotEnvelope, error) {
+func (b *sessionBridge[M]) snapshot(ctx context.Context, mode string, since uint64) (SnapshotEnvelope, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	current, err := b.session.Snapshot()
 	if err != nil {
 		return SnapshotEnvelope{}, err
+	}
+	treeLimit, hasRequestLimit := ctx.Value(snapshotTreeLimitKey{}).(int)
+	if !hasRequestLimit {
+		treeLimit = b.maxTreeNodes
+	}
+	if countSnapshotNodes(current.Tree.Root(), treeLimit) < 0 {
+		return SnapshotEnvelope{}, errors.New("agent: session snapshot exceeds tree node limit")
 	}
 	if current.Sequence == ^uint64(0) {
 		return SnapshotEnvelope{}, errors.New("agent: session sequence overflow")
