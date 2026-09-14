@@ -742,22 +742,7 @@ func TestSnapshotSubscriptionCancellationCancelsBlockedBaselineProvider(t *testi
 }
 
 func TestSnapshotSubscriptionClientEOFDrainsQueuedShutdownAcknowledgement(t *testing.T) {
-	providerStarted := make(chan struct{})
-	providerStopped := make(chan struct{})
-	options := Options{
-		Queue:     1,
-		Negotiate: subscriptionNegotiator,
-		SubscriptionSnapshotEnvelope: func(ctx context.Context, _ string, _ uint64) (SnapshotEnvelope, error) {
-			close(providerStarted)
-			<-ctx.Done()
-			close(providerStopped)
-			return SnapshotEnvelope{}, ctx.Err()
-		},
-		SnapshotPublicationWaiter: func(ctx context.Context, _ uint64) error {
-			<-ctx.Done()
-			return ctx.Err()
-		},
-	}
+	options, providerStarted, providerStopped := blockedBaselineOptions(t, 1)
 	requests := strings.Join([]string{
 		`{"jsonrpc":"2.0","id":1,"method":"stave.initialize","params":{"protocolVersions":["1.0"],"capabilities":{"snapshotSubscriptionVersions":["stave.snapshot.subscribe/v1"]}}}`,
 		`{"jsonrpc":"2.0","id":2,"method":"stave.initialized"}`,
@@ -821,22 +806,7 @@ func TestSnapshotSubscriptionClientEOFDrainsQueuedShutdownAcknowledgement(t *tes
 }
 
 func TestSnapshotSubscriptionBaselineDoesNotBlockOrdinaryRequests(t *testing.T) {
-	providerStarted := make(chan struct{})
-	providerStopped := make(chan struct{})
-	options := Options{
-		Queue:     1,
-		Negotiate: subscriptionNegotiator,
-		SubscriptionSnapshotEnvelope: func(ctx context.Context, _ string, _ uint64) (SnapshotEnvelope, error) {
-			close(providerStarted)
-			<-ctx.Done()
-			close(providerStopped)
-			return SnapshotEnvelope{}, ctx.Err()
-		},
-		SnapshotPublicationWaiter: func(ctx context.Context, _ uint64) error {
-			<-ctx.Done()
-			return ctx.Err()
-		},
-	}
+	options, providerStarted, providerStopped := blockedBaselineOptions(t, 1)
 	c, finish := startSubscriptionLifecycleClient(t, options)
 	c.request(`{"jsonrpc":"2.0","id":3,"method":"stave.snapshot.subscribe"}`)
 	select {
@@ -857,21 +827,7 @@ func TestSnapshotSubscriptionBaselineDoesNotBlockOrdinaryRequests(t *testing.T) 
 }
 
 func TestSnapshotSubscriptionInvalidSessionCancelDoesNotCancelPendingBaseline(t *testing.T) {
-	providerStarted := make(chan struct{})
-	providerStopped := make(chan struct{})
-	options := Options{
-		Negotiate: subscriptionNegotiator,
-		SubscriptionSnapshotEnvelope: func(ctx context.Context, _ string, _ uint64) (SnapshotEnvelope, error) {
-			close(providerStarted)
-			<-ctx.Done()
-			close(providerStopped)
-			return SnapshotEnvelope{}, ctx.Err()
-		},
-		SnapshotPublicationWaiter: func(ctx context.Context, _ uint64) error {
-			<-ctx.Done()
-			return ctx.Err()
-		},
-	}
+	options, providerStarted, providerStopped := blockedBaselineOptions(t, 0)
 	c, finish := startSubscriptionLifecycleClient(t, options)
 	c.request(`{"jsonrpc":"2.0","id":3,"method":"stave.snapshot.subscribe"}`)
 	select {
@@ -939,42 +895,8 @@ func TestSnapshotSubscriptionShutdownAcknowledgementIsTerminal(t *testing.T) {
 			}
 		},
 	}
-	server := New(options)
-	reader, input := io.Pipe()
-	writer := &shutdownAckWriter{progressBlocked: make(chan struct{}), releaseProgress: make(chan struct{}), lines: make(chan []byte, 16)}
-	done := make(chan error, 1)
-	go func() { done <- server.Serve(context.Background(), reader, writer) }()
-	serveJoined := false
-	defer func() {
-		writer.release()
-		server.Close()
-		_ = input.Close()
-		if serveJoined {
-			return
-		}
-		select {
-		case err := <-done:
-			if err != nil {
-				t.Errorf("Serve cleanup error = %v", err)
-			}
-		case <-time.After(time.Second):
-			t.Error("Serve cleanup did not finish")
-		}
-	}()
-	writeSubscriptionHandshake(t, input)
-	select {
-	case <-started:
-	case <-time.After(time.Second):
-		t.Fatal("subscription waiter did not start")
-	}
-	if err := server.Notify(protocol.Notification{JSONRPC: protocol.JSONRPC, Method: "stave.progress"}); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case <-writer.progressBlocked:
-	case <-time.After(time.Second):
-		t.Fatal("progress notification did not block the writer")
-	}
+	blockedWriter := startBlockedWriterSubscription(t, options)
+	blockedWriter.waitForSubscription(t, started)
 	sequence.Store(2)
 	close(publication)
 	select {
@@ -982,7 +904,7 @@ func TestSnapshotSubscriptionShutdownAcknowledgementIsTerminal(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("subscription update was not pending")
 	}
-	if _, err := io.WriteString(input, `{"jsonrpc":"2.0","id":4,"method":"stave.session.shutdown"}`+"\n"); err != nil {
+	if _, err := io.WriteString(blockedWriter.input, `{"jsonrpc":"2.0","id":4,"method":"stave.session.shutdown"}`+"\n"); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -990,21 +912,12 @@ func TestSnapshotSubscriptionShutdownAcknowledgementIsTerminal(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("shutdown did not stop the subscription before its acknowledgement")
 	}
-	writer.release()
-	writer.response(t, 4)
-	if output := writer.String(); strings.Contains(output, `"method":"stave.snapshot.subscription"`) {
+	blockedWriter.writer.release()
+	blockedWriter.writer.response(t, 4)
+	if output := blockedWriter.writer.String(); strings.Contains(output, `"method":"stave.snapshot.subscription"`) {
 		t.Fatalf("subscription notification followed shutdown acknowledgement: %s", output)
 	}
-	_ = input.Close()
-	select {
-	case err := <-done:
-		serveJoined = true
-		if err != nil {
-			t.Fatal(err)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("Serve did not finish")
-	}
+	blockedWriter.finish(t)
 }
 
 func TestSnapshotSubscriptionServerCloseStopsBlockedWriterSubscription(t *testing.T) {
@@ -1021,59 +934,15 @@ func TestSnapshotSubscriptionServerCloseStopsBlockedWriterSubscription(t *testin
 			return ctx.Err()
 		},
 	}
-	server := New(options)
-	reader, input := io.Pipe()
-	writer := &shutdownAckWriter{progressBlocked: make(chan struct{}), releaseProgress: make(chan struct{}), lines: make(chan []byte, 16)}
-	done := make(chan error, 1)
-	go func() { done <- server.Serve(context.Background(), reader, writer) }()
-	serveJoined := false
-	defer func() {
-		writer.release()
-		server.Close()
-		_ = input.Close()
-		if serveJoined {
-			return
-		}
-		select {
-		case err := <-done:
-			if err != nil {
-				t.Errorf("Serve cleanup error = %v", err)
-			}
-		case <-time.After(time.Second):
-			t.Error("Serve cleanup did not finish")
-		}
-	}()
-	writeSubscriptionHandshake(t, input)
-	select {
-	case <-started:
-	case <-time.After(time.Second):
-		t.Fatal("subscription waiter did not start")
-	}
-	if err := server.Notify(protocol.Notification{JSONRPC: protocol.JSONRPC, Method: "stave.progress"}); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case <-writer.progressBlocked:
-	case <-time.After(time.Second):
-		t.Fatal("progress notification did not block the writer")
-	}
-	server.Close()
+	blockedWriter := startBlockedWriterSubscription(t, options)
+	blockedWriter.waitForSubscription(t, started)
+	blockedWriter.server.Close()
 	select {
 	case <-stopped:
 	case <-time.After(time.Second):
 		t.Fatal("Server.Close did not stop subscription while writer was blocked")
 	}
-	writer.release()
-	_ = input.Close()
-	select {
-	case err := <-done:
-		serveJoined = true
-		if err != nil {
-			t.Fatal(err)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("Serve did not finish")
-	}
+	blockedWriter.finish(t)
 }
 
 type shutdownAckWriter struct {
@@ -1213,6 +1082,91 @@ func startSubscriptionLifecycleClient(t *testing.T, options Options) (*subscript
 	c.request(`{"jsonrpc":"2.0","id":2,"method":"stave.initialized"}`)
 	c.response(2)
 	return c, finish
+}
+
+func blockedBaselineOptions(t *testing.T, queue int) (Options, <-chan struct{}, <-chan struct{}) {
+	t.Helper()
+	started, stopped := make(chan struct{}), make(chan struct{})
+	return Options{
+		Queue:     queue,
+		Negotiate: subscriptionNegotiator,
+		SubscriptionSnapshotEnvelope: func(ctx context.Context, _ string, _ uint64) (SnapshotEnvelope, error) {
+			close(started)
+			<-ctx.Done()
+			close(stopped)
+			return SnapshotEnvelope{}, ctx.Err()
+		},
+		SnapshotPublicationWaiter: func(ctx context.Context, _ uint64) error {
+			<-ctx.Done()
+			return ctx.Err()
+		},
+	}, started, stopped
+}
+
+type blockedWriterSubscription struct {
+	server *Server
+	input  *io.PipeWriter
+	writer *shutdownAckWriter
+	done   chan error
+	joined bool
+}
+
+func startBlockedWriterSubscription(t *testing.T, options Options) *blockedWriterSubscription {
+	t.Helper()
+	reader, input := io.Pipe()
+	writer := &shutdownAckWriter{progressBlocked: make(chan struct{}), releaseProgress: make(chan struct{}), lines: make(chan []byte, 16)}
+	blocked := &blockedWriterSubscription{server: New(options), input: input, writer: writer, done: make(chan error, 1)}
+	go func() { blocked.done <- blocked.server.Serve(context.Background(), reader, writer) }()
+	t.Cleanup(func() {
+		blocked.writer.release()
+		blocked.server.Close()
+		_ = blocked.input.Close()
+		if blocked.joined {
+			return
+		}
+		select {
+		case err := <-blocked.done:
+			if err != nil {
+				t.Errorf("Serve cleanup error = %v", err)
+			}
+		case <-time.After(time.Second):
+			t.Error("Serve cleanup did not finish")
+		}
+	})
+	return blocked
+}
+
+func (blocked *blockedWriterSubscription) waitForSubscription(t *testing.T, started <-chan struct{}) {
+	t.Helper()
+	writeSubscriptionHandshake(t, blocked.input)
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("subscription waiter did not start")
+	}
+	if err := blocked.server.Notify(protocol.Notification{JSONRPC: protocol.JSONRPC, Method: "stave.progress"}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-blocked.writer.progressBlocked:
+	case <-time.After(time.Second):
+		t.Fatal("progress notification did not block the writer")
+	}
+}
+
+func (blocked *blockedWriterSubscription) finish(t *testing.T) {
+	t.Helper()
+	blocked.writer.release()
+	_ = blocked.input.Close()
+	select {
+	case err := <-blocked.done:
+		blocked.joined = true
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Serve did not finish")
+	}
 }
 
 type subscriptionNotificationFailWriter struct {
