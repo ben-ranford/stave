@@ -438,7 +438,7 @@ func embeddedStructField(field string) bool {
 }
 
 func structFields(declaration string) []string {
-	body := strings.TrimSuffix(strings.SplitN(declaration, structMarker, 2)[1], " }")
+	body := strings.TrimSpace(strings.TrimSuffix(strings.SplitN(declaration, structMarker, 2)[1], " }"))
 	if body == "" {
 		return []string{}
 	}

@@ -139,7 +139,7 @@ func TestCompareInventoriesRejectsNestedStructFieldChanges(t *testing.T) {
 }
 
 func TestCompareInventoriesRejectsDeletedEmptyPackageAndAllowsFirstField(t *testing.T) {
-	baseline := "# Public API inventory\nmodule example.com/api\n\n[example.com/api]\ntype Empty struct { }\n\n[example.com/api/empty]\n"
+	baseline := "# Public API inventory\nmodule example.com/api\n\n[example.com/api]\ntype Empty struct {  }\n\n[example.com/api/empty]\n"
 	if err := compareInventories(baseline, "# Public API inventory\nmodule example.com/api\n\n[example.com/api]\ntype Empty struct { Enabled bool }\n"); err == nil {
 		t.Fatal("deleted empty package accepted")
 	}
@@ -205,6 +205,39 @@ func TestInventoryForDirUsesRequestedBuildTarget(t *testing.T) {
 	}
 }
 
+func TestInventoryForDirUsesCgoBuildMode(t *testing.T) {
+	directory := t.TempDir()
+	for name, source := range map[string]string{
+		"go.mod":      "module example.com/api\n\ngo 1.22\n",
+		"enabled.go":  "//go:build cgo\n\npackage api\nfunc WithCgo() {}\n",
+		"disabled.go": "//go:build !cgo\n\npackage api\nfunc WithoutCgo() {}\n",
+	} {
+		if err := os.WriteFile(filepath.Join(directory, name), []byte(source), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("CGO_ENABLED", "1")
+	enabled, err := inventoryForDir(context.Background(), directory, "go", "windows", "amd64")
+	if err != nil || !strings.Contains(enabled, "func WithCgo()") || strings.Contains(enabled, "WithoutCgo") {
+		t.Fatalf("cgo-enabled inventory: %v\n%s", err, enabled)
+	}
+	t.Setenv("CGO_ENABLED", "0")
+	disabled, err := inventoryForDir(context.Background(), directory, "go", "windows", "amd64")
+	if err != nil || !strings.Contains(disabled, "func WithoutCgo()") || strings.Contains(disabled, "WithCgo") {
+		t.Fatalf("cgo-disabled inventory: %v\n%s", err, disabled)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "disabled.go"), []byte("//go:build !cgo\n\npackage api\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	candidate, err := inventoryForDir(context.Background(), directory, "go", "windows", "amd64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := compareInventories(disabled, candidate); err == nil {
+		t.Fatal("removed cgo-disabled declaration was accepted")
+	}
+}
+
 func TestConsumerCompilerFixtures(t *testing.T) {
 	baseline := `package api
 
@@ -218,6 +251,7 @@ type B struct{}
 func (B) Run() {}
 type Key struct { ID int }
 type Anonymous = struct { Name string }
+type Empty struct{}
 type Options struct { Name string; A }
 var Limit int
 func Keep(value string) string { return value }
@@ -235,6 +269,7 @@ func Keep(value string) string { return value }
 		{name: "package name change", api: strings.Replace(baseline, "package api", "package renamed", 1), passes: false},
 		{name: "variable type change", api: strings.Replace(baseline, "var Limit int", "var Limit string", 1), passes: false},
 		{name: "additive function and keyed field", api: strings.Replace(strings.Replace(baseline, "type Key struct { ID int }", "type Key struct { ID int; Enabled bool }", 1), "func Keep(value string) string { return value }", "func Keep(value string) string { return value }\nfunc Extra() error { return nil }", 1), passes: true},
+		{name: "first comparable field", api: strings.Replace(baseline, "type Empty struct{}", "type Empty struct { Enabled bool }", 1), passes: true},
 		{name: "anonymous struct alias field addition", api: strings.Replace(baseline, "type Anonymous = struct { Name string }", "type Anonymous = struct { Name string; Enabled bool }", 1), passes: false},
 		{name: "non-comparable additive field", api: strings.Replace(baseline, "type Key struct { ID int }", "type Key struct { ID int; Values []string }", 1), passes: false},
 		{name: "non-comparable private field", api: strings.Replace(baseline, "type Key struct { ID int }", "type Key struct { ID int; values []string }", 1), passes: false},
@@ -276,6 +311,8 @@ func TestConsumerSurface(t *testing.T) {
 	var _ api.Sealed = api.Token{}
 	var _ int = api.Limit
 	if api.Keep("ok") != "ok" { t.Fatal("unexpected result") }
+	_ = api.Empty{}
+	_ = map[api.Empty]struct{}{api.Empty{}: {}}
 	_ = api.Options{Name: "keyed"}
 	api.Options{}.Run()
 	_ = map[api.Key]struct{}{api.Key{ID: 1}: {}}

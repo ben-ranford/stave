@@ -151,8 +151,9 @@ release-ga-contract:
 
 release-baseline:
 	$(GO) test ./scripts/rigor/cmd/releasebaseline -run '^TestConsumerCompilerFixtures$$' -count=1
+	$(GO) run ./scripts/rigor/cmd/releasebaseline --go "$(GO)"
 	@for target in $(RELEASE_BASELINE_TARGETS); do \
-		$(GO) run ./scripts/rigor/cmd/releasebaseline --go "$(GO)" --goos "$${target%/*}" --goarch "$${target#*/}" || exit $$?; \
+		CGO_ENABLED=0 $(GO) run ./scripts/rigor/cmd/releasebaseline --go "$(GO)" --goos "$${target%/*}" --goarch "$${target#*/}" || exit $$?; \
 	done
 
 release-baseline-development:

@@ -18,7 +18,7 @@ func TestReleaseBaselineStopsOnTargetFailure(t *testing.T) {
 			t.Fatalf("release checks require %s: %v", program, err)
 		}
 	}
-	for _, failedTarget := range []string{"linux/amd64", "darwin/amd64", "darwin/arm64", "windows/amd64", ""} {
+	for _, failedTarget := range []string{"native", "linux/amd64", "darwin/amd64", "darwin/arm64", "windows/amd64", ""} {
 		t.Run("failure="+failedTarget, func(t *testing.T) {
 			directory := t.TempDir()
 			stub, calls := filepath.Join(directory, "go-stub"), filepath.Join(directory, "calls")
@@ -32,8 +32,9 @@ while (( $# )); do
   esac
   shift
 done
-target="$platform/$architecture"
-printf '%s\n' "$target" >> "$STAVE_BASELINE_CALLS"
+target="${platform:+$platform/$architecture}"
+target="${target:-native}"
+printf '%s cgo=%s\n' "$target" "${CGO_ENABLED:-unset}" >> "$STAVE_BASELINE_CALLS"
 if [[ "$target" == "$STAVE_BASELINE_FAILURE" ]]; then exit 23; fi
 `
 			if err := os.WriteFile(stub, []byte(script), 0700); err != nil {
@@ -43,7 +44,7 @@ if [[ "$target" == "$STAVE_BASELINE_FAILURE" ]]; then exit 23; fi
 			// failures itself even when global shell errexit is unavailable.
 			command := exec.Command("make", "release-baseline", "GO="+stub, ".SHELLFLAGS=-c")
 			command.Dir = ".."
-			command.Env = append(os.Environ(), "STAVE_BASELINE_CALLS="+calls, "STAVE_BASELINE_FAILURE="+failedTarget)
+			command.Env = append(os.Environ(), "STAVE_BASELINE_CALLS="+calls, "STAVE_BASELINE_FAILURE="+failedTarget, "CGO_ENABLED=1")
 			output, err := command.CombinedOutput()
 			if (err != nil) != (failedTarget != "") {
 				t.Fatalf("failure %q: make error=%v, output=%s", failedTarget, err, output)
@@ -61,11 +62,17 @@ if [[ "$target" == "$STAVE_BASELINE_FAILURE" ]]; then exit 23; fi
 }
 
 func releaseBaselineTargetPrefix(failedTarget string) []string {
-	targets := []string{"linux/amd64", "darwin/amd64", "darwin/arm64", "windows/amd64"}
-	for i, target := range targets {
+	targets := []string{"native", "linux/amd64", "darwin/amd64", "darwin/arm64", "windows/amd64"}
+	calls := make([]string, 0, len(targets))
+	for _, target := range targets {
+		mode := "0"
+		if target == "native" {
+			mode = "1"
+		}
+		calls = append(calls, target+" cgo="+mode)
 		if target == failedTarget {
-			return targets[:i+1]
+			break
 		}
 	}
-	return targets
+	return calls
 }
