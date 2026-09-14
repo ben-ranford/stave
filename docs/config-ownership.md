@@ -62,3 +62,8 @@ The bridge currently calls `Session.Snapshot`, including the application model's
 clone policy. Polling cost and clone failures therefore apply even though the
 wire response contains only tree and metadata. A metadata-only projection is
 tracked in [#108](https://github.com/ben-ranford/stave/issues/108).
+
+Large action registries also add manifest assembly and validation work when
+`includeActions` is false or omitted. Suppressing that unrequested work is
+tracked in [#121](https://github.com/ben-ranford/stave/issues/121); the returned
+snapshot already respects the requested flag.
