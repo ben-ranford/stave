@@ -99,6 +99,13 @@ promoted from hidden embedded receivers into exported concrete method sets
 cases require explicit compatibility review and consumer compilation evidence
 before release; a passing inventory comparison alone is insufficient.
 
+Generic sealed-method matching can also omit an implementation method when
+the interface and receiver use different type-parameter names
+([#107](https://github.com/ben-ranford/stave/issues/107)). Removing that method
+can break consumer assignments without changing the inventory. These generic
+relationships require explicit compatibility review and consumer compilation
+until scoped type matching is supported.
+
 Equivalent built-in alias spellings such as `byte`/`uint8` and `rune`/`int32`
 can still produce different inventory text ([#110](https://github.com/ben-ranford/stave/issues/110)).
 Preserve the existing spelling until that normalization is supported; review
