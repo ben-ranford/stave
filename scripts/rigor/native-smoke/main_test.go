@@ -2,6 +2,10 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -46,5 +50,43 @@ func TestSelectedTestsDoNotCountStartsAsPasses(t *testing.T) {
 	}
 	if len(seen) != 0 {
 		t.Fatal("counted incomplete test as passed")
+	}
+}
+
+func TestGoExecutableReportsMissingLookup(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	if _, err := goExecutable(); err == nil || !strings.Contains(err.Error(), "locate Go executable") {
+		t.Fatalf("missing Go executable error = %v", err)
+	}
+}
+
+func TestGoExecutableRejectsRelativePathResolution(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("relative executable lookup is platform specific")
+	}
+	directory := t.TempDir()
+	bin := filepath.Join(directory, "bin")
+	if err := os.Mkdir(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bin, "go"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	workingDirectory, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(directory); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := os.Chdir(workingDirectory); err != nil {
+			t.Error(err)
+		}
+	}()
+	t.Setenv("PATH", "bin")
+	t.Setenv("GODEBUG", "execerrdot=0")
+	if _, err := goExecutable(); err == nil || !strings.Contains(err.Error(), "must be absolute") {
+		t.Fatalf("relative Go path was not rejected: %v", err)
 	}
 }

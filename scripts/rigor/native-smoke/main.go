@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -30,7 +31,12 @@ type testEvent struct {
 }
 
 func main() {
-	command := exec.Command("go", "test", "-json", "-count=1", "-run", selectedTests, "./runtime/human", "./runtime/agent", "./capability")
+	executable, err := goExecutable()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	command := exec.Command(executable, "test", "-json", "-count=1", "-run", selectedTests, "./runtime/human", "./runtime/agent", "./capability")
 	output, err := command.Output()
 	os.Stdout.Write(output)
 	if err != nil {
@@ -49,6 +55,20 @@ func main() {
 		}
 	}
 	fmt.Printf("native smoke selected and passed %d tests\n", len(expected))
+}
+
+// goExecutable preserves the operator-selected Go installation while
+// resolving it before execution. A relative PATH entry is not a stable trust
+// boundary for a hosted smoke runner, so only an absolute executable is used.
+func goExecutable() (string, error) {
+	executable, err := exec.LookPath("go")
+	if err != nil {
+		return "", fmt.Errorf("locate Go executable: %w", err)
+	}
+	if !filepath.IsAbs(executable) {
+		return "", fmt.Errorf("resolved Go executable path %q must be absolute", executable)
+	}
+	return executable, nil
 }
 
 func selectedTestPasses(output []byte) (map[string]bool, error) {
