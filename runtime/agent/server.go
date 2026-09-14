@@ -35,6 +35,12 @@ type SnapshotEnvelope struct {
 }
 type SnapshotEnvelopeProvider func(context.Context, string, uint64) (SnapshotEnvelope, error)
 
+// SnapshotPublicationWaiter waits for a wire sequence greater than after. It
+// must check current state before sleeping and honor context cancellation.
+// An error ends the subscription; BindSession supplies this callback for a
+// session, including its one-based wire-sequence projection.
+type SnapshotPublicationWaiter func(context.Context, uint64) error
+
 // AuthorizeCall runs before Registry.Invoke.
 // It is the authority boundary for target generation/revision, capabilities,
 // authorization, and policy. A non-nil error prevents handler work.
@@ -55,7 +61,11 @@ type Options struct {
 	Snapshot         SnapshotProvider
 	SnapshotPatch    SnapshotPatchProvider
 	SnapshotEnvelope SnapshotEnvelopeProvider
-	Actions          *action.Registry
+	// SubscriptionSnapshotEnvelope reads full snapshots without changing polling
+	// patch history. Required for subscriptions; BindSession supplies it.
+	SubscriptionSnapshotEnvelope SnapshotEnvelopeProvider
+	SnapshotPublicationWaiter    SnapshotPublicationWaiter
+	Actions                      *action.Registry
 	// Deprecated: custom invoke handlers are unsupported because they bypass
 	// registry validation. Use Actions as the execution authority.
 	Invoke            func(context.Context, action.Call) action.Result
@@ -96,6 +106,7 @@ type Server struct {
 	negotiated                             any
 	limits                                 protocol.Limits
 	configErr                              error
+	serverDone                             chan struct{}
 }
 
 type callSlot struct {
@@ -104,6 +115,11 @@ type callSlot struct {
 }
 
 const minimumOutputBytes = 128
+
+const (
+	sessionCancelMethod   = "stave.session.cancel"
+	sessionShutdownMethod = "stave.session.shutdown"
+)
 
 var (
 	ErrBackpressure = errors.New("protocol request queue full")
@@ -151,6 +167,7 @@ func New(opts Options) *Server {
 			MaxOutputBytes:  opts.MaxOutputBytes,
 			MaxTreeNodes:    opts.MaxTreeNodes,
 		},
+		serverDone: make(chan struct{}),
 	}
 	if opts.MaxOutputBytes < minimumOutputBytes {
 		s.configErr = fmt.Errorf("%w: max output bytes must be at least %d", ErrOutputLimit, minimumOutputBytes)
@@ -172,6 +189,23 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 	if configErr != nil {
 		return configErr
 	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	subscriptionContext, cancelSubscriptions := context.WithCancel(ctx)
+	inputEOF := make(chan struct{})
+	subscriptionWatcherDone := make(chan struct{})
+	go func() {
+		defer close(subscriptionWatcherDone)
+		select {
+		case <-s.serverDone:
+			cancelSubscriptions()
+		case <-inputEOF:
+			cancelSubscriptions()
+		case <-subscriptionContext.Done():
+		}
+	}()
+	defer func() { <-subscriptionWatcherDone }()
+	defer cancelSubscriptions()
 	sc := bufio.NewScanner(in)
 	sc.Buffer(make([]byte, 4096), s.opt.MaxMessageBytes+1)
 	type outbound struct {
@@ -180,6 +214,18 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 	}
 	writes := make(chan outbound, s.opt.Queue)
 	notifications := s.notify
+	subscriptionWake := make(chan struct{}, 1)
+	var subscription *snapshotSubscription
+	var subscriptionMu sync.Mutex
+	closeSubscription := func() {
+		subscriptionMu.Lock()
+		current := subscription
+		subscription = nil
+		subscriptionMu.Unlock()
+		if current != nil {
+			current.close()
+		}
+	}
 	writerDone := make(chan struct{})
 	var writeErr error
 	var writeMu sync.Mutex
@@ -204,10 +250,64 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 		defer func() {
 			if recover() != nil {
 				setWriteErr(errors.New("protocol writer panic"))
+				closeSubscription()
+				_ = in.Close()
 			}
 		}()
 		for {
 			select {
+			case <-subscriptionWake:
+				s.mu.Lock()
+				closed := s.closed
+				s.mu.Unlock()
+				if closed {
+					closeSubscription()
+					continue
+				}
+				subscriptionMu.Lock()
+				current := subscription
+				subscriptionMu.Unlock()
+				if current == nil {
+					continue
+				}
+				if reason, terminal := current.takeTerminal(); terminal {
+					current.close()
+					subscriptionMu.Lock()
+					if subscription == current {
+						subscription = nil
+					}
+					subscriptionMu.Unlock()
+					b, _ := json.Marshal(protocol.Notification{JSONRPC: protocol.JSONRPC, Method: "stave.snapshot.subscription", Params: mustJSON(protocol.SnapshotSubscriptionTerminal{State: "terminated", Reason: reason})})
+					if len(b) <= s.outputLimit() {
+						writeMu.Lock()
+						_, e := out.Write(append(b, '\n'))
+						setWriteErr(e)
+						writeMu.Unlock()
+						if e != nil {
+							_ = in.Close()
+							return
+						}
+					}
+					continue
+				}
+				result, ok := current.take()
+				if !ok {
+					continue
+				}
+				b, e := json.Marshal(protocol.Notification{JSONRPC: protocol.JSONRPC, Method: "stave.snapshot.subscription", Params: mustJSON(protocol.SnapshotSubscriptionNotification{Snapshot: result})})
+				if e != nil || len(b) > s.outputLimit() {
+					current.fail("output_limit")
+					continue
+				}
+				writeMu.Lock()
+				_, e = out.Write(append(b, '\n'))
+				setWriteErr(e)
+				writeMu.Unlock()
+				if e != nil {
+					current.close()
+					_ = in.Close()
+					return
+				}
 			case n, ok := <-notifications:
 				if ok {
 					b, e := json.Marshal(n)
@@ -219,8 +319,12 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 					}
 					if e != nil {
 						s.observe(ctx, "protocol.output_error", map[string]string{"cause": "write_failed"})
+						closeSubscription()
+						_ = in.Close()
+						return
 					}
 				} else {
+					closeSubscription()
 					notifications = nil
 				}
 			case item, ok := <-writes:
@@ -269,6 +373,9 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 				if len(j.request.ID) > 0 {
 					if e := write(resp); e != nil {
 						setWriteErr(e)
+						closeSubscription()
+						_ = in.Close()
+						return
 					}
 				}
 			}
@@ -276,11 +383,96 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 	}
 	control := func(method string) bool {
 		switch method {
-		case "stave.initialize", "initialize", "stave.initialized", "initialized", "stave.action.cancel", "stave.session.cancel", "stave.session.shutdown", "stave.ping":
+		case "stave.initialize", "initialize", "stave.initialized", "initialized", "stave.action.cancel", sessionCancelMethod, sessionShutdownMethod, "stave.ping":
 			return true
 		default:
 			return false
 		}
+	}
+	type baselineResult struct {
+		response protocol.Response
+		baseline *protocol.SnapshotResult
+	}
+	type pendingBaseline struct {
+		request protocol.Request
+		cancel  context.CancelFunc
+		result  chan baselineResult
+		done    chan struct{}
+	}
+	cancelledBaseline := func(request protocol.Request) baselineResult {
+		return baselineResult{response: protocol.Response{
+			JSONRPC: protocol.JSONRPC,
+			ID:      request.ID,
+			Error:   protocol.Errorf(protocol.Cancelled, "subscription is closed"),
+		}}
+	}
+	baselineClosed := func() bool {
+		select {
+		case <-subscriptionContext.Done():
+			return true
+		case <-inputEOF:
+			return true
+		case <-s.serverDone:
+			return true
+		default:
+			return false
+		}
+	}
+	var pending *pendingBaseline
+	startBaseline := func(request protocol.Request) {
+		baselineContext, cancelBaseline := context.WithCancel(subscriptionContext)
+		pending = &pendingBaseline{request: request, cancel: cancelBaseline, result: make(chan baselineResult, 1), done: make(chan struct{})}
+		current := pending
+		go func() {
+			defer close(current.done)
+			response, baseline := s.snapshotSubscribe(baselineContext, current.request)
+			current.result <- baselineResult{response: response, baseline: baseline}
+		}()
+		select {
+		case <-inputEOF:
+			cancelBaseline()
+		default:
+		}
+	}
+	completeBaseline := func(current *pendingBaseline, result baselineResult, deliver bool) error {
+		<-current.done
+		current.cancel()
+		pending = nil
+		if !deliver {
+			return nil
+		}
+		if result.response.Error == nil && baselineClosed() {
+			result = cancelledBaseline(current.request)
+		}
+		if len(current.request.ID) > 0 {
+			if err := write(result.response); err != nil {
+				return err
+			}
+		}
+		if result.response.Error != nil || result.baseline == nil {
+			return nil
+		}
+		subscriptionMu.Lock()
+		currentSubscription := newSnapshotSubscription(subscriptionContext, *result.baseline, subscriptionWake, s.opt.SnapshotPublicationWaiter, func(waitCtx context.Context) (protocol.SnapshotResult, bool) {
+			result, err := s.subscriptionSnapshot(waitCtx)
+			return result, err == nil
+		})
+		subscription = currentSubscription
+		subscriptionMu.Unlock()
+		s.mu.Lock()
+		closed := s.closed
+		s.mu.Unlock()
+		if closed {
+			closeSubscription()
+		}
+		return nil
+	}
+	finishBaseline := func(deliver bool) error {
+		current := pending
+		if current == nil {
+			return nil
+		}
+		return completeBaseline(current, <-current.result, deliver)
 	}
 	type scannedLine struct {
 		line []byte
@@ -288,7 +480,9 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 		eof  bool
 	}
 	scanned := make(chan scannedLine)
+	scannerDone := make(chan struct{})
 	go func() {
+		defer close(scannerDone)
 		for sc.Scan() {
 			line := append([]byte(nil), sc.Bytes()...)
 			select {
@@ -297,24 +491,50 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 				return
 			}
 		}
+		close(inputEOF)
 		select {
 		case scanned <- scannedLine{err: sc.Err(), eof: true}:
 		case <-ctx.Done():
 		}
 	}()
+	defer func() {
+		_ = in.Close()
+		cancel()
+		<-scannerDone
+	}()
 	reading := true
 	for reading {
 		var scannedResult scannedLine
+		var baselineResults <-chan baselineResult
+		if pending != nil {
+			baselineResults = pending.result
+		}
 		select {
 		case <-ctx.Done():
 			_ = in.Close()
+			if pending != nil {
+				pending.cancel()
+				_ = finishBaseline(false)
+			}
 			setWriteErr(ctx.Err())
 			reading = false
+			continue
+		case result := <-baselineResults:
+			if err := completeBaseline(pending, result, true); err != nil {
+				setWriteErr(err)
+				reading = false
+			}
 			continue
 		case scannedResult = <-scanned:
 			if scannedResult.eof {
 				if scannedResult.err != nil {
 					setWriteErr(scannedResult.err)
+				}
+				if pending != nil {
+					pending.cancel()
+					if err := finishBaseline(true); err != nil {
+						setWriteErr(err)
+					}
 				}
 				reading = false
 				continue
@@ -323,11 +543,76 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 		r, err := protocol.DecodeLine(scannedResult.line, s.inputLimit())
 		if err != nil {
 			s.observe(ctx, "protocol.parse_error", map[string]string{"cause": "invalid_jsonrpc"})
-			_ = write(protocol.Response{JSONRPC: protocol.JSONRPC, Error: protocol.Errorf(protocol.ParseError, "%v", err)})
+			if err := write(protocol.Response{JSONRPC: protocol.JSONRPC, Error: protocol.Errorf(protocol.ParseError, "%v", err)}); err != nil {
+				setWriteErr(err)
+				break
+			}
+			continue
+		}
+		if r.Method == "stave.snapshot.subscribe" {
+			// A request ID is required so the client receives its baseline before
+			// any notifications. Notifications never create subscriptions.
+			if len(r.ID) == 0 {
+				continue
+			}
+			subscriptionMu.Lock()
+			exists := subscription != nil || pending != nil
+			subscriptionMu.Unlock()
+			if exists {
+				if len(r.ID) > 0 {
+					if err := write(protocol.Response{JSONRPC: protocol.JSONRPC, ID: r.ID, Error: protocol.Errorf(protocol.InvalidRequest, "snapshot subscription already exists")}); err != nil {
+						setWriteErr(err)
+						break
+					}
+				}
+				continue
+			}
+			startBaseline(r)
+			continue
+		}
+		if r.Method == "stave.snapshot.unsubscribe" {
+			if len(r.ID) == 0 {
+				continue
+			}
+			var empty struct{}
+			if !s.snapshotSubscriptionAllowed() || (len(r.Params) > 0 && decodeStrict(r.Params, &empty) != nil) {
+				if len(r.ID) > 0 {
+					if err := write(protocol.Response{JSONRPC: protocol.JSONRPC, ID: r.ID, Error: protocol.Errorf(protocol.InvalidRequest, "invalid snapshot unsubscribe request")}); err != nil {
+						setWriteErr(err)
+						break
+					}
+				}
+				continue
+			}
+			if pending != nil {
+				pending.cancel()
+				if err := finishBaseline(true); err != nil {
+					setWriteErr(err)
+					break
+				}
+			}
+			closeSubscription()
+			if len(r.ID) > 0 {
+				if err := write(protocol.Response{JSONRPC: protocol.JSONRPC, ID: r.ID, Result: map[string]any{"ok": true}}); err != nil {
+					setWriteErr(err)
+					break
+				}
+			}
 			continue
 		}
 		if control(r.Method) {
+			preemptsBaseline := r.Method == sessionShutdownMethod || r.Method == sessionCancelMethod && validSessionCancelParams(r.Params)
+			if preemptsBaseline && pending != nil {
+				pending.cancel()
+				if err := finishBaseline(true); err != nil {
+					setWriteErr(err)
+					break
+				}
+			}
 			resp := s.handleSafely(ctx, r)
+			if (r.Method == sessionCancelMethod || r.Method == sessionShutdownMethod) && resp.Error == nil {
+				closeSubscription()
+			}
 			if len(r.ID) > 0 {
 				if err := write(resp); err != nil {
 					setWriteErr(err)
@@ -340,7 +625,10 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 		if r.Method == "stave.action.invoke" {
 			if e := s.reserveCall(ctx, r); e != nil {
 				if len(r.ID) > 0 {
-					_ = write(protocol.Response{JSONRPC: protocol.JSONRPC, ID: r.ID, Error: protocol.Errorf(protocol.InvalidParams, "%s", e)})
+					if err := write(protocol.Response{JSONRPC: protocol.JSONRPC, ID: r.ID, Error: protocol.Errorf(protocol.InvalidParams, "%s", e)}); err != nil {
+						setWriteErr(err)
+						break
+					}
 				}
 				continue
 			}
@@ -362,10 +650,21 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 			}
 			s.observe(ctx, "protocol.backpressure", map[string]string{"queue": "requests"})
 			if len(r.ID) > 0 {
-				_ = write(protocol.Response{JSONRPC: protocol.JSONRPC, ID: r.ID, Error: protocol.Errorf(protocol.Backpressure, "request queue is full")})
+				if err := write(protocol.Response{JSONRPC: protocol.JSONRPC, ID: r.ID, Error: protocol.Errorf(protocol.Backpressure, "request queue is full")}); err != nil {
+					setWriteErr(err)
+					reading = false
+					continue
+				}
 			}
 		}
 	}
+	if pending != nil {
+		pending.cancel()
+		if err := finishBaseline(getWriteErr() == nil && ctx.Err() == nil); err != nil {
+			setWriteErr(err)
+		}
+	}
+	closeSubscription()
 	close(jobs)
 	wg.Wait()
 	close(writes)
@@ -374,6 +673,79 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.Writer) err
 		return err
 	}
 	return nil
+}
+
+func mustJSON(value any) json.RawMessage { b, _ := json.Marshal(value); return b }
+
+func (s *Server) snapshotSubscriptionAllowed() bool {
+	s.mu.Lock()
+	resolved, ready, compatibility := s.negotiated, s.ready && !s.closed && !s.cancelling, s.opt.CompatibilityMode
+	s.mu.Unlock()
+	if compatibility || !ready || s.opt.SubscriptionSnapshotEnvelope == nil || s.opt.SnapshotPublicationWaiter == nil || !s.snapshotModeAllowed("full") {
+		return false
+	}
+	manifest, ok := resolved.(capability.Manifest)
+	if !ok {
+		return false
+	}
+	for _, version := range manifest.SnapshotSubscriptionVersions {
+		if version == protocol.SnapshotSubscriptionVersion {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Server) subscriptionSnapshot(ctx context.Context) (protocol.SnapshotResult, error) {
+	response := s.handleSafelyWithSnapshot(ctx, protocol.Request{JSONRPC: protocol.JSONRPC, Method: "stave.snapshot", Params: json.RawMessage(`{"mode":"full"}`)}, s.opt.SubscriptionSnapshotEnvelope)
+	if response.Error != nil {
+		return protocol.SnapshotResult{}, errors.New("snapshot subscription failed")
+	}
+	result, ok := response.Result.(protocol.SnapshotResult)
+	if !ok || result.Mode != "full" {
+		return protocol.SnapshotResult{}, errors.New("snapshot subscription did not produce full result")
+	}
+	return result, nil
+}
+
+func (s *Server) snapshotSubscribe(ctx context.Context, request protocol.Request) (protocol.Response, *protocol.SnapshotResult) {
+	response := protocol.Response{JSONRPC: protocol.JSONRPC, ID: request.ID}
+	var empty struct{}
+	if len(request.Params) > 0 && decodeStrict(request.Params, &empty) != nil {
+		response.Error = protocol.Errorf(protocol.InvalidParams, "snapshot subscription takes no parameters")
+		return response, nil
+	}
+	if !s.snapshotSubscriptionAllowed() {
+		response.Error = protocol.Errorf(protocol.CapabilityMismatch, "snapshot subscriptions were not negotiated")
+		return response, nil
+	}
+	result, err := s.subscriptionSnapshot(ctx)
+	if ctx.Err() != nil {
+		response.Error = protocol.Errorf(protocol.Cancelled, "subscription is closed")
+		return response, nil
+	}
+	if err != nil {
+		response.Error = protocol.Errorf(protocol.InternalError, "snapshot subscription unavailable")
+		return response, nil
+	}
+	response.Result = protocol.SnapshotSubscribeResult{Snapshot: result}
+	encoded, err := json.Marshal(response)
+	if err != nil || len(encoded) > s.outputLimit() {
+		response.Result = nil
+		response.Error = protocol.Errorf(protocol.OutputLimit, "subscription baseline exceeds output limit")
+		return response, nil
+	}
+	return response, &result
+}
+
+func offersSnapshotSubscription(capabilities map[string]any) bool {
+	versions, _ := capabilities["snapshotSubscriptionVersions"].([]any)
+	for _, version := range versions {
+		if version == protocol.SnapshotSubscriptionVersion {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) outputLimit() int {
@@ -482,7 +854,7 @@ func (s *Server) finishCall(callID string) {
 	}
 }
 
-func (s *Server) handle(parent context.Context, r protocol.Request) protocol.Response {
+func (s *Server) handle(parent context.Context, r protocol.Request, snapshotProvider SnapshotEnvelopeProvider) protocol.Response {
 	resp := protocol.Response{JSONRPC: protocol.JSONRPC, ID: r.ID}
 	fail := func(code int, msg string) protocol.Response {
 		resp.Error = protocol.Errorf(code, "%s", msg)
@@ -493,68 +865,13 @@ func (s *Server) handle(parent context.Context, r protocol.Request) protocol.Res
 	s.mu.Unlock()
 	switch r.Method {
 	case "stave.initialize", "initialize":
-		if init {
-			return fail(protocol.InvalidRequest, "session is already initialized")
-		}
-		var p protocol.InitializeParams
-		if len(r.Params) > 0 {
-			d := json.NewDecoder(bytesReader(r.Params))
-			d.DisallowUnknownFields()
-			if e := d.Decode(&p); e != nil || decoderTrailing(d) {
-				return fail(protocol.InvalidParams, "invalid initialize params")
-			}
-		}
-		if len(p.ProtocolVersions) == 0 && !s.opt.CompatibilityMode {
-			return fail(protocol.UnsupportedVersion, "protocol version offer is required")
-		}
-		if len(p.ProtocolVersions) > 0 {
-			ok := false
-			for _, v := range p.ProtocolVersions {
-				if v == protocol.Version {
-					ok = true
-				}
-			}
-			if !ok {
-				return fail(protocol.UnsupportedVersion, "no compatible protocol version")
-			}
-		}
-		if s.opt.Negotiate == nil && !s.opt.CompatibilityMode {
-			return fail(protocol.CapabilityMismatch, "capability negotiation is required")
-		}
-		var resolved any
-		if s.opt.Negotiate != nil {
-			m, e := s.opt.Negotiate(parent, p.Capabilities)
-			if e != nil {
-				return fail(protocol.CapabilityMismatch, "capability negotiation failed")
-			}
-			resolved = m.Clone()
-		} else {
-			resolved = cloneJSONValue(s.opt.Manifest)
-		}
-		limits, e := intersectLimits(s.limits, p.Limits)
-		if e != nil {
-			return fail(protocol.InvalidParams, "invalid client limits")
-		}
-		s.mu.Lock()
-		s.initialized = true
-		s.negotiated = resolved
-		s.limits = limits
-		s.mu.Unlock()
-		resp.Result = protocol.InitializeResult{ProtocolVersion: protocol.Version, SessionID: s.sessionID, Server: s.opt.ServerName, Application: s.opt.Application, Schemas: map[string]string{"semantic": "stave.semantic/v1", "actions": "stave.actions/v1", "protocol": "stave.protocol/v1"}, Capabilities: resolved, Limits: limits, ResolvedManifest: resolved}
-		return resp
+		return s.initialize(parent, r, resp, fail, init)
 	case "stave.initialized", "initialized":
-		if !init {
-			return fail(protocol.NotInitialized, "initialize required")
-		}
-		s.mu.Lock()
-		s.ready = true
-		s.mu.Unlock()
-		resp.Result = map[string]any{"ok": true, "sessionId": s.sessionID}
-		return resp
+		return s.markInitialized(resp, fail, init)
 	case "stave.ping":
 		resp.Result = map[string]any{"ok": true, "protocolVersion": protocol.Version}
 		return resp
-	case "stave.session.shutdown":
+	case sessionShutdownMethod:
 		s.Close()
 		resp.Result = map[string]any{"ok": true}
 		return resp
@@ -567,67 +884,7 @@ func (s *Server) handle(parent context.Context, r protocol.Request) protocol.Res
 	}
 	switch r.Method {
 	case "stave.snapshot":
-		if s.opt.SnapshotEnvelope == nil {
-			return fail(protocol.InternalError, "snapshot unavailable")
-		}
-		var p protocol.SnapshotParams
-		if len(r.Params) > 0 {
-			d := json.NewDecoder(bytesReader(r.Params))
-			d.DisallowUnknownFields()
-			if e := d.Decode(&p); e != nil || decoderTrailing(d) {
-				return fail(protocol.InvalidParams, "invalid snapshot params")
-			}
-		}
-		if !s.snapshotModeAllowed(p.Mode) {
-			return fail(protocol.CapabilityMismatch, "snapshot mode was not negotiated")
-		}
-		env, e := s.opt.SnapshotEnvelope(parent, p.Mode, p.SinceRevision)
-		if e != nil {
-			s.observe(parent, "snapshot.failed", map[string]string{"cause": "provider"})
-			return fail(protocol.InternalError, "snapshot failed")
-		}
-		if env.Mode == "" {
-			env.Mode = p.Mode
-		}
-		if env.Mode == "" {
-			env.Mode = "full"
-		}
-		if env.Mode != "full" && env.Mode != "patch" {
-			return fail(protocol.InvalidParams, "unsupported snapshot mode")
-		}
-		if p.Mode != "" && p.Mode != env.Mode {
-			return fail(protocol.InvalidParams, "snapshot mode mismatch")
-		}
-		if env.SessionID != s.sessionID {
-			return fail(protocol.InternalError, "snapshot session mismatch")
-		}
-		if env.SessionID == "" || !validHash(env.TreeHash) || !validHash(env.CapabilityHash) || env.SemanticVersion == "" || !validHash(env.ConfigHash) || !validHash(env.ThemeHash) || env.WidthVersion == "" {
-			return fail(protocol.InternalError, "incomplete snapshot metadata")
-		}
-		if env.Revision == 0 || env.Sequence == 0 || (env.Mode == "full" && (env.Snapshot == nil || env.Patch != nil)) || (env.Mode == "patch" && (env.Patch == nil || env.Snapshot != nil || p.SinceRevision == 0)) {
-			return fail(protocol.InternalError, "invalid snapshot envelope")
-		}
-		if env.Snapshot != nil && (env.Snapshot.Validate() != nil || env.Snapshot.Revision != env.Revision || env.Snapshot.TreeHash != env.TreeHash || countSnapshotNodes(env.Snapshot.Root, s.limits.MaxTreeNodes) < 0) {
-			return fail(protocol.InternalError, "invalid full snapshot")
-		}
-		if env.Patch != nil && (env.Patch.Validate() != nil || env.Patch.FromRevision != p.SinceRevision || env.Patch.ToRevision != env.Revision) {
-			return fail(protocol.InternalError, "invalid snapshot patch")
-		}
-		for _, d := range env.Actions {
-			if err := d.Validate(); err != nil {
-				return fail(protocol.InternalError, "invalid snapshot action manifest")
-			}
-		}
-		actions := env.Actions
-		if !p.IncludeActions {
-			actions = nil
-		}
-		diagnostics := append([]diag.Diagnostic(nil), env.Diagnostics...)
-		for i := range diagnostics {
-			diagnostics[i].Redacted = true
-		}
-		resp.Result = protocol.SnapshotResult{SchemaVersion: "stave.semantic/v1", SessionID: env.SessionID, Sequence: env.Sequence, Mode: env.Mode, Snapshot: env.Snapshot, Patch: env.Patch, Revision: env.Revision, TreeHash: env.TreeHash, CapabilityHash: env.CapabilityHash, SemanticVersion: env.SemanticVersion, ConfigHash: env.ConfigHash, ThemeHash: env.ThemeHash, WidthVersion: env.WidthVersion, Actions: actions, Diagnostics: diagnostics}
-		return resp
+		return s.snapshot(parent, r, resp, fail, snapshotProvider)
 	case "stave.actions.list":
 		if s.opt.Actions == nil {
 			resp.Result = []action.Definition{}
@@ -640,52 +897,303 @@ func (s *Server) handle(parent context.Context, r protocol.Request) protocol.Res
 	case "stave.action.confirm":
 		return s.confirm(parent, r, resp, fail)
 	case "stave.action.cancel":
-		var p struct {
-			CallID string `json:"callId"`
-		}
-		if decodeStrict(r.Params, &p) != nil || p.CallID == "" {
-			return fail(protocol.InvalidParams, "invalid call id")
-		}
-		s.mu.Lock()
-		c, ok := s.calls[p.CallID]
-		s.mu.Unlock()
-		if !ok {
-			return fail(protocol.InvalidParams, "unknown call id")
-		}
-		c.cancel()
-		resp.Result = map[string]any{"callId": p.CallID, "cancelled": true}
-		return resp
-	case "stave.session.cancel":
-		if len(r.Params) > 0 && string(r.Params) != "null" && string(r.Params) != "{}" {
-			var empty struct{}
-			if decodeStrict(r.Params, &empty) != nil {
-				return fail(protocol.InvalidParams, "session cancel takes no parameters")
-			}
-		}
-		s.mu.Lock()
-		s.cancelling = true
-		calls := make([]context.CancelFunc, 0, len(s.calls))
-		for _, slot := range s.calls {
-			calls = append(calls, slot.cancel)
-		}
-		s.mu.Unlock()
-		for _, cancel := range calls {
-			cancel()
-		}
-		if s.opt.CancelSession != nil {
-			if err := s.opt.CancelSession(parent); err != nil {
-				s.observe(parent, "session.cancel_failed", map[string]string{"cause": "application"})
-				return fail(protocol.InternalError, "session cancellation failed")
-			}
-		}
-		resp.Result = map[string]any{"cancelled": true, "sessionId": s.sessionID}
-		return resp
+		return s.cancelAction(r, resp, fail)
+	case sessionCancelMethod:
+		return s.cancelSession(parent, r, resp, fail)
 	default:
 		return fail(protocol.MethodNotFound, "method not found")
 	}
 }
 
-func (s *Server) handleSafely(parent context.Context, r protocol.Request) (resp protocol.Response) {
+func (s *Server) initialize(parent context.Context, r protocol.Request, resp protocol.Response, fail func(int, string) protocol.Response, initialized bool) protocol.Response {
+	if initialized {
+		return fail(protocol.InvalidRequest, "session is already initialized")
+	}
+	p, ok := decodeInitializeParams(r.Params)
+	if !ok {
+		return fail(protocol.InvalidParams, "invalid initialize params")
+	}
+	if err := s.validateInitialize(p); err != nil {
+		return fail(err.code, err.message)
+	}
+	resolved, failure := s.resolveCapabilities(parent, p.Capabilities)
+	if failure != nil {
+		return fail(failure.code, failure.message)
+	}
+	limits, err := intersectLimits(s.limits, p.Limits)
+	if err != nil {
+		return fail(protocol.InvalidParams, "invalid client limits")
+	}
+	s.mu.Lock()
+	s.initialized = true
+	s.negotiated = resolved
+	s.limits = limits
+	s.mu.Unlock()
+	resp.Result = protocol.InitializeResult{ProtocolVersion: protocol.Version, SessionID: s.sessionID, Server: s.opt.ServerName, Application: s.opt.Application, Schemas: map[string]string{"semantic": "stave.semantic/v1", "actions": "stave.actions/v1", "protocol": "stave.protocol/v1"}, Capabilities: resolved, Limits: limits, ResolvedManifest: resolved}
+	return resp
+}
+
+type handlerFailure struct {
+	code    int
+	message string
+}
+
+func decodeInitializeParams(raw json.RawMessage) (protocol.InitializeParams, bool) {
+	var params protocol.InitializeParams
+	if len(raw) == 0 {
+		return params, true
+	}
+	decoder := json.NewDecoder(bytesReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&params); err != nil || decoderTrailing(decoder) {
+		return protocol.InitializeParams{}, false
+	}
+	return params, true
+}
+
+func (s *Server) validateInitialize(params protocol.InitializeParams) *handlerFailure {
+	if len(params.ProtocolVersions) == 0 && !s.opt.CompatibilityMode {
+		return &handlerFailure{protocol.UnsupportedVersion, "protocol version offer is required"}
+	}
+	if len(params.ProtocolVersions) > 0 && !containsVersion(params.ProtocolVersions, protocol.Version) {
+		return &handlerFailure{protocol.UnsupportedVersion, "no compatible protocol version"}
+	}
+	if s.opt.Negotiate == nil && !s.opt.CompatibilityMode {
+		return &handlerFailure{protocol.CapabilityMismatch, "capability negotiation is required"}
+	}
+	return nil
+}
+
+func containsVersion(versions []string, wanted string) bool {
+	for _, version := range versions {
+		if version == wanted {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Server) resolveCapabilities(parent context.Context, capabilities map[string]any) (any, *handlerFailure) {
+	if s.opt.Negotiate == nil {
+		return cloneJSONValue(s.opt.Manifest), nil
+	}
+	manifest, err := s.opt.Negotiate(parent, capabilities)
+	if err != nil {
+		return nil, &handlerFailure{protocol.CapabilityMismatch, "capability negotiation failed"}
+	}
+	manifest.SnapshotSubscriptionVersions = negotiatedSubscriptionVersions(capabilities, manifest.SnapshotSubscriptionVersions)
+	return manifest.Clone(), nil
+}
+
+func negotiatedSubscriptionVersions(capabilities map[string]any, versions []string) []string {
+	if !offersSnapshotSubscription(capabilities) {
+		return nil
+	}
+	if containsVersion(versions, protocol.SnapshotSubscriptionVersion) {
+		return []string{protocol.SnapshotSubscriptionVersion}
+	}
+	return nil
+}
+
+func (s *Server) markInitialized(resp protocol.Response, fail func(int, string) protocol.Response, initialized bool) protocol.Response {
+	if !initialized {
+		return fail(protocol.NotInitialized, "initialize required")
+	}
+	s.mu.Lock()
+	s.ready = true
+	s.mu.Unlock()
+	resp.Result = map[string]any{"ok": true, "sessionId": s.sessionID}
+	return resp
+}
+
+func (s *Server) snapshot(parent context.Context, r protocol.Request, resp protocol.Response, fail func(int, string) protocol.Response, provider SnapshotEnvelopeProvider) protocol.Response {
+	if provider == nil {
+		return fail(protocol.InternalError, "snapshot unavailable")
+	}
+	params, ok := decodeSnapshotParams(r.Params)
+	if !ok {
+		return fail(protocol.InvalidParams, "invalid snapshot params")
+	}
+	if !s.snapshotModeAllowed(params.Mode) {
+		return fail(protocol.CapabilityMismatch, "snapshot mode was not negotiated")
+	}
+	envelope, err := provider(parent, params.Mode, params.SinceRevision)
+	if err != nil {
+		s.observe(parent, "snapshot.failed", map[string]string{"cause": "provider"})
+		return fail(protocol.InternalError, "snapshot failed")
+	}
+	if failure := s.validateSnapshotEnvelope(&envelope, params); failure != nil {
+		return fail(failure.code, failure.message)
+	}
+	resp.Result = snapshotResult(envelope, params.IncludeActions)
+	return resp
+}
+
+func decodeSnapshotParams(raw json.RawMessage) (protocol.SnapshotParams, bool) {
+	var params protocol.SnapshotParams
+	if len(raw) == 0 {
+		return params, true
+	}
+	decoder := json.NewDecoder(bytesReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&params); err != nil || decoderTrailing(decoder) {
+		return protocol.SnapshotParams{}, false
+	}
+	return params, true
+}
+
+func (s *Server) validateSnapshotEnvelope(envelope *SnapshotEnvelope, params protocol.SnapshotParams) *handlerFailure {
+	if failure := normalizeSnapshotMode(envelope, params); failure != nil {
+		return failure
+	}
+	if failure := s.validateSnapshotMetadata(*envelope); failure != nil {
+		return failure
+	}
+	if failure := s.validateSnapshotPayload(*envelope, params); failure != nil {
+		return failure
+	}
+	return nil
+}
+
+func normalizeSnapshotMode(envelope *SnapshotEnvelope, params protocol.SnapshotParams) *handlerFailure {
+	if envelope.Mode == "" {
+		envelope.Mode = params.Mode
+	}
+	if envelope.Mode == "" {
+		envelope.Mode = "full"
+	}
+	if envelope.Mode != "full" && envelope.Mode != "patch" {
+		return &handlerFailure{protocol.InvalidParams, "unsupported snapshot mode"}
+	}
+	if params.Mode != "" && params.Mode != envelope.Mode {
+		return &handlerFailure{protocol.InvalidParams, "snapshot mode mismatch"}
+	}
+	return nil
+}
+
+func (s *Server) validateSnapshotMetadata(envelope SnapshotEnvelope) *handlerFailure {
+	if envelope.SessionID != s.sessionID {
+		return &handlerFailure{protocol.InternalError, "snapshot session mismatch"}
+	}
+	if !completeSnapshotMetadata(envelope) {
+		return &handlerFailure{protocol.InternalError, "incomplete snapshot metadata"}
+	}
+	return nil
+}
+
+func completeSnapshotMetadata(envelope SnapshotEnvelope) bool {
+	return envelope.SessionID != "" && validHash(envelope.TreeHash) && validHash(envelope.CapabilityHash) && envelope.SemanticVersion != "" && validHash(envelope.ConfigHash) && validHash(envelope.ThemeHash) && envelope.WidthVersion != ""
+}
+
+func (s *Server) validateSnapshotPayload(envelope SnapshotEnvelope, params protocol.SnapshotParams) *handlerFailure {
+	if envelope.Revision == 0 || envelope.Sequence == 0 || invalidSnapshotShape(envelope, params) {
+		return &handlerFailure{protocol.InternalError, "invalid snapshot envelope"}
+	}
+	if !validFullSnapshot(envelope, s.limits.MaxTreeNodes) {
+		return &handlerFailure{protocol.InternalError, "invalid full snapshot"}
+	}
+	if !validSnapshotPatch(envelope, params.SinceRevision) {
+		return &handlerFailure{protocol.InternalError, "invalid snapshot patch"}
+	}
+	if !validSnapshotActions(envelope.Actions) {
+		return &handlerFailure{protocol.InternalError, "invalid snapshot action manifest"}
+	}
+	return nil
+}
+
+func invalidSnapshotShape(envelope SnapshotEnvelope, params protocol.SnapshotParams) bool {
+	return envelope.Mode == "full" && (envelope.Snapshot == nil || envelope.Patch != nil) || envelope.Mode == "patch" && (envelope.Patch == nil || envelope.Snapshot != nil || params.SinceRevision == 0)
+}
+
+func validFullSnapshot(envelope SnapshotEnvelope, maxNodes int) bool {
+	return envelope.Snapshot == nil || envelope.Snapshot.Validate() == nil && envelope.Snapshot.Revision == envelope.Revision && envelope.Snapshot.TreeHash == envelope.TreeHash && countSnapshotNodes(envelope.Snapshot.Root, maxNodes) >= 0
+}
+
+func validSnapshotPatch(envelope SnapshotEnvelope, sinceRevision uint64) bool {
+	return envelope.Patch == nil || envelope.Patch.Validate() == nil && envelope.Patch.FromRevision == sinceRevision && envelope.Patch.ToRevision == envelope.Revision
+}
+
+func validSnapshotActions(actions []action.Definition) bool {
+	for _, definition := range actions {
+		if definition.Validate() != nil {
+			return false
+		}
+	}
+	return true
+}
+
+func snapshotResult(envelope SnapshotEnvelope, includeActions bool) protocol.SnapshotResult {
+	actions := envelope.Actions
+	if !includeActions {
+		actions = nil
+	}
+	diagnostics := append([]diag.Diagnostic(nil), envelope.Diagnostics...)
+	for i := range diagnostics {
+		diagnostics[i].Redacted = true
+	}
+	return protocol.SnapshotResult{SchemaVersion: "stave.semantic/v1", SessionID: envelope.SessionID, Sequence: envelope.Sequence, Mode: envelope.Mode, Snapshot: envelope.Snapshot, Patch: envelope.Patch, Revision: envelope.Revision, TreeHash: envelope.TreeHash, CapabilityHash: envelope.CapabilityHash, SemanticVersion: envelope.SemanticVersion, ConfigHash: envelope.ConfigHash, ThemeHash: envelope.ThemeHash, WidthVersion: envelope.WidthVersion, Actions: actions, Diagnostics: diagnostics}
+}
+
+func (s *Server) cancelAction(r protocol.Request, resp protocol.Response, fail func(int, string) protocol.Response) protocol.Response {
+	var params struct {
+		CallID string `json:"callId"`
+	}
+	if decodeStrict(r.Params, &params) != nil || params.CallID == "" {
+		return fail(protocol.InvalidParams, "invalid call id")
+	}
+	s.mu.Lock()
+	call, ok := s.calls[params.CallID]
+	s.mu.Unlock()
+	if !ok {
+		return fail(protocol.InvalidParams, "unknown call id")
+	}
+	call.cancel()
+	resp.Result = map[string]any{"callId": params.CallID, "cancelled": true}
+	return resp
+}
+
+func (s *Server) cancelSession(parent context.Context, r protocol.Request, resp protocol.Response, fail func(int, string) protocol.Response) protocol.Response {
+	if !validSessionCancelParams(r.Params) {
+		return fail(protocol.InvalidParams, "session cancel takes no parameters")
+	}
+	calls := s.cancelCalls()
+	for _, cancel := range calls {
+		cancel()
+	}
+	if s.opt.CancelSession != nil {
+		if err := s.opt.CancelSession(parent); err != nil {
+			s.observe(parent, "session.cancel_failed", map[string]string{"cause": "application"})
+			return fail(protocol.InternalError, "session cancellation failed")
+		}
+	}
+	resp.Result = map[string]any{"cancelled": true, "sessionId": s.sessionID}
+	return resp
+}
+
+func validSessionCancelParams(raw json.RawMessage) bool {
+	if len(raw) == 0 || string(raw) == "null" || string(raw) == "{}" {
+		return true
+	}
+	var empty struct{}
+	return decodeStrict(raw, &empty) == nil
+}
+
+func (s *Server) cancelCalls() []context.CancelFunc {
+	s.mu.Lock()
+	s.cancelling = true
+	calls := make([]context.CancelFunc, 0, len(s.calls))
+	for _, slot := range s.calls {
+		calls = append(calls, slot.cancel)
+	}
+	s.mu.Unlock()
+	return calls
+}
+
+func (s *Server) handleSafely(parent context.Context, r protocol.Request) protocol.Response {
+	return s.handleSafelyWithSnapshot(parent, r, s.opt.SnapshotEnvelope)
+}
+
+func (s *Server) handleSafelyWithSnapshot(parent context.Context, r protocol.Request, snapshotProvider SnapshotEnvelopeProvider) (resp protocol.Response) {
 	defer func() {
 		if recover() != nil {
 			s.observe(parent, "runtime.callback_panic", map[string]string{"method": safeIdentifier(r.Method)})
@@ -695,7 +1203,7 @@ func (s *Server) handleSafely(parent context.Context, r protocol.Request) (resp 
 			}
 		}
 	}()
-	return s.handle(parent, r)
+	return s.handle(parent, r, snapshotProvider)
 }
 
 func (s *Server) confirm(ctx context.Context, r protocol.Request, resp protocol.Response, fail func(int, string) protocol.Response) protocol.Response {
@@ -937,6 +1445,7 @@ func (s *Server) Close() {
 		return
 	}
 	s.closed = true
+	close(s.serverDone)
 	for _, c := range s.calls {
 		c.cancel()
 	}

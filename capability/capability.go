@@ -124,34 +124,36 @@ type Limits struct {
 }
 
 type Manifest struct {
-	ProtocolVersions   []string     `json:"protocolVersions"`
-	OutputMode         OutputMode   `json:"outputMode"`
-	Interactive        bool         `json:"interactive"`
-	TTY                bool         `json:"tty"`
-	Width              int          `json:"width,omitempty"`
-	Height             int          `json:"height,omitempty"`
-	Color              ColorLevel   `json:"color"`
-	HardwareColor      ColorLevel   `json:"hardwareColor"`
-	ColorDisabled      bool         `json:"colorDisabled,omitempty"`
-	Unicode            UnicodeLevel `json:"unicode"`
-	CursorAddressing   bool         `json:"cursorAddressing"`
-	AlternateScreen    bool         `json:"alternateScreen"`
-	Mouse              bool         `json:"mouse"`
-	BracketedPaste     bool         `json:"bracketedPaste"`
-	KeyboardLevel      string       `json:"keyboardLevel,omitempty"`
-	ReducedMotion      bool         `json:"reducedMotion"`
-	ScreenReader       bool         `json:"screenReader"`
-	SecureInput        bool         `json:"secureInput"`
-	Clipboard          bool         `json:"clipboard"`
-	CoordinateFallback bool         `json:"coordinateFallback"`
-	SnapshotModes      []string     `json:"snapshotModes,omitempty"`
-	ActionFamilies     []string     `json:"actionFamilies,omitempty"`
-	Limits             Limits       `json:"limits"`
+	ProtocolVersions             []string     `json:"protocolVersions"`
+	OutputMode                   OutputMode   `json:"outputMode"`
+	Interactive                  bool         `json:"interactive"`
+	TTY                          bool         `json:"tty"`
+	Width                        int          `json:"width,omitempty"`
+	Height                       int          `json:"height,omitempty"`
+	Color                        ColorLevel   `json:"color"`
+	HardwareColor                ColorLevel   `json:"hardwareColor"`
+	ColorDisabled                bool         `json:"colorDisabled,omitempty"`
+	Unicode                      UnicodeLevel `json:"unicode"`
+	CursorAddressing             bool         `json:"cursorAddressing"`
+	AlternateScreen              bool         `json:"alternateScreen"`
+	Mouse                        bool         `json:"mouse"`
+	BracketedPaste               bool         `json:"bracketedPaste"`
+	KeyboardLevel                string       `json:"keyboardLevel,omitempty"`
+	ReducedMotion                bool         `json:"reducedMotion"`
+	ScreenReader                 bool         `json:"screenReader"`
+	SecureInput                  bool         `json:"secureInput"`
+	Clipboard                    bool         `json:"clipboard"`
+	CoordinateFallback           bool         `json:"coordinateFallback"`
+	SnapshotModes                []string     `json:"snapshotModes,omitempty"`
+	SnapshotSubscriptionVersions []string     `json:"snapshotSubscriptionVersions,omitempty"`
+	ActionFamilies               []string     `json:"actionFamilies,omitempty"`
+	Limits                       Limits       `json:"limits"`
 }
 
 func (m Manifest) Clone() Manifest {
 	m.ProtocolVersions = append([]string(nil), m.ProtocolVersions...)
 	m.SnapshotModes = append([]string(nil), m.SnapshotModes...)
+	m.SnapshotSubscriptionVersions = append([]string(nil), m.SnapshotSubscriptionVersions...)
 	m.ActionFamilies = append([]string(nil), m.ActionFamilies...)
 	return m
 }

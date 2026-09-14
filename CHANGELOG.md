@@ -5,6 +5,11 @@ Keep a Changelog and Stave uses Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- Add an opt-in, negotiated snapshot-subscription extension for automation
+  clients that need bounded full-snapshot updates without polling.
+
 ## [1.0.0-rc.2] - 2026-09-10
 
 ### Security

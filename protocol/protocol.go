@@ -12,6 +12,7 @@ import (
 
 const Version = "1.0"
 const JSONRPC = "2.0"
+const SnapshotSubscriptionVersion = "stave.snapshot.subscribe/v1"
 
 // ID is the exact JSON-RPC id token. It is deliberately not decoded to float64.
 type ID json.RawMessage
@@ -130,6 +131,16 @@ type SnapshotResult struct {
 	WidthVersion    string              `json:"widthVersion"`
 	Actions         []action.Definition `json:"actions,omitempty"`
 	Diagnostics     []diag.Diagnostic   `json:"diagnostics,omitempty"`
+}
+type SnapshotSubscribeResult struct {
+	Snapshot SnapshotResult `json:"snapshot"`
+}
+type SnapshotSubscriptionNotification struct {
+	Snapshot SnapshotResult `json:"snapshot"`
+}
+type SnapshotSubscriptionTerminal struct {
+	State  string `json:"state"`
+	Reason string `json:"reason"`
 }
 type InvokeParams struct {
 	CallID       string                    `json:"callId"`

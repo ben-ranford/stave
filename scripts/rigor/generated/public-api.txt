@@ -128,7 +128,7 @@ type ColorPolicy string
 type Diagnostic struct { Code string; Field string; Message string }
 type ID string
 type Limits struct { MaxTreeNodes int `json:"maxTreeNodes,omitempty"`; MaxMessageBytes int `json:"maxMessageBytes,omitempty"`; MaxInputBytes int `json:"maxInputBytes,omitempty"` }
-type Manifest struct { ProtocolVersions []string `json:"protocolVersions"`; OutputMode OutputMode `json:"outputMode"`; Interactive bool `json:"interactive"`; TTY bool `json:"tty"`; Width int `json:"width,omitempty"`; Height int `json:"height,omitempty"`; Color ColorLevel `json:"color"`; HardwareColor ColorLevel `json:"hardwareColor"`; ColorDisabled bool `json:"colorDisabled,omitempty"`; Unicode UnicodeLevel `json:"unicode"`; CursorAddressing bool `json:"cursorAddressing"`; AlternateScreen bool `json:"alternateScreen"`; Mouse bool `json:"mouse"`; BracketedPaste bool `json:"bracketedPaste"`; KeyboardLevel string `json:"keyboardLevel,omitempty"`; ReducedMotion bool `json:"reducedMotion"`; ScreenReader bool `json:"screenReader"`; SecureInput bool `json:"secureInput"`; Clipboard bool `json:"clipboard"`; CoordinateFallback bool `json:"coordinateFallback"`; SnapshotModes []string `json:"snapshotModes,omitempty"`; ActionFamilies []string `json:"actionFamilies,omitempty"`; Limits Limits `json:"limits"` }
+type Manifest struct { ProtocolVersions []string `json:"protocolVersions"`; OutputMode OutputMode `json:"outputMode"`; Interactive bool `json:"interactive"`; TTY bool `json:"tty"`; Width int `json:"width,omitempty"`; Height int `json:"height,omitempty"`; Color ColorLevel `json:"color"`; HardwareColor ColorLevel `json:"hardwareColor"`; ColorDisabled bool `json:"colorDisabled,omitempty"`; Unicode UnicodeLevel `json:"unicode"`; CursorAddressing bool `json:"cursorAddressing"`; AlternateScreen bool `json:"alternateScreen"`; Mouse bool `json:"mouse"`; BracketedPaste bool `json:"bracketedPaste"`; KeyboardLevel string `json:"keyboardLevel,omitempty"`; ReducedMotion bool `json:"reducedMotion"`; ScreenReader bool `json:"screenReader"`; SecureInput bool `json:"secureInput"`; Clipboard bool `json:"clipboard"`; CoordinateFallback bool `json:"coordinateFallback"`; SnapshotModes []string `json:"snapshotModes,omitempty"`; SnapshotSubscriptionVersions []string `json:"snapshotSubscriptionVersions,omitempty"`; ActionFamilies []string `json:"actionFamilies,omitempty"`; Limits Limits `json:"limits"` }
 type Negotiation struct { RuntimeDetected Manifest; ClientOffered Manifest; Application Policy; UserOverrides Overrides; Security SecurityPolicy; ClientPresent bool }
 type OutputMode string
 type Overrides struct { OutputMode OutputMode; Color ColorPolicy; Unicode, ReducedMotion, Mouse, AlternateScreen, CursorAddressing, BracketedPaste, Clipboard, SecureInput, ScreenReader *bool; CoordinateFallback *bool }
@@ -519,6 +519,7 @@ const ParseError
 const RequestTooLarge
 const ResourceLimit
 const SchemaViolation
+const SnapshotSubscriptionVersion
 const StaleTarget
 const UnsupportedVersion
 const Version
@@ -542,6 +543,9 @@ type Request struct { JSONRPC string `json:"jsonrpc"`; ID json.RawMessage `json:
 type Response struct { JSONRPC string `json:"jsonrpc"`; ID json.RawMessage `json:"id,omitempty"`; Result any `json:"result,omitempty"`; Error *Error `json:"error,omitempty"` }
 type SnapshotParams struct { Mode string `json:"mode,omitempty"`; IncludeActions bool `json:"includeActions,omitempty"`; SinceRevision uint64 `json:"sinceRevision,omitempty"` }
 type SnapshotResult struct { SchemaVersion string `json:"schemaVersion"`; SessionID string `json:"sessionId"`; Sequence uint64 `json:"sequence"`; Mode string `json:"mode"`; Snapshot *semantic.Snapshot `json:"snapshot,omitempty"`; Patch *semantic.Patch `json:"patch,omitempty"`; Revision uint64 `json:"revision"`; TreeHash string `json:"treeHash"`; CapabilityHash string `json:"capabilityHash"`; SemanticVersion string `json:"semanticVersion"`; ConfigHash string `json:"configHash"`; ThemeHash string `json:"themeHash"`; WidthVersion string `json:"widthVersion"`; Actions []action.Definition `json:"actions,omitempty"`; Diagnostics []diag.Diagnostic `json:"diagnostics,omitempty"` }
+type SnapshotSubscribeResult struct { Snapshot SnapshotResult `json:"snapshot"` }
+type SnapshotSubscriptionNotification struct { Snapshot SnapshotResult `json:"snapshot"` }
+type SnapshotSubscriptionTerminal struct { State string `json:"state"`; Reason string `json:"reason"` }
 var ErrBatch
 
 [github.com/ben-ranford/stave/render]
@@ -603,12 +607,13 @@ type AuthorizeCall func(context.Context, action.Call) *action.Error
 type AuthorizePreparedCall func(context.Context, action.Call) (action.Call, *action.Error)
 type CapabilityNegotiator func(context.Context, map[string]any) (capability.Manifest, error)
 type ConfirmCall func(context.Context, action.Call) (action.Confirmation, error)
-type Options struct { MaxMessageBytes int; MaxOutputBytes int; MaxTreeNodes int; MaxInFlight int; Queue int; Snapshot SnapshotProvider; SnapshotPatch SnapshotPatchProvider; SnapshotEnvelope SnapshotEnvelopeProvider; Actions *action.Registry; Invoke func(context.Context, action.Call) action.Result; Authorize AuthorizeCall; AuthorizePrepared AuthorizePreparedCall; Confirm ConfirmCall; Negotiate CapabilityNegotiator; CancelSession func(context.Context) error; CompatibilityMode bool; Observer observer.Observer; ServerName string; Application protocol.Application; SessionID string; Capabilities map[string]any; Manifest any }
+type Options struct { MaxMessageBytes int; MaxOutputBytes int; MaxTreeNodes int; MaxInFlight int; Queue int; Snapshot SnapshotProvider; SnapshotPatch SnapshotPatchProvider; SnapshotEnvelope SnapshotEnvelopeProvider; SubscriptionSnapshotEnvelope SnapshotEnvelopeProvider; SnapshotPublicationWaiter SnapshotPublicationWaiter; Actions *action.Registry; Invoke func(context.Context, action.Call) action.Result; Authorize AuthorizeCall; AuthorizePrepared AuthorizePreparedCall; Confirm ConfirmCall; Negotiate CapabilityNegotiator; CancelSession func(context.Context) error; CompatibilityMode bool; Observer observer.Observer; ServerName string; Application protocol.Application; SessionID string; Capabilities map[string]any; Manifest any }
 type Server struct {  }
 type SnapshotEnvelope struct { Snapshot *semantic.Snapshot; Patch *semantic.Patch; Mode string; SessionID string; Sequence, Revision uint64; TreeHash, CapabilityHash, SemanticVersion, ConfigHash, ThemeHash, WidthVersion string; Actions []action.Definition; Diagnostics []diag.Diagnostic }
 type SnapshotEnvelopeProvider func(context.Context, string, uint64) (SnapshotEnvelope, error)
 type SnapshotPatchProvider func(context.Context, uint64) (any, uint64, string, error)
 type SnapshotProvider func(context.Context) (any, uint64, string, error)
+type SnapshotPublicationWaiter func(context.Context, uint64) error
 var ErrBackpressure
 var ErrOutputLimit
 

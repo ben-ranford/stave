@@ -6,6 +6,7 @@ same semantic interface for people and automation.
 ## Guides
 
 - [Adopt Stave in an application](client-adoption.md)
+- [Subscribe to negotiated full snapshots](snapshot-subscriptions.md)
 - [Use Stave UI primitives](primitives.md)
 - [Meet accessibility and agent-control expectations](accessibility-agent-parity.md)
 - [Understand compatibility guarantees](compatibility.md)
