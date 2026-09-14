@@ -189,7 +189,7 @@ func snapshotWire(t *testing.T, revision uint64, entity string, value semantic.V
 	return wire
 }
 
-func mustJSON(t *testing.T, value any) []byte {
+func mustJSON(t testing.TB, value any) []byte {
 	t.Helper()
 	data, err := json.Marshal(value)
 	if err != nil {
@@ -198,7 +198,7 @@ func mustJSON(t *testing.T, value any) []byte {
 	return data
 }
 
-func refreshInspectorCheckpointChecksum(t *testing.T, checkpoint *state.Checkpoint) {
+func refreshInspectorCheckpointChecksum(t testing.TB, checkpoint *state.Checkpoint) {
 	t.Helper()
 	data, err := checkpoint.CanonicalJSON()
 	if err != nil {
