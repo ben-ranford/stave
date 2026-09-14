@@ -82,9 +82,12 @@ interface method addition, or exported variable type change.
 Adding an exported function or a field to a defined struct while retaining
 existing keyed fields and struct comparability is accepted. Field additions to
 an alias of an anonymous struct are rejected because they change type identity.
-Adding a field can still break consumers using unkeyed composite literals, so
-those consumers should use keyed literals
-and maintainers must call out that caveat during compatibility review. The
+Adding a field can still break consumers using unkeyed composite literals or
+explicit conversions to the previous underlying struct shape
+([#124](https://github.com/ben-ranford/stave/issues/124)). Keyed construction
+remains supported; gate acceptance does not establish compatibility for those
+other uses. Maintainers must review field additions and compile affected
+consumers before release. The
 baseline rejects every field addition to a struct that already embeds a field,
 as well as embedded-field additions to a plain struct, because either can
 change promoted selectors. The source inventory also fails closed when selected
@@ -103,6 +106,11 @@ promoted from hidden embedded receivers into exported concrete method sets
 ([#119](https://github.com/ben-ranford/stave/issues/119)). Changes involving these
 cases require explicit compatibility review and consumer compilation evidence
 before release; a passing inventory comparison alone is insufficient.
+
+Consistent generic type-parameter renames can change inventory text even when
+consumer code remains compatible ([#107](https://github.com/ben-ranford/stave/issues/107)).
+Preserve existing parameter names until scoped normalization is supported;
+review unexpected differences with consumer compilation evidence.
 
 Generic sealed-method matching can also omit an implementation method when
 the interface and receiver use different type-parameter names
