@@ -34,6 +34,10 @@ initial capability hash must match the saved manifest.
 Non-effect records retain the effect ledger; effect-result records use the
 session's single delivery mode and either retain the prior ledger for a
 rejected event or derive it from the prior ledger and canonical event.
+Effect-result statuses follow the public event contract: any non-empty status
+string is allowed. Record and event completion indices must match in either
+delivery mode; caller-supplied indices are valid. These checks establish
+consistent evidence without proving which executor produced it.
 Validation establishes checkpoint consistency, not checkpoint origin; a saved
 checkpoint can therefore begin with coherent prior ledger and declaration data.
 
