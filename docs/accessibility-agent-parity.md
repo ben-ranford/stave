@@ -1,5 +1,18 @@
 # Accessibility and agent-control expectations
 
+## Unreleased local-checkout keymap profile API
+
+The `keymap.Map.Encode` and `keymap.Decode` APIs are unreleased and intended
+for local checkouts until the next Stave release. `Encode` writes a
+deterministic `stave.keymap.v1` document. `Decode` rejects unknown document
+fields and versions, then reuses keymap validation for invalid or conflicting
+bindings. Callers supply their action registry manifest to `Decode`; imported
+action routes that are absent from that manifest are rejected.
+Profiles require a non-null `mappings` array. Decode rejects malformed UTF-8
+before parsing and rejects chords outside the normalized input key domain;
+Encode rejects invalid UTF-8 rather than replacing it during JSON
+serialization.
+
 ## Principle
 
 Stave uses one semantic tree for accessibility and machine control. Agents do
@@ -58,3 +71,9 @@ Each meaningful node must expose the applicable parts of this contract:
 
 - [UI primitives](primitives.md)
 - [Security contract](security.md)
+
+Serialized keymap profiles are limited to 1 MiB (`keymap.MaxProfileBytes`),
+1,024 mappings (`keymap.MaxProfileMappings`), and 16 chords per binding
+(`keymap.MaxBindingChords`). `Encode` and `Decode` enforce the same limits;
+`Decode` checks bytes before parsing and mapping/chord counts before conflict
+validation. The existing in-memory `keymap.New` API retains its behavior.
