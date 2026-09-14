@@ -35,9 +35,14 @@ type SnapshotEnvelope struct {
 }
 type SnapshotEnvelopeProvider func(context.Context, string, uint64) (SnapshotEnvelope, error)
 
-// snapshotTreeLimitKey carries the negotiated request bound to built-in providers.
+// snapshotOptionsKey carries finalized request options to built-in providers.
 // It leaves the public provider signature and snapshot wire format unchanged.
-type snapshotTreeLimitKey struct{}
+type snapshotOptionsKey struct{}
+
+type snapshotOptions struct {
+	maxTreeNodes int
+	actions      *action.Registry
+}
 
 // AuthorizeCall runs before Registry.Invoke.
 // It is the authority boundary for target generation/revision, capabilities,
@@ -591,7 +596,7 @@ func (s *Server) handle(parent context.Context, r protocol.Request) protocol.Res
 		s.mu.Lock()
 		treeLimit := s.limits.MaxTreeNodes
 		s.mu.Unlock()
-		snapshotContext := context.WithValue(parent, snapshotTreeLimitKey{}, treeLimit)
+		snapshotContext := context.WithValue(parent, snapshotOptionsKey{}, snapshotOptions{maxTreeNodes: treeLimit, actions: s.opt.Actions})
 		env, e := s.opt.SnapshotEnvelope(snapshotContext, p.Mode, p.SinceRevision)
 		if e != nil {
 			s.observe(parent, "snapshot.failed", map[string]string{"cause": "provider"})

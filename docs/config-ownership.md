@@ -35,7 +35,9 @@ validated source before constructing the agent adapter.
 snapshot envelope and an idempotent cancellation callback, while the
 application continues to supply the action registry, authorization,
 confirmation, and policy callbacks in `agent.Options`. It does not select a
-transport or grant action authority.
+transport or grant action authority. Finalize `Options.Actions` before calling
+`agent.New`; snapshot manifests use that same finalized registry. Direct calls
+to the returned snapshot callback use the registry supplied at binding time.
 
 The agent snapshot envelope projects the session's internal zero-based sequence
 to the protocol's required one-based wire sequence. Revisions and hashes remain
@@ -50,4 +52,13 @@ Use a separate binding per snapshot consumer. Request a full snapshot, await its
 response, then request patches sequentially from the most recently returned
 revision. The bridge retains one baseline; stale patch requests are rejected
 and should recover with a full snapshot. Concurrent consumers need separate
-bindings and callbacks.
+bindings and callbacks. An output-limit error or failed response delivery can
+leave the client behind the provider baseline; recover with a full snapshot
+before requesting further patches. Transport-confirmed baseline commits require
+a separate delivery contract, tracked in
+[#120](https://github.com/ben-ranford/stave/issues/120).
+
+The bridge currently calls `Session.Snapshot`, including the application model's
+clone policy. Polling cost and clone failures therefore apply even though the
+wire response contains only tree and metadata. A metadata-only projection is
+tracked in [#108](https://github.com/ben-ranford/stave/issues/108).

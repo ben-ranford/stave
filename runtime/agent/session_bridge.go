@@ -66,11 +66,11 @@ func (b *sessionBridge[M]) snapshot(ctx context.Context, mode string, since uint
 	if err != nil {
 		return SnapshotEnvelope{}, err
 	}
-	treeLimit, hasRequestLimit := ctx.Value(snapshotTreeLimitKey{}).(int)
-	if !hasRequestLimit {
-		treeLimit = b.maxTreeNodes
+	requestOptions, hasRequestOptions := ctx.Value(snapshotOptionsKey{}).(snapshotOptions)
+	if !hasRequestOptions {
+		requestOptions = snapshotOptions{maxTreeNodes: b.maxTreeNodes, actions: b.actions}
 	}
-	if countSnapshotNodes(current.Tree.Root(), treeLimit) < 0 {
+	if countSnapshotNodes(current.Tree.Root(), requestOptions.maxTreeNodes) < 0 {
 		return SnapshotEnvelope{}, errors.New("agent: session snapshot exceeds tree node limit")
 	}
 	if current.Sequence == ^uint64(0) {
@@ -84,8 +84,8 @@ func (b *sessionBridge[M]) snapshot(ctx context.Context, mode string, since uint
 		ThemeHash: current.ThemeHash, WidthVersion: current.WidthPolicy,
 		Diagnostics: bridgeDiagnostics(b.session.DiagnosticsTail(maxBridgeDiagnostics), sequence, current.Revision),
 	}
-	if b.actions != nil {
-		envelope.Actions = b.actions.Manifest()
+	if requestOptions.actions != nil {
+		envelope.Actions = requestOptions.actions.Manifest()
 	}
 	if mode == "patch" {
 		if !b.hasPrevious || since != b.previousRevision || current.Revision <= since {
