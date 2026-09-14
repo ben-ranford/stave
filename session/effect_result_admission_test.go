@@ -158,6 +158,31 @@ func (fixture *saturatedEffectResultFixture) startInitialBatch(t *testing.T) {
 			t.Fatal("initial effects did not start")
 		}
 	}
+	// A port can start in the executor goroutine before the admission worker
+	// releases the batch reservation. Wait for that release before sending the
+	// batch that must become pending.
+	fixture.waitInitialAdmissionReleased(t)
+}
+
+func (fixture *saturatedEffectResultFixture) waitInitialAdmissionReleased(t *testing.T) {
+	t.Helper()
+	deadline := time.NewTimer(2 * time.Second)
+	defer deadline.Stop()
+	tick := time.NewTicker(time.Millisecond)
+	defer tick.Stop()
+	for {
+		fixture.session.effectAdmissions.mu.Lock()
+		released := fixture.session.effectAdmissions.reserved == 0
+		fixture.session.effectAdmissions.mu.Unlock()
+		if released {
+			return
+		}
+		select {
+		case <-deadline.C:
+			t.Fatal("initial effect admission did not release")
+		case <-tick.C:
+		}
+	}
 }
 
 func (fixture *saturatedEffectResultFixture) queuePendingBatch(t *testing.T) {
