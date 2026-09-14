@@ -18,7 +18,9 @@ valid transcript or matching evidence, `2` for a valid evidence mismatch, and
 Validation checks transcript content; JSON whitespace and field order need not
 match the canonical serializer output. Inputs are bounded to 16 MiB, 100,000
 records, and 400,000 JSON values (scalars and containers; object keys do not
-count separately). The decoder rejects trailing
+count separately). For semantic snapshots, the product of node count and total
+relation count must not exceed 500,000 per validation pass (one million across
+the two validation passes during decoding). The decoder rejects trailing
 JSON, duplicate or unknown fields, unsupported schema versions, malformed
 events, and inconsistent transcript chains. Invalid-input reports intentionally
 do not echo raw input. Mismatch reports use the replay package's existing
