@@ -217,6 +217,7 @@ func (A) Run() {}
 type B struct{}
 func (B) Run() {}
 type Key struct { ID int }
+type Anonymous = struct { Name string }
 type Options struct { Name string; A }
 var Limit int
 func Keep(value string) string { return value }
@@ -234,6 +235,7 @@ func Keep(value string) string { return value }
 		{name: "package name change", api: strings.Replace(baseline, "package api", "package renamed", 1), passes: false},
 		{name: "variable type change", api: strings.Replace(baseline, "var Limit int", "var Limit string", 1), passes: false},
 		{name: "additive function and keyed field", api: strings.Replace(strings.Replace(baseline, "type Key struct { ID int }", "type Key struct { ID int; Enabled bool }", 1), "func Keep(value string) string { return value }", "func Keep(value string) string { return value }\nfunc Extra() error { return nil }", 1), passes: true},
+		{name: "anonymous struct alias field addition", api: strings.Replace(baseline, "type Anonymous = struct { Name string }", "type Anonymous = struct { Name string; Enabled bool }", 1), passes: false},
 		{name: "non-comparable additive field", api: strings.Replace(baseline, "type Key struct { ID int }", "type Key struct { ID int; Values []string }", 1), passes: false},
 		{name: "non-comparable private field", api: strings.Replace(baseline, "type Key struct { ID int }", "type Key struct { ID int; values []string }", 1), passes: false},
 		{name: "ambiguous promoted method", api: strings.Replace(baseline, "type Options struct { Name string; A }", "type Options struct { Name string; A; B `json:\"b\"` }", 1), passes: false},
@@ -266,6 +268,8 @@ import (
 
 type implementation struct{}
 func (implementation) Keep() string { return "ok" }
+
+var _ api.Anonymous = struct { Name string }{Name: "x"}
 
 func TestConsumerSurface(t *testing.T) {
 	var _ api.Contract = implementation{}
@@ -485,5 +489,16 @@ func TestGitExecutableRejectsRelativePathResolution(t *testing.T) {
 	t.Setenv("GODEBUG", "execerrdot=0")
 	if _, err := gitExecutable(); err == nil || !strings.Contains(err.Error(), "must be absolute") {
 		t.Fatalf("relative Git path was not rejected: %v", err)
+	}
+}
+
+func TestCompareInventoriesRejectsStructAliasFieldAddition(t *testing.T) {
+	baseline := "[example.com/api]\ntype Options = struct { Name string }\n"
+	if err := compareInventories(baseline, baseline); err != nil {
+		t.Fatalf("unchanged alias rejected: %v", err)
+	}
+	candidate := "[example.com/api]\ntype Options = struct { Name string; Enabled bool }\n"
+	if err := compareInventories(baseline, candidate); err == nil {
+		t.Fatal("anonymous struct alias field addition was accepted")
 	}
 }

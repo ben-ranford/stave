@@ -358,7 +358,12 @@ func declarationKey(declaration string) string {
 }
 
 func compatibleStructFieldAddition(baselineDeclaration, candidateDeclaration string) bool {
-	if !strings.HasPrefix(baselineDeclaration, "type ") || !strings.Contains(baselineDeclaration, structMarker) || !strings.HasPrefix(candidateDeclaration, strings.SplitN(baselineDeclaration, structMarker, 2)[0]+structMarker) {
+	baselinePrefix, _, baselineStruct := strings.Cut(baselineDeclaration, structMarker)
+	if !baselineStruct || !strings.HasPrefix(baselinePrefix, "type ") || strings.HasSuffix(baselinePrefix, " =") {
+		return false
+	}
+	candidatePrefix, _, candidateStruct := strings.Cut(candidateDeclaration, structMarker)
+	if !candidateStruct || candidatePrefix != baselinePrefix {
 		return false
 	}
 	baselineFields := structFields(baselineDeclaration)

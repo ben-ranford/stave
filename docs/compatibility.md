@@ -75,9 +75,11 @@ records the baseline tag, immutable commit, and both Go floors. A regenerated
 candidate inventory cannot waive a removed declaration, changed signature,
 interface method addition, or exported variable type change.
 
-Adding an exported function or a field while retaining existing keyed fields
-and struct comparability is accepted. Adding a field can still break consumers
-using unkeyed composite literals, so those consumers should use keyed literals
+Adding an exported function or a field to a defined struct while retaining
+existing keyed fields and struct comparability is accepted. Field additions to
+an alias of an anonymous struct are rejected because they change type identity.
+Adding a field can still break consumers using unkeyed composite literals, so
+those consumers should use keyed literals
 and maintainers must call out that caveat during compatibility review. The
 baseline rejects every field addition to a struct that already embeds a field,
 as well as embedded-field additions to a plain struct, because either can
