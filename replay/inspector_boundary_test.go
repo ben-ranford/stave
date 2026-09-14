@@ -2,8 +2,12 @@ package replay
 
 import (
 	"bytes"
+	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/ben-ranford/stave/semantic"
 )
 
 func TestDecodeTranscriptRejectsPayloadForPayloadlessEvent(t *testing.T) {
@@ -19,13 +23,90 @@ func TestDecodeTranscriptRejectsPayloadForPayloadlessEvent(t *testing.T) {
 }
 
 func TestValidateUniqueJSONKeysBoundsNestedInput(t *testing.T) {
-	withinLimit := []byte(strings.Repeat("[", 65) + "0" + strings.Repeat("]", 65))
+	withinLimit := []byte(strings.Repeat("[", maxGenericJSONDepth+1) + "0" + strings.Repeat("]", maxGenericJSONDepth+1))
 	if err := validateUniqueJSONKeys(withinLimit, 0); err != nil {
 		t.Fatalf("validateUniqueJSONKeys() rejected the exact scalar boundary: %v", err)
 	}
-	overLimit := []byte(strings.Repeat("[", 66) + "0" + strings.Repeat("]", 66))
+	overLimit := []byte(strings.Repeat("[", maxGenericJSONDepth+2) + "0" + strings.Repeat("]", maxGenericJSONDepth+2))
 	if err := validateUniqueJSONKeys(overLimit, 0); err == nil {
 		t.Fatal("validateUniqueJSONKeys() accepted excessive nesting")
+	}
+}
+
+func TestDecodeTranscriptAcceptsMaximumSemanticTreeDepth(t *testing.T) {
+	tree, err := deepSemanticTree(maxSemanticTreeEdges)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transcript := mustTranscript(t)
+	snapshot := tree.Snapshot()
+	transcript.Initial.Tree = semanticTreeWire(t, snapshot)
+	transcript.Initial.Hashes.Tree = snapshot.TreeHash
+	transcript.Records[0].Prior.Hashes.Tree = snapshot.TreeHash
+	transcript.Records[0].Result.Hashes.Tree = snapshot.TreeHash
+	refreshInspectorCheckpointChecksum(t, &transcript.Initial)
+	data, err := transcript.CanonicalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := DecodeTranscript(data); err != nil {
+		t.Fatalf("DecodeTranscript() rejected a maximum-depth semantic tree: %v", err)
+	}
+}
+
+func TestDecodeTranscriptRejectsSemanticTreeBeyondJSONDepth(t *testing.T) {
+	tree, err := deepSemanticTree(maxSemanticTreeEdges)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire := semanticTreeWire(t, tree.Snapshot()).(map[string]any)
+	node := wire["root"].(map[string]any)
+	for {
+		children, ok := node["children"].([]any)
+		if !ok || len(children) == 0 {
+			break
+		}
+		node = children[0].(map[string]any)
+	}
+	child := make(map[string]any)
+	if err := json.Unmarshal(mustJSON(t, node), &child); err != nil {
+		t.Fatal(err)
+	}
+	child["actions"] = []any{map[string]any{"id": "deep.action"}}
+	node["children"] = []any{child}
+
+	transcript := mustTranscript(t)
+	transcript.Initial.Tree = wire
+	refreshInspectorCheckpointChecksum(t, &transcript.Initial)
+	data, err := transcript.CanonicalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := DecodeTranscript(data); err == nil || !strings.Contains(err.Error(), "nesting") {
+		t.Fatalf("DecodeTranscript() error = %v, want JSON nesting limit", err)
+	}
+}
+
+func TestDecodeTranscriptKeepsGenericDepthLimitInsideInitialModel(t *testing.T) {
+	transcript := mustTranscript(t)
+	var model any = "leaf"
+	for range maxGenericJSONDepth {
+		model = map[string]any{"initial": map[string]any{"tree": model}}
+	}
+	transcript.Initial.Model = model
+	refreshInspectorCheckpointChecksum(t, &transcript.Initial)
+	data, err := transcript.CanonicalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := DecodeTranscript(data); err == nil || !strings.Contains(err.Error(), "nesting") {
+		t.Fatalf("DecodeTranscript() error = %v, want generic JSON nesting limit inside initial.model", err)
+	}
+}
+
+func TestSemanticTreeRejectsDepthBeyondMaximum(t *testing.T) {
+	if _, err := deepSemanticTree(maxSemanticTreeEdges + 1); err == nil {
+		t.Fatal("semantic.NewTree() accepted a tree deeper than the supported maximum")
 	}
 }
 
@@ -113,4 +194,58 @@ func BenchmarkValidateUniqueJSONKeysNestedScalar(b *testing.B) {
 			b.Fatal(err)
 		}
 	}
+}
+
+func BenchmarkDecodeTranscriptMaximumSemanticTreeDepth(b *testing.B) {
+	tree, err := deepSemanticTree(maxSemanticTreeEdges)
+	if err != nil {
+		b.Fatal(err)
+	}
+	transcript := mustTranscript(b)
+	snapshot := tree.Snapshot()
+	transcript.Initial.Tree = semanticTreeWire(b, snapshot)
+	transcript.Initial.Hashes.Tree = snapshot.TreeHash
+	transcript.Records[0].Prior.Hashes.Tree = snapshot.TreeHash
+	transcript.Records[0].Result.Hashes.Tree = snapshot.TreeHash
+	refreshInspectorCheckpointChecksum(b, &transcript.Initial)
+	data, err := transcript.CanonicalJSON()
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for range b.N {
+		if _, err := DecodeTranscript(data); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func deepSemanticTree(edges int) (semantic.Tree, error) {
+	var child semantic.Node
+	for depth := edges; depth >= 0; depth-- {
+		key := semantic.NodeKey{AppNamespace: "stave", View: "replay", Kind: "node", Entity: strconv.Itoa(depth), Slot: "main"}
+		spec := semantic.NodeSpec{Key: &key, Generation: 1, Role: "group", Name: "node"}
+		if depth == edges {
+			spec.Actions = []semantic.ActionRef{{ID: "deep.action"}}
+		} else {
+			spec.Children = []semantic.Node{child}
+		}
+		var err error
+		child, err = semantic.NewNode(spec)
+		if err != nil {
+			return semantic.Tree{}, err
+		}
+	}
+	return semantic.NewTree(1, child)
+}
+
+func semanticTreeWire(t testing.TB, snapshot semantic.Snapshot) any {
+	t.Helper()
+	var wire any
+	if err := json.Unmarshal(mustJSON(t, snapshot), &wire); err != nil {
+		t.Fatal(err)
+	}
+	return wire
 }

@@ -23,6 +23,13 @@ const (
 	MaxTranscriptBytes = 16 << 20
 	// MaxTranscriptRecords bounds the amount of saved evidence an inspector accepts.
 	MaxTranscriptRecords = 100_000
+	maxGenericJSONDepth  = 64
+	// semantic.Tree accepts a root-to-leaf path of 1024 edges. A transcript
+	// wraps its root node in the transcript, initial checkpoint, and snapshot
+	// objects; every edge then adds a children array and node object. A deepest
+	// action or relation object adds two more containers.
+	maxSemanticTreeEdges   = 1024
+	maxTranscriptJSONDepth = 2*maxSemanticTreeEdges + 5
 )
 
 // DecodeTranscript decodes one saved transcript artifact. JSON whitespace and
@@ -103,6 +110,10 @@ func validateUniqueJSONKeys(data []byte, depth int) error {
 }
 
 func validateUniqueJSONValue(decoder *json.Decoder, depth int) error {
+	return validateUniqueJSONValueInScope(decoder, depth, maxGenericJSONDepth, false)
+}
+
+func validateUniqueJSONValueInScope(decoder *json.Decoder, depth, maxDepth int, initialCheckpoint bool) error {
 	token, err := decoder.Token()
 	if err != nil {
 		return err
@@ -111,17 +122,17 @@ func validateUniqueJSONValue(decoder *json.Decoder, depth int) error {
 	if !ok {
 		return nil
 	}
-	if depth > 64 {
+	if depth > maxDepth {
 		return errors.New("replay transcript JSON nesting exceeds limit")
 	}
 	switch delim {
 	case '{':
-		if err := validateTranscriptObject(decoder, depth); err != nil {
+		if err := validateTranscriptObjectInScope(decoder, depth, maxDepth, initialCheckpoint); err != nil {
 			return err
 		}
 	case '[':
 		for decoder.More() {
-			if err := validateUniqueJSONValue(decoder, depth+1); err != nil {
+			if err := validateUniqueJSONValueInScope(decoder, depth+1, maxDepth, false); err != nil {
 				return err
 			}
 		}
@@ -132,7 +143,7 @@ func validateUniqueJSONValue(decoder *json.Decoder, depth int) error {
 	return err
 }
 
-func validateTranscriptObject(decoder *json.Decoder, depth int) error {
+func validateTranscriptObjectInScope(decoder *json.Decoder, depth, maxDepth int, initialCheckpoint bool) error {
 	seen := map[string]struct{}{}
 	for decoder.More() {
 		key, err := validateUniqueJSONObjectKey(decoder, seen)
@@ -148,7 +159,19 @@ func validateTranscriptObject(decoder *json.Decoder, depth int) error {
 			}
 			continue
 		}
-		if err := validateUniqueJSONValue(decoder, depth+1); err != nil {
+		if depth == 0 && key == "initial" {
+			if err := validateUniqueJSONValueInScope(decoder, depth+1, maxGenericJSONDepth, true); err != nil {
+				return err
+			}
+			continue
+		}
+		if initialCheckpoint && key == "tree" {
+			if err := validateUniqueJSONValueInScope(decoder, depth+1, maxTranscriptJSONDepth, false); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := validateUniqueJSONValueInScope(decoder, depth+1, maxDepth, false); err != nil {
 			return err
 		}
 	}
@@ -166,14 +189,14 @@ func validateTranscriptRecords(decoder *json.Decoder, depth int) error {
 	if token != json.Delim('[') {
 		return errors.New("replay transcript records must be an array")
 	}
-	if depth > 64 {
+	if depth > maxGenericJSONDepth {
 		return errors.New("replay transcript JSON nesting exceeds limit")
 	}
 	for count := 0; decoder.More(); count++ {
 		if count >= MaxTranscriptRecords {
 			return fmt.Errorf("replay transcript exceeds %d-record limit", MaxTranscriptRecords)
 		}
-		if err := validateUniqueJSONValue(decoder, depth+1); err != nil {
+		if err := validateUniqueJSONValueInScope(decoder, depth+1, maxGenericJSONDepth, false); err != nil {
 			return err
 		}
 	}
@@ -229,8 +252,9 @@ func validateRawEventPayloads(data []byte) error {
 }
 
 // validateCanonicalTypedKeys rejects case-folded aliases only for the
-// framework-owned wire objects. Checkpoint Model and Tree, action arguments,
-// effect values, and diagnostic context remain opaque application data.
+// framework-owned wire objects. Checkpoint Model, action arguments, effect
+// values, and diagnostic context remain opaque application data. Checkpoint
+// Tree is validated separately as a semantic snapshot.
 func validateCanonicalTypedKeys(data []byte) error {
 	return validateTypedJSON(data, reflect.TypeOf(Transcript{}))
 }
@@ -463,7 +487,7 @@ func decodeInitialSemanticSnapshot(tree any) (semantic.Snapshot, error) {
 	if err != nil {
 		return semantic.Snapshot{}, err
 	}
-	if err := validateTypedJSON(data, reflect.TypeOf(semanticSnapshotWire{})); err != nil {
+	if err := validateSemanticSnapshotKeys(data); err != nil {
 		return semantic.Snapshot{}, err
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
@@ -496,6 +520,139 @@ func decodeInitialSemanticSnapshot(tree any) (semantic.Snapshot, error) {
 		return semantic.Snapshot{}, err
 	}
 	return snapshot, nil
+}
+
+// validateSemanticSnapshotKeys checks the framework-owned snapshot spelling
+// in one token pass. It avoids recursively unmarshaling RawMessages for a
+// valid 1024-edge semantic tree, while interface and map values remain opaque.
+func validateSemanticSnapshotKeys(data []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	if err := validateTypedJSONTokens(decoder, reflect.TypeOf(semanticSnapshotWire{}), 0); err != nil {
+		return err
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		if err == nil {
+			return errors.New("trailing semantic snapshot")
+		}
+		return err
+	}
+	return nil
+}
+
+func validateTypedJSONTokens(decoder *json.Decoder, typ reflect.Type, depth int) error {
+	token, err := decoder.Token()
+	if err != nil {
+		return err
+	}
+	for typ.Kind() == reflect.Pointer {
+		typ = typ.Elem()
+	}
+	if typ.Kind() == reflect.Interface || typ.Kind() == reflect.Map {
+		return skipJSONToken(decoder, token, depth)
+	}
+	delim, ok := token.(json.Delim)
+	if !ok {
+		return nil
+	}
+	if depth > maxTranscriptJSONDepth {
+		return errors.New("replay transcript JSON nesting exceeds limit")
+	}
+	switch typ.Kind() {
+	case reflect.Slice, reflect.Array:
+		if delim != '[' {
+			return nil
+		}
+		return validateTypedJSONArrayTokens(decoder, typ.Elem(), depth+1)
+	case reflect.Struct:
+		if delim != '{' {
+			return nil
+		}
+		return validateTypedJSONObjectTokens(decoder, typ, depth+1)
+	}
+	return skipJSONToken(decoder, token, depth)
+}
+
+func validateTypedJSONArrayTokens(decoder *json.Decoder, element reflect.Type, depth int) error {
+	for decoder.More() {
+		if err := validateTypedJSONTokens(decoder, element, depth); err != nil {
+			return err
+		}
+	}
+	_, err := decoder.Token()
+	return err
+}
+
+func validateTypedJSONObjectTokens(decoder *json.Decoder, typ reflect.Type, depth int) error {
+	fields := typedJSONFields(typ)
+	for decoder.More() {
+		key, err := decoder.Token()
+		if err != nil {
+			return err
+		}
+		name, ok := key.(string)
+		if !ok {
+			return errors.New("invalid semantic snapshot object key")
+		}
+		fieldType, exists, err := canonicalTypedJSONField(fields, name)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			if err := skipJSONValueTokens(decoder, depth); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := validateTypedJSONTokens(decoder, fieldType, depth); err != nil {
+			return err
+		}
+	}
+	_, err := decoder.Token()
+	return err
+}
+
+func canonicalTypedJSONField(fields map[string]reflect.Type, name string) (reflect.Type, bool, error) {
+	if fieldType, exists := fields[name]; exists {
+		return fieldType, true, nil
+	}
+	for field := range fields {
+		if strings.EqualFold(name, field) {
+			return nil, false, fmt.Errorf("noncanonical typed key %q, want %q", name, field)
+		}
+	}
+	return nil, false, nil
+}
+
+func skipJSONValueTokens(decoder *json.Decoder, depth int) error {
+	token, err := decoder.Token()
+	if err != nil {
+		return err
+	}
+	return skipJSONToken(decoder, token, depth)
+}
+
+func skipJSONToken(decoder *json.Decoder, token any, depth int) error {
+	delim, ok := token.(json.Delim)
+	if !ok {
+		return nil
+	}
+	if depth > maxTranscriptJSONDepth {
+		return errors.New("replay transcript JSON nesting exceeds limit")
+	}
+	for decoder.More() {
+		if delim == '{' {
+			if _, err := decoder.Token(); err != nil {
+				return err
+			}
+		}
+		if err := skipJSONValueTokens(decoder, depth+1); err != nil {
+			return err
+		}
+	}
+	_, err := decoder.Token()
+	return err
 }
 
 type semanticSnapshotWire struct {
