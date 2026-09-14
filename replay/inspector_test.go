@@ -279,6 +279,21 @@ func TestDecodeTranscriptRejectsCaseFoldedTypedAliases(t *testing.T) {
 	}
 }
 
+func TestDecodeTranscriptRejectsCaseFoldedInitialSnapshotAlias(t *testing.T) {
+	transcript := mustTranscript(t)
+	tree := transcript.Initial.Tree.(map[string]any)
+	tree["treehash"] = tree["treeHash"]
+	tree["treeHash"] = "tampered"
+	refreshInspectorCheckpointChecksum(t, &transcript.Initial)
+	data, err := transcript.CanonicalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := DecodeTranscript(data); err == nil {
+		t.Fatal("DecodeTranscript() accepted a case-folded initial snapshot alias")
+	}
+}
+
 func TestDecodeTranscriptPreservesApplicationModelKeyCase(t *testing.T) {
 	transcript := mustTranscript(t)
 	transcript.Initial.Model = map[string]any{"APIKey": "value"}

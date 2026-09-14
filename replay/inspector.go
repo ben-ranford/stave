@@ -463,6 +463,9 @@ func decodeInitialSemanticSnapshot(tree any) (semantic.Snapshot, error) {
 	if err != nil {
 		return semantic.Snapshot{}, err
 	}
+	if err := validateTypedJSON(data, reflect.TypeOf(semanticSnapshotWire{})); err != nil {
+		return semantic.Snapshot{}, err
+	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.UseNumber()
 	decoder.DisallowUnknownFields()
@@ -584,6 +587,9 @@ func validateProducerTransition(index int, prior, result Digest) error {
 	changed := prior.Hashes.Model != result.Hashes.Model || prior.Hashes.Tree != result.Hashes.Tree || prior.Hashes.Surface != result.Hashes.Surface
 	if changed != (result.Revision == prior.Revision+1) {
 		return &Divergence{Code: DivergenceRevision, Index: index, Field: "result.revision", Expected: "change exactly with model, tree, or surface hash", Actual: result.Revision}
+	}
+	if result.Revision == prior.Revision+1 && result.Hashes.Tree == prior.Hashes.Tree {
+		return &Divergence{Code: DivergenceTreeHash, Index: index, Field: "result.hashes.tree", Expected: "change with revision", Actual: "unchanged"}
 	}
 	for _, hash := range []struct {
 		field  string

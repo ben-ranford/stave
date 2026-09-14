@@ -145,6 +145,9 @@ func TestValidateTranscriptRequiresProducerStateTransitions(t *testing.T) {
 			case "surface":
 				valid.Records[0].Result.Hashes.Surface += "-changed"
 			}
+			if field != "tree" {
+				valid.Records[0].Result.Hashes.Tree += "-changed"
+			}
 			valid.Records[0].Result.Revision++
 			valid.Records[0].Event.Revision = valid.Records[0].Result.Revision
 			if err := ValidateTranscript(valid); err != nil {
@@ -159,6 +162,11 @@ func TestValidateTranscriptRequiresProducerStateTransitions(t *testing.T) {
 	}{
 		{"changed hash without revision", func(transcript *Transcript) { transcript.Records[0].Result.Hashes.Model += "-changed" }},
 		{"revision without changed hash", func(transcript *Transcript) {
+			transcript.Records[0].Result.Revision++
+			transcript.Records[0].Event.Revision = transcript.Records[0].Result.Revision
+		}},
+		{"revision with model change but retained tree hash", func(transcript *Transcript) {
+			transcript.Records[0].Result.Hashes.Model += "-changed"
 			transcript.Records[0].Result.Revision++
 			transcript.Records[0].Event.Revision = transcript.Records[0].Result.Revision
 		}},
