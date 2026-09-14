@@ -34,7 +34,7 @@ Stave is created by [Ben Ranford](https://github.com/ben-ranford) and is
 
 ## Installation
 
-Requires **Go 1.22 or later**. In your Go module, install the release candidate:
+Requires **Go 1.22 or later**. In your Go module, install the documented version:
 
 <!-- v1.0.0-rc.2 x-release-please-version -->
 <!-- x-release-please-start-version -->
@@ -45,12 +45,16 @@ go get github.com/ben-ranford/stave@v1.0.0-rc.2
 
 ### Deliberate limits
 
-Stave has not reached general availability. Promotion requires published,
-immutable Lopper proving-client evidence for parity and rollback. The SSH,
-Bubble Tea, and Lip Gloss adapters remain internal until they have independent
-module versions and tags; begin with the root module. See the
+A stable tag requires published, immutable Lopper proving-client evidence for
+parity and rollback before GA promotion. The SSH, Bubble Tea, and Lip Gloss
+adapters remain internal until they have independent module versions and tags;
+begin with the root module. See the
 [compatibility policy](docs/compatibility.md) and [security contract](docs/security.md)
 before integrating consequential agent actions.
+
+Development checkouts may contain unreleased changes. Pin a published tag
+before deploying consequential agent actions; use the development branch for
+evaluation only.
 
 ## Quick start
 
