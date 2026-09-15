@@ -59,7 +59,7 @@ func (a catalogAdapter) Render(root semantic.Node, mode conformance.Mode) (strin
 		Height:           mode.Height,
 		Color:            capability.ColorNone,
 		HardwareColor:    capability.ColorNone,
-		Unicode:          capability.UnicodeFull,
+		Unicode:          capability.UnicodeASCII,
 		ReducedMotion:    mode.ReducedMotion,
 	}
 	if mode.Color {
@@ -67,8 +67,6 @@ func (a catalogAdapter) Render(root semantic.Node, mode conformance.Mode) (strin
 	}
 	if mode.Unicode {
 		caps.Unicode = capability.UnicodeFull
-	} else {
-		caps.Unicode = capability.UnicodeASCII
 	}
 	if mode.TTY {
 		caps.OutputMode = capability.OutputAuto
