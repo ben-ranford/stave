@@ -60,3 +60,7 @@ semantic scenarios and negotiated modes. `conformance.CheckClient` verifies:
 Add representative domain fixtures in your application repository and keep
 them green when upgrading Stave. Compatibility is defined by Stave's versioned
 semantic, action, capability, theme, session, render, and protocol contracts.
+
+For CI systems that consume failures after the checks have already run, use the
+[bounded conformance report format](conformance-reports.md). It formats report
+data only and does not execute application fixtures.
