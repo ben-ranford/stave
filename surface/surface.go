@@ -199,27 +199,36 @@ func (s Surface) WithStyledGrapheme(x, y int, grapheme string, style ResolvedSty
 }
 
 func (s Surface) WithText(x, y int, text string, style ResolvedStyle, link string, nodeID semantic.NodeID, generation uint32, clip layout.Rect) (Surface, error) {
-	next := s
-	cursor := x
-	for _, cluster := range width.DefaultPolicy.Clusters(text) {
-		if cluster.Text == "\n" || cluster.Text == "\r" {
-			break
+	var builder *Builder
+	err := visitTextClusters(x, text, func(cursor int, cluster width.Cluster) error {
+		if builder == nil && canPlaceCluster(s, cursor, y, cluster, clip) {
+			builder = builderFromSurface(s)
 		}
-		if cluster.Text == "\t" {
-			cluster.Text = strings.Repeat(" ", 4)
-			cluster.Width = 4
+		if builder != nil {
+			return builder.placeCluster(cursor, y, cluster, style, link, nodeID, generation, clip)
 		}
-		var err error
-		next, err = next.placeCluster(cursor, y, cluster, style, link, nodeID, generation, clip)
-		if err != nil {
-			return s, err
-		}
-		cursor += cluster.Width
+		return nil
+	})
+	if err != nil || builder == nil {
+		return s, err
 	}
-	return next, nil
+	return builder.Surface(), nil
+}
+
+func canPlaceCluster(s Surface, x, y int, cluster width.Cluster, clip layout.Rect) bool {
+	if y < 0 || y >= s.Height || cluster.Width == 0 || x < 0 || x+cluster.Width > s.Width {
+		return false
+	}
+	return (clip.Width == 0 && clip.Height == 0) || (y >= clip.Y && y < clip.Y+clip.Height && x >= clip.X && x+cluster.Width <= clip.X+clip.Width)
 }
 
 func (b *Builder) WithText(x, y int, text string, style ResolvedStyle, link string, nodeID semantic.NodeID, generation uint32, clip layout.Rect) error {
+	return visitTextClusters(x, text, func(cursor int, cluster width.Cluster) error {
+		return b.placeCluster(cursor, y, cluster, style, link, nodeID, generation, clip)
+	})
+}
+
+func visitTextClusters(x int, text string, visit func(int, width.Cluster) error) error {
 	cursor := x
 	for _, cluster := range width.DefaultPolicy.Clusters(text) {
 		if cluster.Text == "\n" || cluster.Text == "\r" {
@@ -229,7 +238,7 @@ func (b *Builder) WithText(x, y int, text string, style ResolvedStyle, link stri
 			cluster.Text = strings.Repeat(" ", 4)
 			cluster.Width = 4
 		}
-		if err := b.placeCluster(cursor, y, cluster, style, link, nodeID, generation, clip); err != nil {
+		if err := visit(cursor, cluster); err != nil {
 			return err
 		}
 		cursor += cluster.Width
@@ -412,6 +421,25 @@ func (s Surface) clone() Surface {
 		links:  append([]string(nil), s.links...),
 		hash:   s.hash,
 	}
+}
+
+func builderFromSurface(s Surface) *Builder {
+	builder := &Builder{
+		surface:    s.clone(),
+		styleIndex: make(map[ResolvedStyle]StyleID, len(s.styles)),
+		linkIndex:  make(map[string]LinkID, len(s.links)),
+	}
+	for i, style := range s.styles {
+		if _, exists := builder.styleIndex[style]; !exists {
+			builder.styleIndex[style] = StyleID(i + 1)
+		}
+	}
+	for i, link := range s.links {
+		if _, exists := builder.linkIndex[link]; !exists {
+			builder.linkIndex[link] = LinkID(i + 1)
+		}
+	}
+	return builder
 }
 
 func (b *Builder) putCell(x, y int, cell Cell) {
