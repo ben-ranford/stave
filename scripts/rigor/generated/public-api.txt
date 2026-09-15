@@ -545,11 +545,11 @@ type SnapshotResult struct { SchemaVersion string `json:"schemaVersion"`; Sessio
 var ErrBatch error
 
 [github.com/ben-ranford/stave/render]
-const OutputAll
-const OutputMachine
-const OutputPatch
-const OutputPlain
-const OutputTerminal
+const OutputAll Outputs = 15
+const OutputMachine Outputs = 4
+const OutputPatch Outputs = 1
+const OutputPlain Outputs = 2
+const OutputTerminal Outputs = 8
 func ANSI(text string, level capability.ColorLevel, fg string) string
 func Render(r Request) (Result, error)
 func RenderSelected(r Request, outputs Outputs) (Result, error)
