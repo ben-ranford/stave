@@ -551,6 +551,19 @@
       ]
     },
     {
+      "importPath": "github.com/ben-ranford/stave/scripts/rigor/native-smoke",
+      "dir": "scripts/rigor/native-smoke",
+      "imports": [
+        "bytes",
+        "encoding/json",
+        "fmt",
+        "os",
+        "os/exec",
+        "path/filepath",
+        "strings"
+      ]
+    },
+    {
       "importPath": "github.com/ben-ranford/stave/secret",
       "dir": "secret",
       "imports": [

@@ -12,6 +12,7 @@ same semantic interface for people and automation.
 - [Apply the security contract](security.md)
 - [Understand configuration ownership](config-ownership.md)
 - [Publish a release candidate](releasing.md)
+- [Understand native hosted smoke checks](native-hosted-smokes.md)
 
 ## Maintainers
 
