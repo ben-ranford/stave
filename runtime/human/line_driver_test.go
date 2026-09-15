@@ -3,7 +3,10 @@ package human
 import (
 	"bytes"
 	"context"
+	"errors"
+	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/ben-ranford/stave/capability"
@@ -12,6 +15,75 @@ import (
 	"github.com/ben-ranford/stave/semantic"
 	"github.com/ben-ranford/stave/surface"
 )
+
+type countedLineInput struct {
+	reader *strings.Reader
+	reads  atomic.Int32
+}
+
+func (r *countedLineInput) Read(p []byte) (int, error) {
+	r.reads.Add(1)
+	return r.reader.Read(p)
+}
+
+func TestLineDriverOpenHonorsCanceledContext(t *testing.T) {
+	input := &countedLineInput{reader: strings.NewReader("ready\n")}
+	driver, err := NewLineDriver(LineDriverOptions{Input: input, Output: &bytes.Buffer{}, TTY: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	manifest, err := driver.Open(ctx, capability.Policy{})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Open() error = %v, want context.Canceled", err)
+	}
+	if !reflect.DeepEqual(manifest, capability.Manifest{}) {
+		t.Fatalf("Open() manifest = %+v, want zero manifest", manifest)
+	}
+	driver.mu.Lock()
+	opened, scanCancel := driver.opened, driver.cancel
+	driver.mu.Unlock()
+	if opened || scanCancel != nil {
+		t.Fatalf("canceled Open changed driver state: opened=%t scanCancel=%t", opened, scanCancel != nil)
+	}
+	if reads := input.reads.Load(); reads != 0 {
+		t.Fatalf("canceled Open read input %d times", reads)
+	}
+	if _, err := driver.Open(context.Background(), capability.Policy{}); err != nil {
+		t.Fatalf("valid Open after cancellation: %v", err)
+	}
+	var text string
+	for ev := range driver.Events() {
+		if ev.Kind == event.Text {
+			text += ev.Payload.(event.TextPayload).Text
+		}
+	}
+	if text != "ready" || input.reads.Load() == 0 {
+		t.Fatalf("retry did not preserve input: text=%q reads=%d", text, input.reads.Load())
+	}
+}
+
+func TestLineDriverOpenHonorsActiveContext(t *testing.T) {
+	driver, err := NewLineDriver(LineDriverOptions{Input: strings.NewReader("ready\n"), Output: &bytes.Buffer{}, TTY: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := driver.Open(context.Background(), capability.Policy{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !manifest.Interactive {
+		t.Fatalf("Open() manifest = %+v, want interactive manifest", manifest)
+	}
+	events := 0
+	for range driver.Events() {
+		events++
+	}
+	if events == 0 {
+		t.Fatal("active driver produced no events")
+	}
+}
 
 func TestLineDriverEmitsCanonicalTextAndShutdown(t *testing.T) {
 	var output bytes.Buffer
