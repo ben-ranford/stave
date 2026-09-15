@@ -69,24 +69,25 @@ type Options[M any] struct {
 }
 
 type Session[M any] struct {
-	mu              sync.RWMutex
-	ctx             context.Context
-	cancel          context.CancelFunc
-	reduce          Reducer[M]
-	view            View[M]
-	reduceTimeout   time.Duration
-	viewTimeout     time.Duration
-	modelPolicy     state.ModelPolicy[M]
-	queue           *eventQueue
-	effects         *effect.Executor
-	effectDelivery  effect.Delivery
-	lifecycle       Lifecycle
-	current         state.State[M]
-	diagnosticCount uint64
-	diagnostics     []Diagnostic
-	transcript      replay.Transcript
-	closeOnce       sync.Once
-	loopDone        chan struct{}
+	mu               sync.RWMutex
+	ctx              context.Context
+	cancel           context.CancelFunc
+	reduce           Reducer[M]
+	view             View[M]
+	reduceTimeout    time.Duration
+	viewTimeout      time.Duration
+	modelPolicy      state.ModelPolicy[M]
+	queue            *eventQueue
+	effectAdmissions *effectAdmissionQueue
+	effects          *effect.Executor
+	effectDelivery   effect.Delivery
+	lifecycle        Lifecycle
+	current          state.State[M]
+	diagnosticCount  uint64
+	diagnostics      []Diagnostic
+	transcript       replay.Transcript
+	closeOnce        sync.Once
+	loopDone         chan struct{}
 }
 
 func New[M any](ctx context.Context, opts Options[M]) (*Session[M], error) {
@@ -111,18 +112,19 @@ func New[M any](ctx context.Context, opts Options[M]) (*Session[M], error) {
 	sessionCtx, cancel := context.WithCancel(ctx)
 
 	s := &Session[M]{
-		ctx:            sessionCtx,
-		cancel:         cancel,
-		reduce:         opts.Reduce,
-		view:           opts.View,
-		reduceTimeout:  opts.ReduceTimeout,
-		viewTimeout:    opts.ViewTimeout,
-		modelPolicy:    opts.ModelPolicy,
-		queue:          newEventQueue(opts.QueueCapacity),
-		effects:        effect.NewExecutor(effect.Options{Ports: opts.EffectPorts, Parallelism: opts.EffectParallelism, Delivery: opts.EffectDelivery, MaxActiveBatches: opts.MaxActiveBatches}),
-		effectDelivery: opts.EffectDelivery,
-		lifecycle:      LifecycleStarting,
-		loopDone:       make(chan struct{}),
+		ctx:              sessionCtx,
+		cancel:           cancel,
+		reduce:           opts.Reduce,
+		view:             opts.View,
+		reduceTimeout:    opts.ReduceTimeout,
+		viewTimeout:      opts.ViewTimeout,
+		modelPolicy:      opts.ModelPolicy,
+		queue:            newEventQueue(opts.QueueCapacity),
+		effectAdmissions: newEffectAdmissionQueue(opts.QueueCapacity),
+		effects:          effect.NewExecutor(effect.Options{Ports: opts.EffectPorts, Parallelism: opts.EffectParallelism, Delivery: opts.EffectDelivery, MaxActiveBatches: opts.MaxActiveBatches}),
+		effectDelivery:   opts.EffectDelivery,
+		lifecycle:        LifecycleStarting,
+		loopDone:         make(chan struct{}),
 	}
 
 	initialState, viewDiagnostics, err := s.renderState(opts.SessionID, opts.Initial, 0, 0, opts)
@@ -145,9 +147,24 @@ func New[M any](ctx context.Context, opts Options[M]) (*Session[M], error) {
 	s.transcript = replay.NewTranscript(initialState.SessionID, initialState.Versions, checkpoint)
 
 	go s.loop()
+	go s.admitEffects()
 	return s, nil
 }
 
+// Send queues input for reduction. A successful return does not guarantee that
+// its proposed state will be published. Pending effect batches are separately
+// bounded by Options.QueueCapacity (default 256). Saturation discards ordinary
+// input proposals with effects before rendering and reports
+// EFFECT_ADMISSION_BACKPRESSURE through Diagnostics once per saturation episode,
+// without changing state or transcript. A completed effect result runs the normal
+// event transaction: successful output and follow-up declarations are published;
+// callback failures retain the prior model and effect hashes under normal
+// rejection semantics. Either outcome closes the overloaded session, cancels
+// active and pending effect work, and discards queued unpublished events,
+// including sibling effect results. Queue acceptance is not durable publication.
+// Successfully published results remain replayable; replay does not reproduce
+// overload-driven lifecycle closure. Effectless input remains processable, and
+// Cancel or Shutdown still closes a saturated session.
 func (s *Session[M]) Send(ev event.Event) error {
 	// Clone at the ownership boundary. Callers may reuse or mutate payload
 	// slices/maps immediately after Send returns.
@@ -279,6 +296,18 @@ func (s *Session[M]) handleEvent(raw event.Event) {
 		return
 	}
 
+	admission := s.reserveEffectBatch(raw, len(requests))
+	if admission == effectAdmissionRejected {
+		return
+	}
+	defer s.finishEffectAdmission(raw, admission)
+	reservationHeld := admission == effectAdmissionReserved
+	defer func() {
+		if reservationHeld {
+			s.effectAdmissions.release()
+		}
+	}()
+
 	rendered, viewDiagnostics, err := s.renderState(current.SessionID, nextModel, accepted.Sequence, current.Revision, Options[M]{
 		ConfigHash:   current.ConfigHash,
 		ThemeHash:    current.ThemeHash,
@@ -332,10 +361,9 @@ func (s *Session[M]) handleEvent(raw event.Event) {
 	}
 
 	s.publish(current, rendered, accepted)
-	s.startEffectCalls(calls)
-
-	if raw.Kind == event.Cancel || raw.Kind == event.Shutdown {
-		s.beginClose()
+	if reservationHeld {
+		s.effectAdmissions.commit(calls)
+		reservationHeld = false
 	}
 }
 
@@ -397,28 +425,87 @@ func (s *Session[M]) bindEffects(snapshot state.State[M], requests []effect.Requ
 	return calls, hash, nil
 }
 
-func (s *Session[M]) startEffectCalls(calls []effect.Call) {
-	if len(calls) == 0 {
-		return
+type effectAdmissionDecision uint8
+
+const (
+	effectAdmissionSkipped effectAdmissionDecision = iota
+	effectAdmissionReserved
+	effectAdmissionRejected
+	effectAdmissionTerminal
+)
+
+func (s *Session[M]) reserveEffectBatch(raw event.Event, requestCount int) effectAdmissionDecision {
+	if requestCount == 0 {
+		return effectAdmissionSkipped
 	}
-	// A published declaration is durable. Wait for a bounded executor slot
-	// instead of dropping the batch when another batch is active.
+	overflowEpisode, err := s.effectAdmissions.reserve()
+	if err == nil {
+		return effectAdmissionReserved
+	}
+	if errors.Is(err, ErrBackpressure) {
+		if raw.Kind == event.EffectResult {
+			// A completion cannot be redelivered. Preserve its reducer output,
+			// then cancel its unadmitted follow-ups by closing after publication.
+			return effectAdmissionTerminal
+		}
+		if overflowEpisode {
+			s.addTransientDiagnostic("EFFECT_ADMISSION_BACKPRESSURE", "pending effect admission queue saturated", nil)
+		}
+	}
+	if raw.Kind == event.Cancel || raw.Kind == event.Shutdown {
+		s.beginClose()
+	}
+	return effectAdmissionRejected
+}
+
+func (s *Session[M]) finishEffectAdmission(raw event.Event, admission effectAdmissionDecision) {
+	if admission == effectAdmissionTerminal {
+		s.addTransientDiagnostic("EFFECT_ADMISSION_BACKPRESSURE", "effect result follow-up admission saturated; closing session", nil)
+	}
+	if admission == effectAdmissionTerminal || raw.Kind == event.Cancel || raw.Kind == event.Shutdown {
+		s.beginClose()
+	}
+}
+
+// admitEffects owns the only pending admission retry loop. A published
+// declaration has already reserved capacity in effectAdmissions, so it stays
+// durable until admitted or session shutdown cancels the pending queue.
+func (s *Session[M]) admitEffects() {
+	defer s.beginClose()
 	for {
-		err := s.effects.Deliver(s.ctx, calls, s.enqueueInternalEvent)
-		if err == nil {
+		calls, ok := s.effectAdmissions.next(s.ctx)
+		if !ok {
 			return
 		}
-		if errors.Is(err, effect.ErrBackpressure) {
-			select {
-			case <-s.ctx.Done():
-				s.addTransientDiagnostic("EFFECT_DELIVERY_CANCELLED", "effect delivery cancelled", nil)
-				return
-			case <-time.After(time.Millisecond):
-			}
-			continue
+		resultHandoff := make(chan struct{})
+		enqueueResult := func(ev event.Event) error {
+			<-resultHandoff
+			return s.enqueueInternalEvent(ev)
 		}
-		s.addTransientDiagnostic("EFFECT_DELIVER_FAILED", "effect delivery failed", nil)
-		return
+		for {
+			if s.ctx.Err() != nil {
+				return
+			}
+			err := s.effects.Deliver(s.ctx, calls, enqueueResult)
+			if err == nil {
+				s.effectAdmissions.release()
+				close(resultHandoff)
+				break
+			}
+			if errors.Is(err, effect.ErrBackpressure) {
+				select {
+				case <-s.ctx.Done():
+					return
+				case <-time.After(time.Millisecond):
+				}
+				continue
+			}
+			if !errors.Is(err, effect.ErrClosed) {
+				s.addTransientDiagnostic("EFFECT_DELIVER_FAILED", "effect delivery failed", nil)
+			}
+			s.effectAdmissions.release()
+			break
+		}
 	}
 }
 
@@ -608,6 +695,98 @@ type eventQueue struct {
 	overflowing bool
 }
 
+// effectAdmissionQueue reserves bounded capacity before publication and exposes
+// batches to the worker only after publication. Reservations include the batch
+// held by the worker while it retries executor admission.
+type effectAdmissionQueue struct {
+	mu          sync.Mutex
+	committed   chan []effect.Call
+	done        chan struct{}
+	reserved    int
+	closed      bool
+	overflowing bool
+}
+
+func newEffectAdmissionQueue(capacity int) *effectAdmissionQueue {
+	return &effectAdmissionQueue{
+		committed: make(chan []effect.Call, capacity),
+		done:      make(chan struct{}),
+	}
+}
+
+func (q *effectAdmissionQueue) reserve() (bool, error) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if q.closed {
+		return false, ErrSessionClosed
+	}
+	if q.reserved >= cap(q.committed) {
+		episode := !q.overflowing
+		q.overflowing = true
+		return episode, ErrBackpressure
+	}
+	q.reserved++
+	return false, nil
+}
+
+func (q *effectAdmissionQueue) commit(calls []effect.Call) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if q.closed {
+		return
+	}
+	// Each batch has reserved a slot, including any batch held by the worker.
+	// The serialized producer commits each reservation exactly once.
+	select {
+	case q.committed <- calls:
+	default:
+		panic("effect admission committed without reserved capacity")
+	}
+}
+
+func (q *effectAdmissionQueue) next(ctx context.Context) ([]effect.Call, bool) {
+	select {
+	case <-ctx.Done():
+		return nil, false
+	case <-q.done:
+		return nil, false
+	case calls := <-q.committed:
+		q.mu.Lock()
+		defer q.mu.Unlock()
+		if q.closed || ctx.Err() != nil {
+			return nil, false
+		}
+		return calls, true
+	}
+}
+
+func (q *effectAdmissionQueue) release() {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if q.reserved > 0 {
+		q.reserved--
+		q.overflowing = false
+	}
+}
+
+func (q *effectAdmissionQueue) close() {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if q.closed {
+		return
+	}
+	q.closed = true
+	q.reserved = 0
+	close(q.done)
+	for {
+		select {
+		case <-q.committed:
+		default:
+			return
+		}
+	}
+}
+
 func newEventQueue(capacity int) *eventQueue {
 	return &eventQueue{
 		capacity: capacity,
@@ -677,6 +856,7 @@ func (q *eventQueue) close() {
 		return
 	}
 	q.closed = true
+	q.items = nil
 	q.signal()
 	q.mu.Unlock()
 }
@@ -700,6 +880,7 @@ func (s *Session[M]) beginClose() {
 		s.mu.Unlock()
 		s.queue.close()
 		s.effects.Close()
+		s.effectAdmissions.close()
 		s.cancel()
 	})
 }
