@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -60,6 +61,321 @@ func TestSessionSerializesReducerOwnership(t *testing.T) {
 	})
 	if got := atomic.LoadInt32(&maxConcurrent); got != 1 {
 		t.Fatalf("max concurrent reducer calls = %d, want 1", got)
+	}
+}
+
+func TestSessionWaitKeepsPollingTimeVaryingPredicate(t *testing.T) {
+	s := newSession(t, Options[model]{
+		Reduce: func(ctx context.Context, current model, ev event.Event) (model, []effect.Request, error) {
+			return current, nil, nil
+		},
+		View: testView,
+	})
+	defer s.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	var evaluations atomic.Int32
+	if err := s.Wait(ctx, func(state.State[model]) bool {
+		return evaluations.Add(1) == 2
+	}); err != nil {
+		t.Fatalf("Wait() error = %v", err)
+	}
+	if got := evaluations.Load(); got != 2 {
+		t.Fatalf("Wait predicate evaluations = %d, want polling to re-evaluate time-varying predicate", got)
+	}
+}
+
+func TestSessionWaitForPublicationWakesOnSequenceOnlyPublication(t *testing.T) {
+	s := newSession(t, Options[model]{
+		Reduce: func(ctx context.Context, current model, ev event.Event) (model, []effect.Request, error) {
+			return current, nil, errors.New("reject")
+		},
+		View: testView,
+	})
+	defer s.Close()
+
+	entered := make(chan struct{})
+	result := make(chan error, 1)
+	go func() {
+		result <- s.WaitForPublication(context.Background(), func(snapshot state.State[model]) bool {
+			if snapshot.Sequence == 0 {
+				close(entered)
+			}
+			return snapshot.Sequence == 1
+		})
+	}()
+	<-entered
+	if err := s.Send(mustEvent(t, event.Key, event.KeyPayload{Key: "enter"})); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-result:
+		if err != nil {
+			t.Fatalf("WaitForPublication() error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("WaitForPublication did not observe sequence-only publication")
+	}
+	assertDiagnostic(t, s.Diagnostics(), "REDUCE_FAILED")
+}
+
+func TestSessionWaitForPublicationWakesOnTransientDiagnostic(t *testing.T) {
+	s := newSession(t, Options[model]{
+		Reduce: func(ctx context.Context, current model, ev event.Event) (model, []effect.Request, error) {
+			return current, nil, nil
+		},
+		View: testView,
+	})
+	defer s.Close()
+
+	entered := make(chan struct{})
+	result := make(chan error, 1)
+	go func() {
+		result <- s.WaitForPublication(context.Background(), func(state.State[model]) bool {
+			diagnostics := s.Diagnostics()
+			if len(diagnostics) == 0 {
+				close(entered)
+			}
+			return len(diagnostics) == 1
+		})
+	}()
+	<-entered
+	s.addTransientDiagnostic("TEST", "test", nil)
+	select {
+	case err := <-result:
+		if err != nil {
+			t.Fatalf("WaitForPublication() error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("WaitForPublication did not observe transient diagnostic")
+	}
+}
+
+func TestSessionWaitForPublicationAvoidsIdleClonePolling(t *testing.T) {
+	var clones atomic.Int32
+	s := newSession(t, Options[model]{
+		ModelPolicy: state.ModelPolicy[model]{
+			Clone: func(current model) (model, error) {
+				clones.Add(1)
+				return current, nil
+			},
+		},
+		Reduce: func(ctx context.Context, current model, ev event.Event) (model, []effect.Request, error) {
+			return current, nil, nil
+		},
+		View: testView,
+	})
+	defer s.Close()
+	clones.Store(0)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	entered := make(chan struct{})
+	result := make(chan error, 1)
+	go func() {
+		result <- s.WaitForPublication(ctx, func(state.State[model]) bool {
+			close(entered)
+			return false
+		})
+	}()
+	<-entered
+	if got := clones.Load(); got != 1 {
+		t.Fatalf("initial WaitForPublication clones = %d, want 1", got)
+	}
+	cancel()
+	if err := <-result; !errors.Is(err, context.Canceled) {
+		t.Fatalf("WaitForPublication() error = %v, want context.Canceled", err)
+	}
+	if got := clones.Load(); got != 1 {
+		t.Fatalf("idle WaitForPublication clones = %d, want 1", got)
+	}
+}
+
+func TestSessionWaitForPublicationCallerCancellationPrecedesClosedSession(t *testing.T) {
+	for range 32 {
+		parent, cancel := context.WithCancel(context.Background())
+		s := newPublicationWaitTestSession(t, parent)
+		cancel()
+		err := s.WaitForPublication(parent, func(state.State[model]) bool { return false })
+		s.Close()
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("WaitForPublication() error = %v, want context.Canceled", err)
+		}
+	}
+}
+
+func TestSessionWaitForPublicationCallerCancellationPrecedesClosedSessionWhileWaiting(t *testing.T) {
+	for range 32 {
+		assertPublicationCallerCancellationWhileWaiting(t)
+	}
+}
+
+func TestSessionWaitForPublicationWaitsForInFlightCallbackAfterParentCancellation(t *testing.T) {
+	parent, cancelParent := context.WithCancel(context.Background())
+	defer cancelParent()
+	callbackEntered, releaseCallback := make(chan struct{}), make(chan struct{})
+	s, err := New(parent, Options[model]{
+		Reduce: func(_ context.Context, current model, _ event.Event) (model, []effect.Request, error) {
+			close(callbackEntered)
+			<-releaseCallback
+			current.Count++
+			return current, nil, nil
+		},
+		View: testView,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	matched := make(chan error, 1)
+	unmatched := make(chan error, 1)
+	go func() {
+		matched <- s.WaitForPublication(context.Background(), func(snapshot state.State[model]) bool { return snapshot.Model.Count == 1 })
+	}()
+	go func() {
+		unmatched <- s.WaitForPublication(context.Background(), func(state.State[model]) bool { return false })
+	}()
+	if err := s.Send(mustEvent(t, event.Key, event.KeyPayload{Key: "enter"})); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-callbackEntered:
+	case <-time.After(time.Second):
+		t.Fatal("reducer did not start")
+	}
+	cancelParent()
+	select {
+	case <-s.ctx.Done():
+	case <-time.After(time.Second):
+		t.Fatal("parent cancellation did not reach session")
+	}
+	for _, result := range []<-chan error{matched, unmatched} {
+		select {
+		case err := <-result:
+			t.Fatalf("publication waiter returned before callback completed: %v", err)
+		case <-time.After(25 * time.Millisecond):
+		}
+	}
+
+	deadline, cancelDeadline := context.WithTimeout(context.Background(), 25*time.Millisecond)
+	defer cancelDeadline()
+	if err := s.WaitForPublication(deadline, func(state.State[model]) bool { return false }); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("caller deadline error = %v, want context deadline exceeded", err)
+	}
+	close(releaseCallback)
+	select {
+	case err := <-matched:
+		if err != nil {
+			t.Fatalf("final publication was not observed: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("matching waiter did not observe final publication")
+	}
+	select {
+	case err := <-unmatched:
+		if !errors.Is(err, ErrSessionClosed) {
+			t.Fatalf("unmatched waiter error = %v, want ErrSessionClosed", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("unmatched waiter did not return after loop stop")
+	}
+}
+
+func assertPublicationCallerCancellationWhileWaiting(t *testing.T) {
+	t.Helper()
+	parent, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s := newPublicationWaitTestSession(t, parent)
+	defer s.Close()
+	entered := make(chan struct{})
+	result := make(chan error, 1)
+	go func() {
+		result <- s.WaitForPublication(parent, func(state.State[model]) bool {
+			close(entered)
+			return false
+		})
+	}()
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("WaitForPublication did not evaluate its predicate")
+	}
+	cancel()
+	select {
+	case err := <-result:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("WaitForPublication() error = %v, want context.Canceled", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("WaitForPublication did not return after cancellation")
+	}
+}
+
+func newPublicationWaitTestSession(t *testing.T, ctx context.Context) *Session[model] {
+	t.Helper()
+	s, err := New(ctx, Options[model]{
+		Reduce: func(context.Context, model, event.Event) (model, []effect.Request, error) { return model{}, nil, nil },
+		View:   testView,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+func TestSessionWaitForPublicationWakesConcurrentWaitersAndClose(t *testing.T) {
+	s := newSession(t, Options[model]{
+		Reduce: func(ctx context.Context, current model, ev event.Event) (model, []effect.Request, error) {
+			current.Count++
+			return current, nil, nil
+		},
+		View: testView,
+	})
+
+	const waiters = 4
+	ready := make(chan struct{}, waiters)
+	results := make(chan error, waiters)
+	for range waiters {
+		go func() {
+			results <- s.WaitForPublication(context.Background(), func(snapshot state.State[model]) bool {
+				if snapshot.Sequence == 0 {
+					ready <- struct{}{}
+				}
+				return snapshot.Sequence == 1
+			})
+		}()
+	}
+	for range waiters {
+		<-ready
+	}
+	if err := s.Send(mustEvent(t, event.Key, event.KeyPayload{Key: "enter"})); err != nil {
+		t.Fatal(err)
+	}
+	for range waiters {
+		select {
+		case err := <-results:
+			if err != nil {
+				t.Fatalf("WaitForPublication() error = %v", err)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("concurrent WaitForPublication waiter did not wake")
+		}
+	}
+
+	closeReady := make(chan struct{})
+	var closeReadyOnce sync.Once
+	closed := make(chan error, 1)
+	go func() {
+		closed <- s.WaitForPublication(context.Background(), func(state.State[model]) bool {
+			closeReadyOnce.Do(func() { close(closeReady) })
+			return false
+		})
+	}()
+	<-closeReady
+	s.Close()
+	if err := <-closed; !errors.Is(err, ErrSessionClosed) {
+		t.Fatalf("WaitForPublication() close error = %v, want ErrSessionClosed", err)
 	}
 }
 
@@ -460,6 +776,30 @@ func TestSessionShutdownCancelsPendingEffectAdmission(t *testing.T) {
 	}
 }
 
+func TestSessionCloseDropsLateEffectResultWithoutPublication(t *testing.T) {
+	s := newPublicationWaitTestSession(t, context.Background())
+	s.Close()
+
+	before := s.Diagnostics()
+	err := s.enqueueInternalEvent(event.Event{
+		SchemaVersion: event.SchemaVersion,
+		Kind:          event.EffectResult,
+		Payload: event.EffectResultPayload{
+			CallID: "late-call",
+			Status: "completed",
+		},
+	})
+	if !errors.Is(err, ErrSessionClosed) {
+		t.Fatalf("enqueueInternalEvent() error = %v, want ErrSessionClosed", err)
+	}
+	if got := s.Diagnostics(); !reflect.DeepEqual(got, before) {
+		t.Fatalf("late effect changed diagnostics after close: got %#v, want %#v", got, before)
+	}
+	if err := s.WaitForPublication(context.Background(), func(state.State[model]) bool { return false }); !errors.Is(err, ErrSessionClosed) {
+		t.Fatalf("WaitForPublication() error = %v, want ErrSessionClosed", err)
+	}
+}
+
 func TestSessionCancellationDiscardsLateEffectResults(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
@@ -500,7 +840,6 @@ func TestSessionCancellationDiscardsLateEffectResults(t *testing.T) {
 	}()
 	<-closed
 	close(release)
-	waitDiagnostic(t, s, "LATE_EFFECT_RESULT")
 
 	snapshot, err := s.Snapshot()
 	if err != nil {
@@ -645,4 +984,60 @@ func waitDiagnostic(t *testing.T, s *Session[model], code string) {
 		time.Sleep(time.Millisecond)
 	}
 	t.Fatalf("missing diagnostic %q in %#v", code, s.Diagnostics())
+}
+
+func TestSessionWaitForPublicationObservesFinalShutdown(t *testing.T) {
+	for _, startBeforeClose := range []bool{false, true} {
+		t.Run(fmt.Sprint(startBeforeClose), func(t *testing.T) {
+			s := newSession(t, Options[model]{Reduce: func(_ context.Context, current model, _ event.Event) (model, []effect.Request, error) {
+				return current, nil, nil
+			}, View: testView})
+			defer s.Close()
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			entered, release := make(chan struct{}), make(chan struct{})
+			var once sync.Once
+			result := make(chan error, 1)
+			wait := func() {
+				result <- s.WaitForPublication(ctx, func(snapshot state.State[model]) bool {
+					if snapshot.Sequence == 0 {
+						once.Do(func() { close(entered) })
+						select {
+						case <-release:
+						case <-ctx.Done():
+						}
+					}
+					return snapshot.Sequence == 1
+				})
+			}
+			if startBeforeClose {
+				go wait()
+				select {
+				case <-entered:
+				case <-ctx.Done():
+					t.Fatal("waiter did not start")
+				}
+			}
+			if err := s.Send(mustEvent(t, event.Shutdown, nil)); err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case <-s.loopDone:
+			case <-ctx.Done():
+				t.Fatal("shutdown did not close")
+			}
+			close(release)
+			if !startBeforeClose {
+				go wait()
+			}
+			select {
+			case err := <-result:
+				if err != nil {
+					t.Fatalf("final publication was not observed: %v", err)
+				}
+			case <-ctx.Done():
+				t.Fatal("waiter did not return")
+			}
+		})
+	}
 }

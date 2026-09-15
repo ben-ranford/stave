@@ -88,6 +88,7 @@ type Session[M any] struct {
 	transcript       replay.Transcript
 	closeOnce        sync.Once
 	loopDone         chan struct{}
+	publication      chan struct{}
 }
 
 func New[M any](ctx context.Context, opts Options[M]) (*Session[M], error) {
@@ -125,6 +126,7 @@ func New[M any](ctx context.Context, opts Options[M]) (*Session[M], error) {
 		effectDelivery:   opts.EffectDelivery,
 		lifecycle:        LifecycleStarting,
 		loopDone:         make(chan struct{}),
+		publication:      make(chan struct{}),
 	}
 
 	initialState, viewDiagnostics, err := s.renderState(opts.SessionID, opts.Initial, 0, 0, opts)
@@ -233,6 +235,53 @@ func (s *Session[M]) Wait(ctx context.Context, predicate func(state.State[M]) bo
 	}
 }
 
+// WaitForPublication evaluates predicate against an isolated snapshot, then
+// waits for the next state publication, transient diagnostic, or close. Unlike
+// Wait, it does not poll: predicates that depend on elapsed time should keep
+// using Wait. Predicate runs without the session lock and may call Session
+// methods. Session closure returns ErrSessionClosed after evaluating its latest
+// publication if the predicate remains false. Transient diagnostics produced
+// after closure are discarded, including completions from effects that ignore
+// cancellation; caller cancellation returns ctx.Err().
+func (s *Session[M]) WaitForPublication(ctx context.Context, predicate func(state.State[M]) bool) error {
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		s.mu.RLock()
+		current := s.current
+		publication := s.publication
+		loopDone := s.loopDone
+		terminal := false
+		select {
+		case <-loopDone:
+			terminal = true
+		default:
+		}
+		s.mu.RUnlock()
+
+		snapshot, err := current.Clone(s.modelPolicy)
+		if err != nil {
+			return err
+		}
+		if predicate(snapshot) {
+			return nil
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if terminal {
+			return ErrSessionClosed
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-loopDone:
+		case <-publication:
+		}
+	}
+}
+
 func (s *Session[M]) Cancel() {
 	s.Close()
 }
@@ -246,7 +295,11 @@ func (s *Session[M]) loop() {
 	defer close(s.loopDone)
 	defer func() {
 		s.mu.Lock()
+		wasCancelling := s.lifecycle == LifecycleCancelling
 		s.lifecycle = LifecycleClosed
+		if !wasCancelling {
+			s.notifyPublicationLocked()
+		}
 		s.mu.Unlock()
 	}()
 	for {
@@ -405,6 +458,7 @@ func (s *Session[M]) publish(prior, next state.State[M], accepted event.Event) {
 	}
 	record.SchemaVersion = replay.SchemaVersion
 	s.transcript.Append(record)
+	s.notifyPublicationLocked()
 }
 
 func (s *Session[M]) bindEffects(snapshot state.State[M], requests []effect.Request) ([]effect.Call, string, error) {
@@ -603,8 +657,20 @@ func (s *Session[M]) addDiagnosticLocked(diagnostic Diagnostic) uint64 {
 
 func (s *Session[M]) addTransientDiagnostic(code, message string, safe map[string]string) {
 	s.mu.Lock()
+	defer s.mu.Unlock()
+	// LifecycleClosed is the terminal publication boundary. Effects can ignore
+	// cancellation, so their eventual sink calls must not mutate diagnostics or
+	// signal a publication after loopDone becomes observable.
+	if s.lifecycle == LifecycleClosed {
+		return
+	}
 	s.diagnostics = append(s.diagnostics, sanitizeDiagnostic(Diagnostic{Code: code, Message: message, SafeContext: safe}))
-	s.mu.Unlock()
+	s.notifyPublicationLocked()
+}
+
+func (s *Session[M]) notifyPublicationLocked() {
+	close(s.publication)
+	s.publication = make(chan struct{})
 }
 
 func (s *Session[M]) modelPolicyClone(model M) (M, error) {
@@ -874,13 +940,20 @@ func (q *eventQueue) signal() {
 func (s *Session[M]) beginClose() {
 	s.closeOnce.Do(func() {
 		s.mu.Lock()
+		notify := false
 		if s.lifecycle != LifecycleClosed {
 			s.lifecycle = LifecycleCancelling
+			notify = true
 		}
 		s.mu.Unlock()
 		s.queue.close()
 		s.effects.Close()
 		s.effectAdmissions.close()
 		s.cancel()
+		if notify {
+			s.mu.Lock()
+			s.notifyPublicationLocked()
+			s.mu.Unlock()
+		}
 	})
 }
