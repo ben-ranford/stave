@@ -412,7 +412,7 @@ func TestPatchDetailValidateRequiresCanonicalSupportedFields(t *testing.T) {
 	}
 	valid := PatchDetail{
 		SchemaVersion: PatchDetailV1, FromRevision: 1, ToRevision: 2,
-		Added:   []NodeID{first, second},
+		Added:   []NodeID{second},
 		Changed: []NodeChange{{NodeID: first, Fields: []FieldChange{{Path: "/metadata", Before: json.RawMessage(`1e0`), After: json.RawMessage(`2e0`)}}}},
 	}
 	if err := valid.Validate(); err != nil {

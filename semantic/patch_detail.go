@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"sort"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/ben-ranford/stave/internal/canonical"
@@ -16,9 +17,11 @@ type PatchDetailVersion string
 const PatchDetailV1 PatchDetailVersion = "stave.semantic.patch-detail/v1"
 
 const patchDetailValuePath = "/value"
+const patchDetailFlagsPath = "/flags"
+const patchDetailSensitiveField = "sensitive"
 
 var patchDetailFields = map[string]struct{}{
-	"/actions": {}, "/children": {}, "/description": {}, "/flags": {},
+	"/actions": {}, "/children": {}, "/description": {}, patchDetailFlagsPath: {},
 	"/layout": {}, "/metadata": {}, "/name": {}, "/relations": {},
 	"/role": {}, "/states": {}, "/style": {}, patchDetailValuePath: {},
 }
@@ -74,16 +77,87 @@ func (p PatchDetail) Validate() error {
 		if !change.NodeID.Valid() || (previous != "" && change.NodeID <= previous) || len(change.Fields) == 0 {
 			return errors.New("invalid semantic patch detail change")
 		}
+		if hasSortedNodeID(p.Added, change.NodeID) || hasSortedNodeID(p.Removed, change.NodeID) {
+			return errors.New("semantic patch detail change overlaps added or removed node")
+		}
 		previous = change.NodeID
-		path := ""
-		for _, field := range change.Fields {
-			if !supportedPatchDetailField(field.Path) || field.Path <= path || !validPatchDetailEndpoint(field.Path, field.Before) || !validPatchDetailEndpoint(field.Path, field.After) {
-				return errors.New("invalid semantic patch detail field")
-			}
-			path = field.Path
+		if err := validatePatchDetailChange(change); err != nil {
+			return err
 		}
 	}
 	return nil
+}
+
+func validatePatchDetailChange(change NodeChange) error {
+	path := ""
+	for _, field := range change.Fields {
+		if !supportedPatchDetailField(field.Path) || field.Path <= path || !validPatchDetailEndpoint(field.Path, field.Before) || !validPatchDetailEndpoint(field.Path, field.After) {
+			return errors.New("invalid semantic patch detail field")
+		}
+		path = field.Path
+	}
+	if !validPatchDetailRedaction(change.Fields) {
+		return errors.New("invalid semantic patch detail redaction")
+	}
+	return nil
+}
+
+func validPatchDetailRedaction(fields []FieldChange) bool {
+	var flags, value *FieldChange
+	for i := range fields {
+		switch fields[i].Path {
+		case patchDetailFlagsPath:
+			flags = &fields[i]
+		case patchDetailValuePath:
+			value = &fields[i]
+		}
+	}
+	if flags == nil {
+		return true
+	}
+	beforeSensitive, beforeValid := patchDetailSensitivity(flags.Before)
+	afterSensitive, afterValid := patchDetailSensitivity(flags.After)
+	if !beforeValid || !afterValid {
+		return false
+	}
+	if !beforeSensitive && !afterSensitive {
+		return true
+	}
+	if value == nil {
+		// Other flag changes need not repeat an unchanged sensitive value.
+		return beforeSensitive == afterSensitive
+	}
+	var before, after Value
+	if json.Unmarshal(value.Before, &before) != nil || json.Unmarshal(value.After, &after) != nil {
+		return false
+	}
+	return before.Redacted && after.Redacted
+}
+
+func patchDetailSensitivity(raw json.RawMessage) (bool, bool) {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) != nil || fields == nil {
+		return false, false
+	}
+	for name := range fields {
+		if strings.EqualFold(name, patchDetailSensitiveField) && name != patchDetailSensitiveField {
+			return false, false
+		}
+	}
+	field, present := fields[patchDetailSensitiveField]
+	if !present {
+		return false, true
+	}
+	var sensitive *bool
+	if json.Unmarshal(field, &sensitive) != nil || sensitive == nil {
+		return false, false
+	}
+	return *sensitive, true
+}
+
+func hasSortedNodeID(ids []NodeID, id NodeID) bool {
+	i := sort.Search(len(ids), func(i int) bool { return ids[i] >= id })
+	return i < len(ids) && ids[i] == id
 }
 
 func sortedNodeIDs(ids []NodeID) bool {
@@ -190,7 +264,7 @@ func changedFields(a, b Node) []FieldChange {
 		before, after any
 	}{
 		{"/actions", a.actions, b.actions}, {"/children", childIDs(a.children), childIDs(b.children)},
-		{"/description", a.description, b.description}, {"/flags", a.flags, b.flags},
+		{"/description", a.description, b.description}, {patchDetailFlagsPath, a.flags, b.flags},
 		{"/layout", a.layout, b.layout}, {"/metadata", a.metadata, b.metadata}, {"/name", a.name, b.name},
 		{"/relations", a.relations, b.relations}, {"/role", a.role, b.role}, {"/states", a.states, b.states},
 		{"/style", a.style, b.style},
@@ -204,7 +278,7 @@ func changedFields(a, b Node) []FieldChange {
 		after := canonicalFieldValue(field.after)
 		out = append(out, FieldChange{Path: field.path, Before: before, After: after})
 	}
-	if !canonical.Equal(a.value, b.value) || detailValueRedacted(a) != detailValueRedacted(b) {
+	if !canonical.Equal(a.value, b.value) || detailValueRedacted(a) != detailValueRedacted(b) || a.flags.Sensitive != b.flags.Sensitive {
 		out = append(out, FieldChange{Path: patchDetailValuePath, Before: canonicalFieldValue(beforeValue), After: canonicalFieldValue(afterValue)})
 	}
 	return out
