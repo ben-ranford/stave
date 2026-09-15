@@ -21,14 +21,28 @@ const patchDetailValuePath = "/value"
 const patchDetailFlagsPath = "/flags"
 const patchDetailSensitiveField = "sensitive"
 const patchDetailChildrenPath = "/children"
+const patchDetailRelationsPath = "/relations"
+const patchDetailNamePath = "/name"
+const patchDetailRolePath = "/role"
 
-var patchDetailFields = map[string]func(json.RawMessage) bool{
-	"/actions": validPatchDetailActions, patchDetailChildrenPath: validPatchDetailChildren,
-	"/description": validPatchDetailText, patchDetailFlagsPath: validPatchDetailFlags,
-	"/layout": validPatchDetailLayout, "/metadata": validPatchDetailMetadata,
-	"/name": validPatchDetailText, "/relations": validPatchDetailRelations,
-	"/role": validPatchDetailRole, "/states": validPatchDetailStates,
-	"/style": validPatchDetailStyle, patchDetailValuePath: validPatchDetailValue,
+type patchDetailFieldSpec struct {
+	validate  func(json.RawMessage) bool
+	normalize func(json.RawMessage) json.RawMessage
+}
+
+var patchDetailFields = map[string]patchDetailFieldSpec{
+	"/actions":               {validPatchDetailActions, normalizedPatchDetailList[ActionRef]},
+	patchDetailChildrenPath:  {validPatchDetailChildren, nil},
+	"/description":           {validPatchDetailText, nil},
+	patchDetailFlagsPath:     {validPatchDetailFlags, normalizedPatchDetailObject[Flags]},
+	"/layout":                {validPatchDetailLayout, normalizedPatchDetailLayout},
+	"/metadata":              {validPatchDetailMetadata, nil},
+	patchDetailNamePath:      {validPatchDetailText, nil},
+	patchDetailRelationsPath: {validPatchDetailRelations, normalizedPatchDetailList[Relation]},
+	patchDetailRolePath:      {validPatchDetailRole, nil},
+	"/states":                {validPatchDetailStates, normalizedPatchDetailList[State]},
+	"/style":                 {validPatchDetailStyle, normalizedPatchDetailObject[StyleIntent]},
+	patchDetailValuePath:     {validPatchDetailValue, normalizedPatchDetailObject[Value]},
 }
 
 // NegotiatePatchDetailVersion returns the detail version supported by both peers.
@@ -67,7 +81,7 @@ type FieldChange struct {
 	After  json.RawMessage `json:"after"`
 }
 
-// Validate checks ordering, canonical field types and local redaction rules.
+// Validate checks ordering, canonical field types and local consistency.
 // Partial details cannot prove full-tree membership or application action authority.
 func (p PatchDetail) Validate() error {
 	if p.SchemaVersion != PatchDetailV1 {
@@ -88,32 +102,36 @@ func (p PatchDetail) Validate() error {
 			return errors.New("semantic patch detail change overlaps added or removed node")
 		}
 		previous = change.NodeID
-		if err := validatePatchDetailChange(change); err != nil {
+		if err := validatePatchDetailChange(change, p.Added, p.Removed); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func validatePatchDetailChange(change NodeChange) error {
+func validatePatchDetailChange(change NodeChange, added, removed []NodeID) error {
 	path := ""
 	for _, field := range change.Fields {
 		if !supportedPatchDetailField(field.Path) || field.Path <= path || !validPatchDetailEndpoint(field.Path, field.Before) || !validPatchDetailEndpoint(field.Path, field.After) {
 			return errors.New("invalid semantic patch detail field")
 		}
-		if !validPatchDetailTransition(field) || !validPatchDetailChildChange(change.NodeID, field) {
+		if !validPatchDetailTransition(field) || !validPatchDetailChildChange(change.NodeID, field) || !validPatchDetailReferences(field, added, removed) {
 			return errors.New("invalid semantic patch detail transition")
 		}
 		path = field.Path
 	}
-	if !validPatchDetailRedaction(change.Fields) {
-		return errors.New("invalid semantic patch detail redaction")
+	if !validPatchDetailRedaction(change.Fields) || !validPatchDetailRoleNames(change.Fields) {
+		return errors.New("invalid semantic patch detail field consistency")
 	}
 	return nil
 }
 
 func validPatchDetailTransition(field FieldChange) bool {
-	if !bytes.Equal(field.Before, field.After) {
+	before, after := field.Before, field.After
+	if normalize := patchDetailFields[field.Path].normalize; normalize != nil {
+		before, after = normalize(before), normalize(after)
+	}
+	if !bytes.Equal(before, after) {
 		return true
 	}
 	if field.Path != patchDetailValuePath {
@@ -122,6 +140,96 @@ func validPatchDetailTransition(field FieldChange) bool {
 	// A real value transition may be hidden by redaction of both endpoints.
 	var value Value
 	return json.Unmarshal(field.Before, &value) == nil && value.Redacted
+}
+
+func normalizedPatchDetailObject[T any](raw json.RawMessage) json.RawMessage {
+	var value T
+	if json.Unmarshal(raw, &value) != nil {
+		return nil
+	}
+	return canonicalFieldValue(value)
+}
+
+func normalizedPatchDetailList[T any](raw json.RawMessage) json.RawMessage {
+	var values []T
+	if json.Unmarshal(raw, &values) != nil {
+		return nil
+	}
+	// NewNode stores both nil and empty input slices as nil.
+	if len(values) == 0 {
+		values = nil
+	}
+	return canonicalFieldValue(values)
+}
+
+func normalizedPatchDetailLayout(raw json.RawMessage) json.RawMessage {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) != nil {
+		return nil
+	}
+	// Nonzero integers already have unique, range-checked canonical bytes.
+	for name, value := range fields {
+		if bytes.Equal(value, []byte("0")) {
+			delete(fields, name)
+		}
+	}
+	return canonicalFieldValue(fields)
+}
+
+func validPatchDetailRoleNames(fields []FieldChange) bool {
+	var role, name *FieldChange
+	for i := range fields {
+		switch fields[i].Path {
+		case patchDetailRolePath:
+			role = &fields[i]
+		case patchDetailNamePath:
+			name = &fields[i]
+		}
+	}
+	if role == nil || name == nil {
+		return true
+	}
+	return validPatchDetailRoleName(role.Before, name.Before) && validPatchDetailRoleName(role.After, name.After)
+}
+
+func validPatchDetailRoleName(roleRaw, nameRaw json.RawMessage) bool {
+	var role Role
+	var name string
+	if json.Unmarshal(roleRaw, &role) != nil || json.Unmarshal(nameRaw, &name) != nil {
+		return false
+	}
+	return !interactive[role] || strings.TrimSpace(name) != ""
+}
+
+func validPatchDetailReferences(field FieldChange, added, removed []NodeID) bool {
+	return validPatchDetailReferenceEndpoint(field.Path, field.Before, added) && validPatchDetailReferenceEndpoint(field.Path, field.After, removed)
+}
+
+func validPatchDetailReferenceEndpoint(path string, raw json.RawMessage, absent []NodeID) bool {
+	if len(absent) == 0 {
+		return true
+	}
+	var ids []NodeID
+	switch path {
+	case patchDetailChildrenPath:
+		if json.Unmarshal(raw, &ids) != nil {
+			return false
+		}
+	case patchDetailRelationsPath:
+		var relations []Relation
+		if json.Unmarshal(raw, &relations) != nil {
+			return false
+		}
+		for _, relation := range relations {
+			ids = append(ids, relation.Target)
+		}
+	}
+	for _, id := range ids {
+		if hasSortedNodeID(absent, id) {
+			return false
+		}
+	}
+	return true
 }
 
 func validPatchDetailChildChange(id NodeID, field FieldChange) bool {
@@ -227,7 +335,7 @@ func validPatchDetailEndpoint(path string, raw json.RawMessage) bool {
 		return false
 	}
 	validate, ok := patchDetailFields[path]
-	return ok && validate(raw)
+	return ok && validate.validate(raw)
 }
 
 func validPatchDetailValue(raw json.RawMessage) bool {
@@ -406,8 +514,8 @@ func changedFields(a, b Node) []FieldChange {
 	}{
 		{"/actions", a.actions, b.actions}, {patchDetailChildrenPath, childIDs(a.children), childIDs(b.children)},
 		{"/description", a.description, b.description}, {patchDetailFlagsPath, a.flags, b.flags},
-		{"/layout", a.layout, b.layout}, {"/metadata", a.metadata, b.metadata}, {"/name", a.name, b.name},
-		{"/relations", a.relations, b.relations}, {"/role", a.role, b.role}, {"/states", a.states, b.states},
+		{"/layout", a.layout, b.layout}, {"/metadata", a.metadata, b.metadata}, {patchDetailNamePath, a.name, b.name},
+		{patchDetailRelationsPath, a.relations, b.relations}, {patchDetailRolePath, a.role, b.role}, {"/states", a.states, b.states},
 		{"/style", a.style, b.style},
 	}
 	out := make([]FieldChange, 0, len(fields))

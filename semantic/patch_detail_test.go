@@ -1,7 +1,6 @@
 package semantic
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -61,12 +60,10 @@ func checkExternalPatchDetailValue(t *testing.T, raw, endpoint string, valid boo
 	if err != nil {
 		t.Fatal(err)
 	}
-	companion := "{}"
+	companion := `{"hasValue":true}`
 	var endpointValue Value
 	if err := json.Unmarshal(value, &endpointValue); err == nil && endpointValue.Redacted {
 		companion = `{"redacted":true}`
-	} else if bytes.Equal(value, []byte(companion)) {
-		companion = `{"hasValue":false}`
 	}
 	before, after := companion, companion
 	if endpoint == "before" {
@@ -141,7 +138,7 @@ func validPatchDetailCompanion(path, raw string, child NodeID) string {
 	switch path {
 	case "/actions":
 		if raw == `null` {
-			return `[]`
+			return `[{"id":"other-action"}]`
 		}
 		return `null`
 	case "/children":
@@ -164,14 +161,14 @@ func validPatchDetailCompanion(path, raw string, child NodeID) string {
 		return `"changed name"`
 	case "/relations":
 		if raw == `null` {
-			return `[]`
+			return fmt.Sprintf(`[{"kind":"other-kind","target":%q}]`, child)
 		}
 		return `null`
 	case "/role":
 		return `"region"`
 	case "/states":
 		if raw == `null` {
-			return `[]`
+			return `["other-state"]`
 		}
 		return `null`
 	case "/style":
@@ -276,6 +273,90 @@ func TestPatchDetailRejectsDuplicateOrEnclosingChildren(t *testing.T) {
 				checkExternalPatchDetailEndpoint(t, id, "/children", raw, `[]`, endpoint, false)
 			})
 		}
+	}
+}
+
+func TestPatchDetailRejectsSemanticNoops(t *testing.T) {
+	id, err := NodeIDFor(NodeKey{"detail", "external", "text", "semantic-noop", "slot"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	redacted := json.RawMessage(`{"hasValue":true,"redacted":true}`)
+	cases := []struct {
+		name   string
+		fields []FieldChange
+		valid  bool
+	}{
+		{"layout default", []FieldChange{{Path: "/layout", Before: json.RawMessage(`{}`), After: json.RawMessage(`{"width":0}`)}}, false},
+		{"states default", []FieldChange{{Path: "/states", Before: json.RawMessage(`null`), After: json.RawMessage(`[]`)}}, false},
+		{"flags default", []FieldChange{{Path: "/flags", Before: json.RawMessage(`{}`), After: json.RawMessage(`{"visible":false}`)}}, false},
+		{"style default", []FieldChange{{Path: "/style", Before: json.RawMessage(`{}`), After: json.RawMessage(`{"role":""}`)}}, false},
+		{"value default", []FieldChange{{Path: "/value", Before: json.RawMessage(`{}`), After: json.RawMessage(`{"hasValue":false}`)}}, false},
+		{"action member default", []FieldChange{{Path: "/actions", Before: json.RawMessage(`[{"id":"action"}]`), After: json.RawMessage(`[{"default":false,"id":"action"}]`)}}, false},
+		{"layout integer transition", []FieldChange{{Path: "/layout", Before: json.RawMessage(`{"width":1e0}`), After: json.RawMessage(`{"width":2e0}`)}}, true},
+		{"redacted hidden transition", []FieldChange{{Path: "/flags", Before: json.RawMessage(`{"sensitive":false}`), After: json.RawMessage(`{"sensitive":true}`)}, {Path: "/value", Before: redacted, After: redacted}}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			checkDecodedPatchDetail(t, PatchDetail{SchemaVersion: PatchDetailV1, FromRevision: 1, ToRevision: 2, Changed: []NodeChange{{NodeID: id, Fields: tc.fields}}}, tc.valid)
+		})
+	}
+}
+
+func TestPatchDetailInteractiveNamesRequireContext(t *testing.T) {
+	id, err := NodeIDFor(NodeKey{"detail", "external", "text", "interactive-name", "slot"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		name, before, after, roleBefore, roleAfter string
+		valid                                      bool
+	}{
+		{"blank before", `""`, `"name"`, `"button"`, `"text"`, false},
+		{"blank after", `"name"`, `""`, `"text"`, `"button"`, false},
+		{"whitespace before", `" \t"`, `"name"`, `"button"`, `"text"`, false},
+		{"whitespace after", `"name"`, `" \t"`, `"text"`, `"button"`, false},
+		{"name alone", `""`, `"name"`, "", "", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fields := []FieldChange{{Path: "/name", Before: json.RawMessage(tc.before), After: json.RawMessage(tc.after)}}
+			if tc.roleBefore != "" {
+				fields = append(fields, FieldChange{Path: "/role", Before: json.RawMessage(tc.roleBefore), After: json.RawMessage(tc.roleAfter)})
+			}
+			checkDecodedPatchDetail(t, PatchDetail{SchemaVersion: PatchDetailV1, FromRevision: 1, ToRevision: 2, Changed: []NodeChange{{NodeID: id, Fields: fields}}}, tc.valid)
+		})
+	}
+}
+
+func TestPatchDetailChildTargetsRespectPatchMembership(t *testing.T) {
+	parent, err := NodeIDFor(NodeKey{"detail", "external", "text", "parent-target", "slot"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := NodeIDFor(NodeKey{"detail", "external", "text", "target", "slot"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	children := fmt.Sprintf("[%q]", target)
+	relations := fmt.Sprintf(`[{"kind":"any-kind","target":%q}]`, target)
+	cases := []struct {
+		name, path, before, after string
+		added, removed            []NodeID
+		valid                     bool
+	}{
+		{"added child before", "/children", children, `[]`, []NodeID{target}, nil, false},
+		{"added child after", "/children", `[]`, children, []NodeID{target}, nil, true},
+		{"removed child before", "/children", children, `[]`, nil, []NodeID{target}, true},
+		{"removed child after", "/children", `[]`, children, nil, []NodeID{target}, false},
+		{"added relation before", "/relations", relations, `null`, []NodeID{target}, nil, false},
+		{"removed relation after", "/relations", `null`, relations, nil, []NodeID{target}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			field := FieldChange{Path: tc.path, Before: json.RawMessage(tc.before), After: json.RawMessage(tc.after)}
+			checkDecodedPatchDetail(t, PatchDetail{SchemaVersion: PatchDetailV1, FromRevision: 1, ToRevision: 2, Added: tc.added, Removed: tc.removed, Changed: []NodeChange{{NodeID: parent, Fields: []FieldChange{field}}}}, tc.valid)
+		})
 	}
 }
 
