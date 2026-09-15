@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -20,10 +21,13 @@ const patchDetailValuePath = "/value"
 const patchDetailFlagsPath = "/flags"
 const patchDetailSensitiveField = "sensitive"
 
-var patchDetailFields = map[string]struct{}{
-	"/actions": {}, "/children": {}, "/description": {}, patchDetailFlagsPath: {},
-	"/layout": {}, "/metadata": {}, "/name": {}, "/relations": {},
-	"/role": {}, "/states": {}, "/style": {}, patchDetailValuePath: {},
+var patchDetailFields = map[string]func(json.RawMessage) bool{
+	"/actions": validPatchDetailActions, "/children": validPatchDetailChildren,
+	"/description": validPatchDetailText, patchDetailFlagsPath: validPatchDetailFlags,
+	"/layout": validPatchDetailLayout, "/metadata": validPatchDetailMetadata,
+	"/name": validPatchDetailText, "/relations": validPatchDetailRelations,
+	"/role": validPatchDetailRole, "/states": validPatchDetailStates,
+	"/style": validPatchDetailStyle, patchDetailValuePath: validPatchDetailValue,
 }
 
 // NegotiatePatchDetailVersion returns the detail version supported by both peers.
@@ -62,6 +66,8 @@ type FieldChange struct {
 	After  json.RawMessage `json:"after"`
 }
 
+// Validate checks ordering, canonical field types and local redaction rules.
+// Partial details cannot prove full-tree membership or application action authority.
 func (p PatchDetail) Validate() error {
 	if p.SchemaVersion != PatchDetailV1 {
 		return errors.New("unsupported semantic patch detail version")
@@ -146,24 +152,12 @@ func patchDetailValuePair(field *FieldChange) (Value, Value, bool) {
 }
 
 func patchDetailSensitivity(raw json.RawMessage) (bool, bool) {
-	var fields map[string]json.RawMessage
-	if json.Unmarshal(raw, &fields) != nil || fields == nil {
+	// Endpoint validation has already checked exact keys and member types.
+	var flags Flags
+	if json.Unmarshal(raw, &flags) != nil {
 		return false, false
 	}
-	for name := range fields {
-		if strings.EqualFold(name, patchDetailSensitiveField) && name != patchDetailSensitiveField {
-			return false, false
-		}
-	}
-	field, present := fields[patchDetailSensitiveField]
-	if !present {
-		return false, true
-	}
-	var sensitive *bool
-	if json.Unmarshal(field, &sensitive) != nil || sensitive == nil {
-		return false, false
-	}
-	return *sensitive, true
+	return flags.Sensitive, true
 }
 
 func hasSortedNodeID(ids []NodeID, id NodeID) bool {
@@ -194,40 +188,138 @@ func validPatchDetailEndpoint(path string, raw json.RawMessage) bool {
 	if !canonicalRawJSON(raw) {
 		return false
 	}
-	return path != patchDetailValuePath || validPatchDetailValue(raw)
+	validate, ok := patchDetailFields[path]
+	return ok && validate(raw)
 }
 
 func validPatchDetailValue(raw json.RawMessage) bool {
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &fields); err != nil || fields == nil {
+	if !validPatchDetailObject(raw, map[string]func(json.RawMessage) bool{
+		"text": validPatchDetailText, "redacted": validPatchDetailBool, "hasValue": validPatchDetailBool,
+	}) {
 		return false
 	}
-	for name, field := range fields {
-		if !validPatchDetailValueField(name, field) {
+	var value Value
+	return json.Unmarshal(raw, &value) == nil && (!value.Redacted || value.Text == "")
+}
+
+func validPatchDetailString(raw json.RawMessage) bool {
+	var value string
+	return len(raw) > 0 && raw[0] == '"' && json.Unmarshal(raw, &value) == nil && utf8.ValidString(value)
+}
+
+func validPatchDetailText(raw json.RawMessage) bool {
+	var value string
+	return validPatchDetailString(raw) && json.Unmarshal(raw, &value) == nil && !containsUnsafeControl(value)
+}
+
+func validPatchDetailRole(raw json.RawMessage) bool {
+	var role Role
+	return json.Unmarshal(raw, &role) == nil && roles[role]
+}
+
+func validPatchDetailBool(raw json.RawMessage) bool {
+	return bytes.Equal(raw, []byte("true")) || bytes.Equal(raw, []byte("false"))
+}
+
+func validPatchDetailInt(raw json.RawMessage) bool {
+	// Canonical JSON writes nonzero integers in scientific notation. Avoid a
+	// float conversion, which would round integers near the platform limit.
+	coefficient, exponent, scientific := strings.Cut(string(raw), "e")
+	if scientific {
+		power, err := strconv.Atoi(exponent)
+		if err != nil || power < 0 || power > 19 || len(coefficient)+power > 20 {
+			return false
+		}
+		coefficient += strings.Repeat("0", power)
+	}
+	_, err := strconv.Atoi(coefficient)
+	return err == nil
+}
+
+func validPatchDetailObject(raw json.RawMessage, fields map[string]func(json.RawMessage) bool) bool {
+	var object map[string]json.RawMessage
+	if json.Unmarshal(raw, &object) != nil || object == nil {
+		return false
+	}
+	for name, value := range object {
+		validate, ok := fields[name]
+		if !ok || !validate(value) {
 			return false
 		}
 	}
-	var value Value
-	if err := json.Unmarshal(raw, &value); err != nil {
-		return false
-	}
-	return utf8.ValidString(value.Text) && !containsUnsafeControl(value.Text) && (!value.Redacted || value.Text == "")
+	return true
 }
 
-func validPatchDetailValueField(name string, raw json.RawMessage) bool {
-	if bytes.Equal(raw, []byte("null")) {
+func validPatchDetailList(raw json.RawMessage, element func(json.RawMessage) bool) bool {
+	var values []json.RawMessage
+	if json.Unmarshal(raw, &values) != nil {
 		return false
 	}
-	switch name {
-	case "text":
-		var text string
-		return json.Unmarshal(raw, &text) == nil
-	case "redacted", "hasValue":
-		var flag bool
-		return json.Unmarshal(raw, &flag) == nil
-	default:
+	for _, value := range values {
+		if !element(value) {
+			return false
+		}
+	}
+	return true
+}
+
+func validPatchDetailNodeID(raw json.RawMessage) bool {
+	var id NodeID
+	return json.Unmarshal(raw, &id) == nil && id.Valid()
+}
+
+func validPatchDetailChildren(raw json.RawMessage) bool {
+	return len(raw) > 0 && raw[0] == '[' && validPatchDetailList(raw, validPatchDetailNodeID)
+}
+
+func validPatchDetailMetadata(raw json.RawMessage) bool {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) != nil || fields == nil {
 		return false
 	}
+	for _, value := range fields {
+		if !validPatchDetailString(value) {
+			return false
+		}
+	}
+	return true
+}
+
+func validPatchDetailActions(raw json.RawMessage) bool {
+	return validPatchDetailList(raw, func(value json.RawMessage) bool {
+		return validPatchDetailObject(value, map[string]func(json.RawMessage) bool{
+			"id": validPatchDetailString, "label": validPatchDetailString, "default": validPatchDetailBool,
+		})
+	})
+}
+
+func validPatchDetailRelations(raw json.RawMessage) bool {
+	return validPatchDetailList(raw, func(value json.RawMessage) bool {
+		var relation Relation
+		return validPatchDetailObject(value, map[string]func(json.RawMessage) bool{
+			"kind": validPatchDetailString, "target": validPatchDetailNodeID,
+		}) && json.Unmarshal(value, &relation) == nil && relation.Target.Valid()
+	})
+}
+
+func validPatchDetailFlags(raw json.RawMessage) bool {
+	return validPatchDetailObject(raw, map[string]func(json.RawMessage) bool{
+		"visible": validPatchDetailBool, "focusable": validPatchDetailBool, "disabled": validPatchDetailBool,
+		patchDetailSensitiveField: validPatchDetailBool, "offscreen": validPatchDetailBool,
+		"live": validPatchDetailString, "stability": validPatchDetailString,
+	})
+}
+
+func validPatchDetailLayout(raw json.RawMessage) bool {
+	return validPatchDetailObject(raw, map[string]func(json.RawMessage) bool{"width": validPatchDetailInt, "height": validPatchDetailInt})
+}
+
+func validPatchDetailStyle(raw json.RawMessage) bool {
+	return validPatchDetailObject(raw, map[string]func(json.RawMessage) bool{"role": validPatchDetailString})
+}
+
+func validPatchDetailStates(raw json.RawMessage) bool {
+	return validPatchDetailList(raw, validPatchDetailString)
 }
 
 // DiffDetail returns changed-field detail only for a previously negotiated

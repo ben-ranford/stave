@@ -3,6 +3,7 @@ package semantic
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -82,6 +83,104 @@ func checkExternalPatchDetailValue(t *testing.T, raw, endpoint string, valid boo
 	if err != nil && strings.Contains(err.Error(), "secret-endpoint-marker") {
 		t.Fatal("validation error echoed endpoint text")
 	}
+}
+
+func TestPatchDetailValidateNonValueEndpoints(t *testing.T) {
+	id, err := NodeIDFor(NodeKey{"detail", "external", "text", "field", "slot"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	maxInt := "9223372036854775807e0"
+	if strconv.IntSize == 32 {
+		maxInt = "2147483647e0"
+	}
+	children := fmt.Sprintf("[%q]", id)
+	relations := fmt.Sprintf(`[{"kind":"any-kind","target":%q}]`, id)
+	cases := []struct {
+		path           string
+		valid, invalid []string
+	}{
+		{"/actions", []string{`null`, `[{"default":true,"id":"any-action","label":"label"}]`}, []string{`true`, `[{"ID":"any-action"}]`, `[{"extra":true,"id":"any-action"}]`}},
+		{"/children", []string{`[]`, children}, []string{`true`, `null`}},
+		{"/description", []string{`"description"`}, []string{`17`, `"\u0001"`}},
+		{"/flags", []string{`{"disabled":false,"focusable":false,"live":"any-live","offscreen":false,"sensitive":false,"stability":"any-stability","visible":true}`}, []string{`true`, `{"Visible":true}`, `{"unknown":true}`}},
+		{"/layout", []string{`{"width":1e0}`, `{"height":` + maxInt + `,"width":1e0}`}, []string{`1`, `null`, `{"width":1.5}`, `{"width":9223372036854775808e0}`, `{"Width":1e0}`, `{"unknown":1e0}`}},
+		{"/metadata", []string{`{}`, `{"key":"value"}`}, []string{`null`, `{"key":true}`}},
+		{"/name", []string{`"name"`}, []string{`17`, `"\u0001"`}},
+		{"/relations", []string{`null`, relations}, []string{`true`, `[{"kind":"any-kind","target":"bad"}]`, `[{"Kind":"any-kind","target":"` + string(id) + `"}]`, `[{"kind":"any-kind","target":"` + string(id) + `","unknown":true}]`}},
+		{"/role", []string{`"text"`}, []string{`17`, `"bogus"`}},
+		{"/states", []string{`null`, `["any-state"]`}, []string{`true`}},
+		{"/style", []string{`{"role":"accent"}`}, []string{`true`, `{"Role":"accent"}`, `{"role":true}`, `{"unknown":"accent"}`}},
+	}
+	for _, tc := range cases {
+		for _, raw := range tc.valid {
+			for _, endpoint := range []string{"before", "after"} {
+				t.Run(tc.path+"/valid/"+endpoint, func(t *testing.T) {
+					checkExternalPatchDetailEndpoint(t, id, tc.path, raw, raw, endpoint, true)
+				})
+			}
+		}
+		for _, raw := range tc.invalid {
+			for _, endpoint := range []string{"before", "after"} {
+				t.Run(tc.path+"/invalid/"+endpoint, func(t *testing.T) {
+					checkExternalPatchDetailEndpoint(t, id, tc.path, raw, tc.valid[0], endpoint, false)
+				})
+			}
+		}
+	}
+}
+
+func checkExternalPatchDetailEndpoint(t *testing.T, id NodeID, path, raw, companion, endpoint string, valid bool) {
+	t.Helper()
+	value, err := canonical.JSON([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := canonical.JSON([]byte(companion))
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, after := other, other
+	if endpoint == "before" {
+		before = value
+	} else {
+		after = value
+	}
+	wire := fmt.Sprintf(`{"schemaVersion":"stave.semantic.patch-detail/v1","fromRevision":1,"toRevision":2,"changed":[{"nodeId":%q,"fields":[{"path":%q,"before":%s,"after":%s}]}]}`, id, path, before, after)
+	var detail PatchDetail
+	if err := json.Unmarshal([]byte(wire), &detail); err != nil {
+		t.Fatal(err)
+	}
+	if err := detail.Validate(); (err == nil) != valid {
+		t.Fatalf("Validate() error = %v, valid = %t", err, valid)
+	}
+}
+
+func TestDiffDetailValidatesNonzeroLayoutEndpoints(t *testing.T) {
+	id, err := NodeIDFor(NodeKey{"detail", "generated", "text", "layout", "slot"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeNode, err := NewNode(NodeSpec{ID: id, Role: "text", Name: "layout", Layout: LayoutSpec{Width: 1}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	afterNode, err := NewNode(NodeSpec{ID: id, Role: "text", Name: "layout", Layout: LayoutSpec{Height: 2, Width: 3}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, _ := NewTree(1, beforeNode)
+	after, _ := NewTree(2, afterNode)
+	detail, err := DiffDetail(before, after, PatchDetailV1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range detail.Changed[0].Fields {
+		if field.Path == "/layout" && string(field.Before) == `{"width":1e0}` && string(field.After) == `{"height":2e0,"width":3e0}` {
+			return
+		}
+	}
+	t.Fatalf("generated layout endpoint = %#v", detail.Changed[0].Fields)
 }
 
 func TestPatchDetailChangedIDsExcludeAddedAndRemoved(t *testing.T) {

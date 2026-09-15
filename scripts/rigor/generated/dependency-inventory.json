@@ -569,6 +569,7 @@
         "fmt",
         "github.com/ben-ranford/stave/internal/canonical",
         "sort",
+        "strconv",
         "strings",
         "unicode",
         "unicode/utf8"
