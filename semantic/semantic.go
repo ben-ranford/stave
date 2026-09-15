@@ -296,7 +296,7 @@ type QueryLimits struct {
 	MaxDepth   int
 }
 
-// QueryLimit identifies the budget that ended a partial query result.
+// QueryLimit identifies the first budget that truncated a query result.
 type QueryLimit string
 
 const (
@@ -319,7 +319,8 @@ type QueryResult struct {
 // Query traverses a tree in preorder (root, then each child in declared
 // order). It returns ErrInvalidQuery before traversal for malformed criteria or
 // limits. A valid query whose visited, result, or depth budget is exhausted
-// returns its partial result with Truncated set and no error.
+// returns its partial result with Truncated set and no error. Depth limits prune
+// descendants while allowing siblings within the depth limit to be inspected.
 func (t Tree) Query(query Query, limits QueryLimits) (QueryResult, error) {
 	if err := query.validate(limits); err != nil {
 		return QueryResult{}, err
@@ -331,8 +332,12 @@ func (t Tree) Query(query Query, limits QueryLimits) (QueryResult, error) {
 }
 
 func (query Query) walk(node Node, depth int, limits QueryLimits, result *QueryResult) bool {
-	if !query.visit(node, depth, limits, result) {
+	if !query.visit(node, limits, result) {
 		return false
+	}
+	if depth == limits.MaxDepth && len(node.children) > 0 {
+		result.truncate(QueryLimitDepth)
+		return true
 	}
 	for _, child := range node.children {
 		if !query.walk(child, depth+1, limits, result) {
@@ -342,32 +347,27 @@ func (query Query) walk(node Node, depth int, limits QueryLimits, result *QueryR
 	return true
 }
 
-func (query Query) visit(node Node, depth int, limits QueryLimits, result *QueryResult) bool {
+func (query Query) visit(node Node, limits QueryLimits, result *QueryResult) bool {
 	if result.Visited == limits.MaxVisited {
-		result.Truncated = true
-		result.Limit = QueryLimitVisited
-		return false
-	}
-	if depth > limits.MaxDepth {
-		result.Truncated = true
-		result.Limit = QueryLimitDepth
+		result.truncate(QueryLimitVisited)
 		return false
 	}
 	result.Visited++
 	if query.matches(node) {
 		if len(result.Nodes) == limits.MaxResults {
-			result.Truncated = true
-			result.Limit = QueryLimitResults
+			result.truncate(QueryLimitResults)
 			return false
 		}
 		result.Nodes = append(result.Nodes, node)
 	}
-	if depth == limits.MaxDepth && len(node.children) > 0 {
-		result.Truncated = true
-		result.Limit = QueryLimitDepth
-		return false
-	}
 	return true
+}
+
+func (result *QueryResult) truncate(limit QueryLimit) {
+	if !result.Truncated {
+		result.Truncated = true
+		result.Limit = limit
+	}
 }
 
 func (query Query) validate(limits QueryLimits) error {

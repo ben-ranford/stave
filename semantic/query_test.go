@@ -71,7 +71,7 @@ func TestTreeQueryReportsEachBudgetPrecisely(t *testing.T) {
 	}{
 		{"results", QueryLimits{MaxVisited: 10, MaxResults: 1, MaxDepth: 10}, 3, []NodeID{queryID(t, "save-left")}, QueryLimitResults},
 		{"visited", QueryLimits{MaxVisited: 2, MaxResults: 10, MaxDepth: 10}, 2, []NodeID{queryID(t, "save-left")}, QueryLimitVisited},
-		{"depth", QueryLimits{MaxVisited: 10, MaxResults: 10, MaxDepth: 1}, 2, []NodeID{queryID(t, "save-left")}, QueryLimitDepth},
+		{"depth", QueryLimits{MaxVisited: 10, MaxResults: 10, MaxDepth: 1}, 4, []NodeID{queryID(t, "save-left")}, QueryLimitDepth},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -80,6 +80,36 @@ func TestTreeQueryReportsEachBudgetPrecisely(t *testing.T) {
 				t.Fatal(err)
 			}
 			if !result.Truncated || result.Limit != tc.wantLimit || result.Visited != tc.wantVisited {
+				t.Fatalf("result = %+v", result)
+			}
+			if got := queryIDs(result.Nodes); !sameNodeIDs(got, tc.wantIDs) {
+				t.Fatalf("IDs = %v, want %v", got, tc.wantIDs)
+			}
+		})
+	}
+}
+
+func TestTreeQueryDepthPruningKeepsSiblingBudgetsGlobal(t *testing.T) {
+	tree := queryFixture(t)
+	for _, tc := range []struct {
+		name        string
+		query       Query
+		limits      QueryLimits
+		wantVisited int
+		wantIDs     []NodeID
+	}{
+		{"sibling ID", Query{ID: queryID(t, "other")}, QueryLimits{MaxVisited: 10, MaxResults: 10, MaxDepth: 1}, 4, []NodeID{queryID(t, "other")}},
+		{"sibling preorder", Query{Role: "button"}, QueryLimits{MaxVisited: 10, MaxResults: 10, MaxDepth: 1}, 4, []NodeID{queryID(t, "save-left"), queryID(t, "other")}},
+		{"pruned ID", Query{ID: queryID(t, "save-deep")}, QueryLimits{MaxVisited: 10, MaxResults: 10, MaxDepth: 1}, 4, nil},
+		{"visited", Query{Role: "button"}, QueryLimits{MaxVisited: 3, MaxResults: 10, MaxDepth: 1}, 3, []NodeID{queryID(t, "save-left")}},
+		{"results", Query{Role: "button"}, QueryLimits{MaxVisited: 10, MaxResults: 1, MaxDepth: 1}, 4, []NodeID{queryID(t, "save-left")}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := tree.Query(tc.query, tc.limits)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !result.Truncated || result.Limit != QueryLimitDepth || result.Visited != tc.wantVisited {
 				t.Fatalf("result = %+v", result)
 			}
 			if got := queryIDs(result.Nodes); !sameNodeIDs(got, tc.wantIDs) {
