@@ -59,7 +59,12 @@ func checkExternalPatchDetailValue(t *testing.T, raw, endpoint string, valid boo
 	if err != nil {
 		t.Fatal(err)
 	}
-	before, after := "{}", "{}"
+	companion := "{}"
+	var endpointValue Value
+	if err := json.Unmarshal(value, &endpointValue); err == nil && endpointValue.Redacted {
+		companion = `{"redacted":true}`
+	}
+	before, after := companion, companion
 	if endpoint == "before" {
 		before = string(value)
 	} else {
@@ -197,5 +202,38 @@ func checkGeneratedSensitiveFlagChange(t *testing.T, remainsSensitive bool) {
 	}
 	if len(detail.Changed) != 1 || len(detail.Changed[0].Fields) != wantFields {
 		t.Fatalf("generated fields = %#v, want %d", detail.Changed, wantFields)
+	}
+}
+
+func TestPatchDetailRedactionAppliesAcrossValueEndpoints(t *testing.T) {
+	const secret = `{"hasValue":true,"redacted":true}`
+	const plain = `{"hasValue":true,"text":"secret-endpoint-marker"}`
+	id, err := NodeIDFor(NodeKey{"detail", "external", "text", "redaction-pair", "slot"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		name, before, after string
+		valid               bool
+	}{
+		{"redact", plain, secret, false},
+		{"unredact", secret, plain, false},
+		{"empty then redacted", `{}`, secret, false},
+		{"redacted then empty", secret, `{}`, false},
+		{"both redacted", secret, secret, true},
+		{"both ordinary", plain, plain, true},
+	}
+	for _, tc := range cases {
+		for _, withFlags := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/flags=%t", tc.name, withFlags), func(t *testing.T) {
+				fields := []FieldChange{}
+				if withFlags {
+					fields = append(fields, FieldChange{Path: "/flags", Before: json.RawMessage(`{"sensitive":false}`), After: json.RawMessage(`{"sensitive":false}`)})
+				}
+				fields = append(fields, FieldChange{Path: "/value", Before: json.RawMessage(tc.before), After: json.RawMessage(tc.after)})
+				detail := PatchDetail{SchemaVersion: PatchDetailV1, FromRevision: 1, ToRevision: 2, Changed: []NodeChange{{NodeID: id, Fields: fields}}}
+				checkDecodedPatchDetail(t, detail, tc.valid)
+			})
+		}
 	}
 }

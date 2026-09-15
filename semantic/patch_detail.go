@@ -112,6 +112,10 @@ func validPatchDetailRedaction(fields []FieldChange) bool {
 			value = &fields[i]
 		}
 	}
+	before, after, valid := patchDetailValuePair(value)
+	if !valid {
+		return false
+	}
 	if flags == nil {
 		return true
 	}
@@ -127,11 +131,18 @@ func validPatchDetailRedaction(fields []FieldChange) bool {
 		// Other flag changes need not repeat an unchanged sensitive value.
 		return beforeSensitive == afterSensitive
 	}
-	var before, after Value
-	if json.Unmarshal(value.Before, &before) != nil || json.Unmarshal(value.After, &after) != nil {
-		return false
-	}
 	return before.Redacted && after.Redacted
+}
+
+func patchDetailValuePair(field *FieldChange) (Value, Value, bool) {
+	var before, after Value
+	if field == nil {
+		return before, after, true
+	}
+	if json.Unmarshal(field.Before, &before) != nil || json.Unmarshal(field.After, &after) != nil {
+		return before, after, false
+	}
+	return before, after, before.Redacted == after.Redacted
 }
 
 func patchDetailSensitivity(raw json.RawMessage) (bool, bool) {
