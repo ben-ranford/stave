@@ -156,8 +156,11 @@ func (s Surface) WithCell(x, y int, cell Cell) Surface {
 	if x < 0 || y < 0 || x >= s.Width || y >= s.Height {
 		return s
 	}
-	next := s.clone()
 	span := max(1, int(cell.Width))
+	if span > s.Width-x {
+		return s
+	}
+	next := s.clone()
 	if cell.Width == 0 {
 		cell.Width = 1
 	}
@@ -416,6 +419,9 @@ func (b *Builder) putCell(x, y int, cell Cell) {
 		return
 	}
 	span := max(1, int(cell.Width))
+	if span > b.surface.Width-x {
+		return
+	}
 	if cell.Width == 0 {
 		cell.Width = 1
 	}
