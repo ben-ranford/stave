@@ -187,9 +187,7 @@ func (e Event) Clone() (Event, error) {
 		Payload       json.RawMessage `json:"payload"`
 		Meta          Metadata        `json:"meta"`
 	}
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.UseNumber()
-	if err := decoder.Decode(&raw); err != nil {
+	if err := canonical.Decode(data, &raw); err != nil {
 		return Event{}, err
 	}
 	payload, err := decodePayload(raw.Kind, raw.Payload)

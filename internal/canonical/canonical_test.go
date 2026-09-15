@@ -1,6 +1,9 @@
 package canonical
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
 
 func TestJSONNumbers(t *testing.T) {
 	a, _ := JSON([]byte(`9007199254740992`))
@@ -25,5 +28,18 @@ func TestJSONNumbers(t *testing.T) {
 	}
 	if _, e := JSON([]byte(`1 2`)); e == nil {
 		t.Fatal("trailing accepted")
+	}
+}
+
+func TestDecodePreservesNumbersAndReturnsMalformedInput(t *testing.T) {
+	var value map[string]any
+	if err := Decode([]byte(`{"n":9007199254740993}`), &value); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := value["n"].(json.Number); !ok || got.String() != "9007199254740993" {
+		t.Fatalf("decoded number = %#v, want json.Number", value["n"])
+	}
+	if err := Decode([]byte(`{"n":`), &value); err == nil {
+		t.Fatal("Decode accepted malformed JSON")
 	}
 }

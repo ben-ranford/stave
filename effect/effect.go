@@ -1,10 +1,8 @@
 package effect
 
 import (
-	"bytes"
 	"context"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
@@ -461,9 +459,7 @@ func cloneAny(value any) (any, error) {
 		return nil, err
 	}
 	var out any
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.UseNumber()
-	if err := decoder.Decode(&out); err != nil {
+	if err := canonical.Decode(data, &out); err != nil {
 		return nil, err
 	}
 	return out, nil
