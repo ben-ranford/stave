@@ -15,10 +15,12 @@ type PatchDetailVersion string
 
 const PatchDetailV1 PatchDetailVersion = "stave.semantic.patch-detail/v1"
 
+const patchDetailValuePath = "/value"
+
 var patchDetailFields = map[string]struct{}{
 	"/actions": {}, "/children": {}, "/description": {}, "/flags": {},
 	"/layout": {}, "/metadata": {}, "/name": {}, "/relations": {},
-	"/role": {}, "/states": {}, "/style": {}, "/value": {},
+	"/role": {}, "/states": {}, "/style": {}, patchDetailValuePath: {},
 }
 
 // NegotiatePatchDetailVersion returns the detail version supported by both peers.
@@ -107,7 +109,7 @@ func validPatchDetailEndpoint(path string, raw json.RawMessage) bool {
 	if !canonicalRawJSON(raw) {
 		return false
 	}
-	return path != "/value" || validPatchDetailValue(raw)
+	return path != patchDetailValuePath || validPatchDetailValue(raw)
 }
 
 func validPatchDetailValue(raw json.RawMessage) bool {
@@ -203,7 +205,7 @@ func changedFields(a, b Node) []FieldChange {
 		out = append(out, FieldChange{Path: field.path, Before: before, After: after})
 	}
 	if !canonical.Equal(a.value, b.value) || detailValueRedacted(a) != detailValueRedacted(b) {
-		out = append(out, FieldChange{Path: "/value", Before: canonicalFieldValue(beforeValue), After: canonicalFieldValue(afterValue)})
+		out = append(out, FieldChange{Path: patchDetailValuePath, Before: canonicalFieldValue(beforeValue), After: canonicalFieldValue(afterValue)})
 	}
 	return out
 }
