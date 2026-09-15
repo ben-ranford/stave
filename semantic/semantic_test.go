@@ -1,11 +1,16 @@
 package semantic
 
 import (
+	"bytes"
 	"encoding/base32"
 	"encoding/json"
+	"fmt"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/ben-ranford/stave/internal/canonical"
 )
 
 func TestNodeIdentityStable(t *testing.T) {
@@ -180,70 +185,90 @@ func TestTreeRelationValidationPreservesPreorderErrors(t *testing.T) {
 	}
 
 	t.Run("valid", func(t *testing.T) {
-		root, err := NewNode(NodeSpec{ID: rootID, Role: "group", Name: "root", Relations: []Relation{{Kind: "described-by", Target: childID}}, Children: []Node{child}})
-		if err != nil {
-			t.Fatal(err)
-		}
-		tree, err := NewTree(1, root)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := tree.WithRevision(2); err != nil {
-			t.Fatal(err)
-		}
-		if err := tree.Snapshot().Validate(); err != nil {
-			t.Fatal(err)
-		}
-		relations := tree.Root().Relations()
-		relations[0].Target = danglingID
-		if err := tree.Validate(); err != nil {
-			t.Fatalf("relation accessor mutation changed tree validation: %v", err)
-		}
+		testTreeRelationValidationValid(t, rootID, childID, danglingID, child)
 	})
 
 	t.Run("invalid target", func(t *testing.T) {
-		root, err := NewNode(NodeSpec{ID: rootID, Role: "group", Name: "root", Relations: []Relation{{Kind: "described-by", Target: "invalid"}}})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := NewTree(1, root); err == nil || err.Error() != "invalid relation target" {
-			t.Fatalf("NewTree() error = %v", err)
-		}
+		testTreeRelationValidationInvalidTarget(t, rootID)
 	})
 
 	t.Run("dangling relation", func(t *testing.T) {
-		root, err := NewNode(NodeSpec{ID: rootID, Role: "group", Name: "root", Relations: []Relation{{Kind: "described-by", Target: danglingID}}})
-		if err != nil {
-			t.Fatal(err)
-		}
-		want := "dangling relation " + danglingID.String()
-		if _, err := NewTree(1, root); err == nil || err.Error() != want {
-			t.Fatalf("NewTree() error = %v, want %q", err, want)
-		}
-		invalid := Tree{schemaVersion: "stave-semantic-v1", revision: 1, root: root}
-		if _, err := invalid.WithRevision(2); err == nil || err.Error() != want {
-			t.Fatalf("WithRevision() error = %v, want %q", err, want)
-		}
-		snapshot := Snapshot{SchemaVersion: "stave-semantic-v1", Revision: 1, TreeHash: "hash", Root: root}
-		if err := snapshot.Validate(); err == nil || err.Error() != want {
-			t.Fatalf("Snapshot.Validate() error = %v, want %q", err, want)
-		}
+		testTreeRelationValidationDanglingTarget(t, rootID, danglingID)
 	})
 
 	t.Run("duplicate precedes dangling relation", func(t *testing.T) {
-		duplicate, err := NewNode(NodeSpec{ID: rootID, Role: "text", Name: "duplicate"})
-		if err != nil {
-			t.Fatal(err)
-		}
-		root, err := NewNode(NodeSpec{ID: rootID, Role: "group", Name: "root", Relations: []Relation{{Kind: "described-by", Target: danglingID}}, Children: []Node{duplicate}})
-		if err != nil {
-			t.Fatal(err)
-		}
-		want := "duplicate node id " + rootID.String() + " generations 0/0"
-		if _, err := NewTree(1, root); err == nil || err.Error() != want {
-			t.Fatalf("NewTree() error = %v, want %q", err, want)
-		}
+		testTreeRelationValidationDuplicatePrecedesDangling(t, rootID, danglingID)
 	})
+}
+
+func testTreeRelationValidationValid(t *testing.T, rootID, childID, danglingID NodeID, child Node) {
+	t.Helper()
+	root, err := NewNode(NodeSpec{ID: rootID, Role: "group", Name: "root", Relations: []Relation{{Kind: "described-by", Target: childID}}, Children: []Node{child}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree, err := NewTree(1, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tree.WithRevision(2); err != nil {
+		t.Fatal(err)
+	}
+	if err := tree.Snapshot().Validate(); err != nil {
+		t.Fatal(err)
+	}
+	relations := tree.Root().Relations()
+	relations[0].Target = danglingID
+	if err := tree.Validate(); err != nil {
+		t.Fatalf("relation accessor mutation changed tree validation: %v", err)
+	}
+}
+
+func testTreeRelationValidationInvalidTarget(t *testing.T, rootID NodeID) {
+	t.Helper()
+	root, err := NewNode(NodeSpec{ID: rootID, Role: "group", Name: "root", Relations: []Relation{{Kind: "described-by", Target: "invalid"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewTree(1, root); err == nil || err.Error() != "invalid relation target" {
+		t.Fatalf("NewTree() error = %v", err)
+	}
+}
+
+func testTreeRelationValidationDanglingTarget(t *testing.T, rootID, danglingID NodeID) {
+	t.Helper()
+	root, err := NewNode(NodeSpec{ID: rootID, Role: "group", Name: "root", Relations: []Relation{{Kind: "described-by", Target: danglingID}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "dangling relation " + danglingID.String()
+	if _, err := NewTree(1, root); err == nil || err.Error() != want {
+		t.Fatalf("NewTree() error = %v, want %q", err, want)
+	}
+	invalid := Tree{schemaVersion: "stave-semantic-v1", revision: 1, root: root}
+	if _, err := invalid.WithRevision(2); err == nil || err.Error() != want {
+		t.Fatalf("WithRevision() error = %v, want %q", err, want)
+	}
+	snapshot := Snapshot{SchemaVersion: "stave-semantic-v1", Revision: 1, TreeHash: "hash", Root: root}
+	if err := snapshot.Validate(); err == nil || err.Error() != want {
+		t.Fatalf("Snapshot.Validate() error = %v, want %q", err, want)
+	}
+}
+
+func testTreeRelationValidationDuplicatePrecedesDangling(t *testing.T, rootID, danglingID NodeID) {
+	t.Helper()
+	duplicate, err := NewNode(NodeSpec{ID: rootID, Role: "text", Name: "duplicate"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := NewNode(NodeSpec{ID: rootID, Role: "group", Name: "root", Relations: []Relation{{Kind: "described-by", Target: danglingID}}, Children: []Node{duplicate}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "duplicate node id " + rootID.String() + " generations 0/0"
+	if _, err := NewTree(1, root); err == nil || err.Error() != want {
+		t.Fatalf("NewTree() error = %v, want %q", err, want)
+	}
 }
 
 func BenchmarkTreeValidateRelationRich(b *testing.B) {
@@ -296,5 +321,214 @@ func TestNodeRejectsDELAndC1Controls(t *testing.T) {
 		if _, err := NewNode(NodeSpec{ID: id, Role: "text", Name: hostile}); err == nil {
 			t.Fatalf("control text %q accepted", hostile)
 		}
+	}
+}
+
+func TestPatchDetailV1ReportsCanonicalChangedFields(t *testing.T) {
+	ids := make([]NodeID, 3)
+	for i, entity := range []string{"root", "left", "right"} {
+		ids[i], _ = NodeIDFor(NodeKey{"detail", "v", "node", entity, "slot"})
+	}
+	left, _ := NewNode(NodeSpec{ID: ids[1], Role: "text", Name: "left"})
+	right, _ := NewNode(NodeSpec{ID: ids[2], Role: "text", Name: "right"})
+	before, _ := NewNode(NodeSpec{ID: ids[0], Role: "group", Name: "before", Description: "old", Value: SecretValue(), States: []State{"old"}, Relations: []Relation{{Kind: "owns", Target: ids[1]}}, Actions: []ActionRef{{ID: "old"}}, Layout: LayoutSpec{Width: 1}, Style: StyleIntent{Role: "old"}, Flags: Flags{Visible: true}, Metadata: map[string]string{"a": "old"}, Children: []Node{left, right}})
+	after, _ := NewNode(NodeSpec{ID: ids[0], Role: "region", Name: "after", Description: "new", Value: SecretValue(), States: []State{"new"}, Relations: []Relation{{Kind: "owns", Target: ids[2]}}, Actions: []ActionRef{{ID: "new", Default: true}}, Layout: LayoutSpec{Width: 2}, Style: StyleIntent{Role: "new"}, Flags: Flags{Visible: true, Disabled: true}, Metadata: map[string]string{"a": "new"}, Children: []Node{right, left}})
+	a, _ := NewTree(1, before)
+	b, _ := NewTree(2, after)
+	detail, err := DiffDetail(a, b, PatchDetailV1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := detail.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if len(detail.Changed) != 1 || detail.Changed[0].NodeID != ids[0] {
+		t.Fatalf("changes=%+v", detail.Changed)
+	}
+	var paths []string
+	for _, field := range detail.Changed[0].Fields {
+		paths = append(paths, field.Path)
+	}
+	want := []string{"/actions", "/children", "/description", "/flags", "/layout", "/metadata", "/name", "/relations", "/role", "/states", "/style"}
+	if !reflect.DeepEqual(paths, want) {
+		t.Fatalf("paths=%v want=%v", paths, want)
+	}
+	encoded, _ := json.Marshal(detail)
+	if strings.Contains(string(encoded), "secret") || strings.Contains(string(encoded), `"text":"`) {
+		t.Fatalf("detail leaked value: %s", encoded)
+	}
+}
+
+func TestPatchDetailNegotiationAndLegacyPatchCompatibility(t *testing.T) {
+	id, _ := NodeIDFor(NodeKey{"detail", "v", "node", "root", "slot"})
+	aNode, _ := NewNode(NodeSpec{ID: id, Role: "text", Name: "a"})
+	bNode, _ := NewNode(NodeSpec{ID: id, Generation: 1, Role: "text", Name: "b"})
+	a, _ := NewTree(1, aNode)
+	b, _ := NewTree(2, bNode)
+	before, _ := json.Marshal(Diff(a, b))
+	if got := string(before); got != `{"fromRevision":1,"toRevision":2,"generationChanged":["`+string(id)+`"]}` {
+		t.Fatalf("legacy patch=%s", got)
+	}
+	if version, ok := NegotiatePatchDetailVersion([]PatchDetailVersion{"other", PatchDetailV1}); !ok || version != PatchDetailV1 {
+		t.Fatalf("negotiation=%q,%v", version, ok)
+	}
+	if _, ok := NegotiatePatchDetailVersion([]PatchDetailVersion{"other"}); ok {
+		t.Fatal("unsupported detail negotiated")
+	}
+	if _, err := DiffDetail(a, b, "other"); err == nil {
+		t.Fatal("unsupported detail version accepted")
+	}
+	after, _ := json.Marshal(Diff(a, b))
+	if string(before) != string(after) {
+		t.Fatalf("legacy patch changed: %s != %s", before, after)
+	}
+	detail, err := DiffDetail(a, b, PatchDetailV1)
+	if err != nil || len(detail.Changed) != 1 || detail.Changed[0].Fields[0].Path != "/name" {
+		t.Fatalf("detail=%+v err=%v", detail, err)
+	}
+}
+
+func TestPatchDetailNoOpAndDeterministicOrdering(t *testing.T) {
+	id, _ := NodeIDFor(NodeKey{"detail", "v", "node", "root", "slot"})
+	node, _ := NewNode(NodeSpec{ID: id, Role: "text", Name: "same"})
+	a, _ := NewTree(1, node)
+	b, _ := NewTree(2, node)
+	detail, err := DiffDetail(a, b, PatchDetailV1)
+	if err != nil || len(detail.Changed) != 0 || len(detail.Added) != 0 || len(detail.Removed) != 0 || len(detail.GenerationChanged) != 0 {
+		t.Fatalf("detail=%+v err=%v", detail, err)
+	}
+	first, _ := json.Marshal(detail)
+	second, _ := json.Marshal(detail)
+	if string(first) != string(second) {
+		t.Fatalf("detail is not deterministic: %s != %s", first, second)
+	}
+}
+
+func TestPatchDetailValidateRequiresCanonicalSupportedFields(t *testing.T) {
+	first, _ := NodeIDFor(NodeKey{"detail", "v", "node", "first", "slot"})
+	second, _ := NodeIDFor(NodeKey{"detail", "v", "node", "second", "slot"})
+	if first > second {
+		first, second = second, first
+	}
+	valid := PatchDetail{
+		SchemaVersion: PatchDetailV1, FromRevision: 1, ToRevision: 2,
+		Added:   []NodeID{second},
+		Changed: []NodeChange{{NodeID: first, Fields: []FieldChange{{Path: "/metadata", Before: json.RawMessage(`{"key":"before"}`), After: json.RawMessage(`{"key":"after"}`)}}}},
+	}
+	if err := valid.Validate(); err != nil {
+		t.Fatalf("valid detail rejected: %v", err)
+	}
+	for _, mutate := range []func(*PatchDetail){
+		func(detail *PatchDetail) { detail.Added = []NodeID{second, first} },
+		func(detail *PatchDetail) { detail.Changed[0].Fields[0].Path = "metadata" },
+		func(detail *PatchDetail) { detail.Changed[0].Fields[0].Path = "/metadata/key" },
+		func(detail *PatchDetail) { detail.Changed[0].Fields[0].Path = "/bogus" },
+		func(detail *PatchDetail) { detail.Changed[0].Fields[0].Before = json.RawMessage(`1.0`) },
+		func(detail *PatchDetail) { detail.Changed[0].Fields[0].After = json.RawMessage(`{"b":1,"a":2}`) },
+	} {
+		detail := valid
+		detail.Added = append([]NodeID(nil), valid.Added...)
+		detail.Changed = append([]NodeChange(nil), valid.Changed...)
+		detail.Changed[0].Fields = append([]FieldChange(nil), valid.Changed[0].Fields...)
+		mutate(&detail)
+		if err := detail.Validate(); err == nil {
+			t.Fatal("invalid patch detail accepted")
+		}
+	}
+}
+
+func TestPatchDetailCanonicalValueTransitionsRedactBothEndpoints(t *testing.T) {
+	id, _ := NodeIDFor(NodeKey{"detail", "v", "node", "value", "slot"})
+	beforeNode, _ := NewNode(NodeSpec{ID: id, Role: "text", Name: "before", Value: Value{Text: "secret-before", HasValue: true}, Flags: Flags{Visible: true}})
+	afterNode, _ := NewNode(NodeSpec{ID: id, Role: "text", Name: "after", Value: SecretValue(), Flags: Flags{Visible: true, Sensitive: true}})
+	before, _ := NewTree(1, beforeNode)
+	after, _ := NewTree(2, afterNode)
+	detail, err := DiffDetail(before, after, PatchDetailV1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fields := detail.Changed[0].Fields
+	var value FieldChange
+	for _, field := range fields {
+		if field.Path == "/value" {
+			value = field
+		}
+	}
+	if string(value.Before) != `{"hasValue":true,"redacted":true}` || string(value.After) != `{"hasValue":true,"redacted":true}` {
+		t.Fatalf("value endpoints = %s -> %s", value.Before, value.After)
+	}
+	for _, field := range fields {
+		for _, endpoint := range []json.RawMessage{field.Before, field.After} {
+			canonicalized, err := canonical.JSON(endpoint)
+			if err != nil || !bytes.Equal(endpoint, canonicalized) {
+				t.Fatalf("non-canonical generated field %s: %s", field.Path, endpoint)
+			}
+		}
+	}
+	encoded, _ := json.Marshal(detail)
+	if strings.Contains(string(encoded), "secret-before") {
+		t.Fatalf("detail leaked redacted endpoint: %s", encoded)
+	}
+}
+
+func TestPatchDetailValueAndFlagOnlyRedactionTransitions(t *testing.T) {
+	id, _ := NodeIDFor(NodeKey{"detail", "v", "node", "value-transition", "slot"})
+	ordinaryBefore, _ := NewNode(NodeSpec{ID: id, Role: "text", Name: "value", Value: Value{Text: "before", HasValue: true}, Flags: Flags{Visible: true}})
+	ordinaryAfter, _ := NewNode(NodeSpec{ID: id, Role: "text", Name: "value", Value: Value{Text: "after", HasValue: true}, Flags: Flags{Visible: true}})
+	before, _ := NewTree(1, ordinaryBefore)
+	after, _ := NewTree(2, ordinaryAfter)
+	ordinary, err := DiffDetail(before, after, PatchDetailV1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := ordinary.Changed[0].Fields; len(got) != 1 || got[0].Path != "/value" || string(got[0].Before) != `{"hasValue":true,"text":"before"}` || string(got[0].After) != `{"hasValue":true,"text":"after"}` {
+		t.Fatalf("ordinary value transition = %+v", got)
+	}
+	flagBefore, _ := NewNode(NodeSpec{ID: id, Role: "text", Name: "value", Value: Value{HasValue: true}, Flags: Flags{Visible: true}})
+	flagAfter, _ := NewNode(NodeSpec{ID: id, Role: "text", Name: "value", Value: Value{HasValue: true}, Flags: Flags{Visible: true, Sensitive: true}})
+	before, _ = NewTree(1, flagBefore)
+	after, _ = NewTree(2, flagAfter)
+	redacted, err := DiffDetail(before, after, PatchDetailV1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := redacted.Changed[0].Fields; len(got) != 2 || got[0].Path != "/flags" || got[1].Path != "/value" || string(got[1].Before) != `{"hasValue":true,"redacted":true}` || string(got[1].After) != `{"hasValue":true,"redacted":true}` {
+		t.Fatalf("flag-only redaction transition = %+v", got)
+	}
+}
+
+func TestPatchDetailNegotiatedBytesKeepLegacyPatchUnchanged(t *testing.T) {
+	ids := make([]NodeID, 4)
+	for i, entity := range []string{"root", "removed", "generation", "added"} {
+		ids[i], _ = NodeIDFor(NodeKey{"detail", "v", "node", entity, "slot"})
+	}
+	removed, _ := NewNode(NodeSpec{ID: ids[1], Role: "text", Name: "removed"})
+	beforeGeneration, _ := NewNode(NodeSpec{ID: ids[2], Role: "text", Name: "generation"})
+	added, _ := NewNode(NodeSpec{ID: ids[3], Role: "text", Name: "added"})
+	afterGeneration, _ := NewNode(NodeSpec{ID: ids[2], Generation: 1, Role: "text", Name: "generation"})
+	beforeRoot, _ := NewNode(NodeSpec{ID: ids[0], Role: "group", Name: "root", Children: []Node{removed, beforeGeneration}})
+	afterRoot, _ := NewNode(NodeSpec{ID: ids[0], Role: "group", Name: "root", Children: []Node{afterGeneration, added}})
+	before, _ := NewTree(1, beforeRoot)
+	after, _ := NewTree(2, afterRoot)
+	legacy, _ := json.Marshal(Diff(before, after))
+	wantLegacy := fmt.Sprintf(`{"fromRevision":1,"toRevision":2,"added":[%q],"removed":[%q],"generationChanged":[%q]}`, ids[3], ids[1], ids[2])
+	if string(legacy) != wantLegacy {
+		t.Fatalf("legacy patch = %s, want %s", legacy, wantLegacy)
+	}
+	if _, ok := NegotiatePatchDetailVersion([]PatchDetailVersion{"other"}); ok {
+		t.Fatal("unnegotiated detail version accepted")
+	}
+	detail, err := DiffDetail(before, after, PatchDetailV1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, _ := json.Marshal(detail)
+	wantDetail := fmt.Sprintf(`{"schemaVersion":"stave.semantic.patch-detail/v1","fromRevision":1,"toRevision":2,"added":[%q],"removed":[%q],"generationChanged":[%q],"changed":[{"nodeId":%q,"fields":[{"path":"/children","before":[%q,%q],"after":[%q,%q]}]}]}`, ids[3], ids[1], ids[2], ids[0], ids[1], ids[2], ids[2], ids[3])
+	if string(encoded) != wantDetail {
+		t.Fatalf("negotiated detail = %s, want %s", encoded, wantDetail)
+	}
+	legacyAfter, _ := json.Marshal(Diff(before, after))
+	if !bytes.Equal(legacy, legacyAfter) {
+		t.Fatalf("detail generation changed legacy bytes: %s != %s", legacy, legacyAfter)
 	}
 }

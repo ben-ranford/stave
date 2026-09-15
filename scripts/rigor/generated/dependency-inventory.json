@@ -560,6 +560,7 @@
       "importPath": "github.com/ben-ranford/stave/semantic",
       "dir": "semantic",
       "imports": [
+        "bytes",
         "crypto/sha256",
         "encoding/base32",
         "encoding/hex",
@@ -568,6 +569,7 @@
         "fmt",
         "github.com/ben-ranford/stave/internal/canonical",
         "sort",
+        "strconv",
         "strings",
         "unicode",
         "unicode/utf8"
