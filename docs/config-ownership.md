@@ -14,7 +14,7 @@ map names the owner of each public configuration field.
 | `capabilities.color`, `capabilities.unicode`, `capabilities.motion`, `capabilities.mouse`, `capabilities.alternateScreen` | Application | Capability policy supplied when composing a session. |
 | `keymap.profile`, `keymap.bindings` | Application | Application action and key binding selection. |
 | `runtime.mode`, `runtime.actionQueue`, `runtime.restoreOnPanic` | Application | Host runtime lifecycle policy. |
-| `runtime.inputQueue` | Program | Session event queue capacity. |
+| `runtime.inputQueue` | Program | Session event queue capacity and pending effect-batch admission capacity. |
 | `protocol.enabled`, `protocol.transport` | Application | Protocol adapter selection and transport policy. |
 | `protocol.maxMessageBytes` | Adapter-projected | Agent request size limit through `agent.OptionsFromConfig`. |
 | `security.allowClipboard`, `security.allowCoordinateFallback`, `security.confirmationTTL` | Application | Security policy supplied while composing capabilities and confirmations. |
