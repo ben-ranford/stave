@@ -20,9 +20,10 @@ const PatchDetailV1 PatchDetailVersion = "stave.semantic.patch-detail/v1"
 const patchDetailValuePath = "/value"
 const patchDetailFlagsPath = "/flags"
 const patchDetailSensitiveField = "sensitive"
+const patchDetailChildrenPath = "/children"
 
 var patchDetailFields = map[string]func(json.RawMessage) bool{
-	"/actions": validPatchDetailActions, "/children": validPatchDetailChildren,
+	"/actions": validPatchDetailActions, patchDetailChildrenPath: validPatchDetailChildren,
 	"/description": validPatchDetailText, patchDetailFlagsPath: validPatchDetailFlags,
 	"/layout": validPatchDetailLayout, "/metadata": validPatchDetailMetadata,
 	"/name": validPatchDetailText, "/relations": validPatchDetailRelations,
@@ -100,12 +101,49 @@ func validatePatchDetailChange(change NodeChange) error {
 		if !supportedPatchDetailField(field.Path) || field.Path <= path || !validPatchDetailEndpoint(field.Path, field.Before) || !validPatchDetailEndpoint(field.Path, field.After) {
 			return errors.New("invalid semantic patch detail field")
 		}
+		if !validPatchDetailTransition(field) || !validPatchDetailChildChange(change.NodeID, field) {
+			return errors.New("invalid semantic patch detail transition")
+		}
 		path = field.Path
 	}
 	if !validPatchDetailRedaction(change.Fields) {
 		return errors.New("invalid semantic patch detail redaction")
 	}
 	return nil
+}
+
+func validPatchDetailTransition(field FieldChange) bool {
+	if !bytes.Equal(field.Before, field.After) {
+		return true
+	}
+	if field.Path != patchDetailValuePath {
+		return false
+	}
+	// A real value transition may be hidden by redaction of both endpoints.
+	var value Value
+	return json.Unmarshal(field.Before, &value) == nil && value.Redacted
+}
+
+func validPatchDetailChildChange(id NodeID, field FieldChange) bool {
+	if field.Path != patchDetailChildrenPath {
+		return true
+	}
+	return distinctPatchDetailChildren(id, field.Before) && distinctPatchDetailChildren(id, field.After)
+}
+
+func distinctPatchDetailChildren(parent NodeID, raw json.RawMessage) bool {
+	var children []NodeID
+	if json.Unmarshal(raw, &children) != nil {
+		return false
+	}
+	seen := map[NodeID]bool{parent: true}
+	for _, child := range children {
+		if seen[child] {
+			return false
+		}
+		seen[child] = true
+	}
+	return true
 }
 
 func validPatchDetailRedaction(fields []FieldChange) bool {
@@ -366,7 +404,7 @@ func changedFields(a, b Node) []FieldChange {
 		path          string
 		before, after any
 	}{
-		{"/actions", a.actions, b.actions}, {"/children", childIDs(a.children), childIDs(b.children)},
+		{"/actions", a.actions, b.actions}, {patchDetailChildrenPath, childIDs(a.children), childIDs(b.children)},
 		{"/description", a.description, b.description}, {patchDetailFlagsPath, a.flags, b.flags},
 		{"/layout", a.layout, b.layout}, {"/metadata", a.metadata, b.metadata}, {"/name", a.name, b.name},
 		{"/relations", a.relations, b.relations}, {"/role", a.role, b.role}, {"/states", a.states, b.states},

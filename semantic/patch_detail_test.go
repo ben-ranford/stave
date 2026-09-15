@@ -1,6 +1,7 @@
 package semantic
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -64,6 +65,8 @@ func checkExternalPatchDetailValue(t *testing.T, raw, endpoint string, valid boo
 	var endpointValue Value
 	if err := json.Unmarshal(value, &endpointValue); err == nil && endpointValue.Redacted {
 		companion = `{"redacted":true}`
+	} else if bytes.Equal(value, []byte(companion)) {
+		companion = `{"hasValue":false}`
 	}
 	before, after := companion, companion
 	if endpoint == "before" {
@@ -94,7 +97,11 @@ func TestPatchDetailValidateNonValueEndpoints(t *testing.T) {
 	if strconv.IntSize == 32 {
 		maxInt = "2147483647e0"
 	}
-	children := fmt.Sprintf("[%q]", id)
+	child, err := NodeIDFor(NodeKey{"detail", "external", "text", "child", "slot"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	children := fmt.Sprintf("[%q]", child)
 	relations := fmt.Sprintf(`[{"kind":"any-kind","target":%q}]`, id)
 	cases := []struct {
 		path           string
@@ -116,7 +123,7 @@ func TestPatchDetailValidateNonValueEndpoints(t *testing.T) {
 		for _, raw := range tc.valid {
 			for _, endpoint := range []string{"before", "after"} {
 				t.Run(tc.path+"/valid/"+endpoint, func(t *testing.T) {
-					checkExternalPatchDetailEndpoint(t, id, tc.path, raw, raw, endpoint, true)
+					checkExternalPatchDetailEndpoint(t, id, tc.path, raw, validPatchDetailCompanion(tc.path, raw, child), endpoint, true)
 				})
 			}
 		}
@@ -128,6 +135,49 @@ func TestPatchDetailValidateNonValueEndpoints(t *testing.T) {
 			}
 		}
 	}
+}
+
+func validPatchDetailCompanion(path, raw string, child NodeID) string {
+	switch path {
+	case "/actions":
+		if raw == `null` {
+			return `[]`
+		}
+		return `null`
+	case "/children":
+		if raw == `[]` {
+			return fmt.Sprintf("[%q]", child)
+		}
+		return `[]`
+	case "/description":
+		return `"changed description"`
+	case "/flags":
+		return `{"visible":true}`
+	case "/layout":
+		return `{"height":1e0}`
+	case "/metadata":
+		if raw == `{}` {
+			return `{"key":"changed"}`
+		}
+		return `{}`
+	case "/name":
+		return `"changed name"`
+	case "/relations":
+		if raw == `null` {
+			return `[]`
+		}
+		return `null`
+	case "/role":
+		return `"region"`
+	case "/states":
+		if raw == `null` {
+			return `[]`
+		}
+		return `null`
+	case "/style":
+		return `{"role":"changed"}`
+	}
+	return raw
 }
 
 func checkExternalPatchDetailEndpoint(t *testing.T, id NodeID, path, raw, companion, endpoint string, valid bool) {
@@ -183,6 +233,52 @@ func TestDiffDetailValidatesNonzeroLayoutEndpoints(t *testing.T) {
 	t.Fatalf("generated layout endpoint = %#v", detail.Changed[0].Fields)
 }
 
+func TestPatchDetailRejectsUnchangedOrdinaryFields(t *testing.T) {
+	id, err := NodeIDFor(NodeKey{"detail", "external", "text", "unchanged", "slot"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain := json.RawMessage(`{"hasValue":true,"text":"ordinary"}`)
+	redacted := json.RawMessage(`{"hasValue":true,"redacted":true}`)
+	cases := []struct {
+		name   string
+		fields []FieldChange
+		valid  bool
+	}{
+		{"name", []FieldChange{{Path: "/name", Before: json.RawMessage(`"same"`), After: json.RawMessage(`"same"`)}}, false},
+		{"flags", []FieldChange{{Path: "/flags", Before: json.RawMessage(`{"sensitive":false}`), After: json.RawMessage(`{"sensitive":false}`)}}, false},
+		{"ordinary value", []FieldChange{{Path: "/value", Before: plain, After: plain}}, false},
+		{"redacted value during hidden transition", []FieldChange{{Path: "/flags", Before: json.RawMessage(`{"sensitive":false}`), After: json.RawMessage(`{"sensitive":true}`)}, {Path: "/value", Before: redacted, After: redacted}}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			detail := PatchDetail{SchemaVersion: PatchDetailV1, FromRevision: 1, ToRevision: 2, Changed: []NodeChange{{NodeID: id, Fields: tc.fields}}}
+			checkDecodedPatchDetail(t, detail, tc.valid)
+		})
+	}
+}
+
+func TestPatchDetailRejectsDuplicateOrEnclosingChildren(t *testing.T) {
+	id, err := NodeIDFor(NodeKey{"detail", "external", "text", "parent", "slot"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, err := NodeIDFor(NodeKey{"detail", "external", "text", "child", "slot"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, raw := range map[string]string{
+		"duplicate": fmt.Sprintf("[%q,%q]", child, child),
+		"enclosing": fmt.Sprintf("[%q]", id),
+	} {
+		for _, endpoint := range []string{"before", "after"} {
+			t.Run(name+"/"+endpoint, func(t *testing.T) {
+				checkExternalPatchDetailEndpoint(t, id, "/children", raw, `[]`, endpoint, false)
+			})
+		}
+	}
+}
+
 func TestPatchDetailChangedIDsExcludeAddedAndRemoved(t *testing.T) {
 	id, err := NodeIDFor(NodeKey{"detail", "external", "text", "identity", "slot"})
 	if err != nil {
@@ -209,8 +305,8 @@ func TestPatchDetailSensitiveFlagEndpoints(t *testing.T) {
 		name, flagsBefore, flagsAfter, valueBefore, valueAfter string
 		valid                                                  bool
 	}{
-		{"ordinary flags only", `{"sensitive":false}`, `{"sensitive":false}`, "", "", true},
-		{"stable sensitive flags only", `{"sensitive":true}`, `{"sensitive":true}`, "", "", true},
+		{"ordinary flags only", `{"sensitive":false}`, `{"sensitive":false,"visible":true}`, "", "", true},
+		{"stable sensitive flags only", `{"sensitive":true}`, `{"sensitive":true,"visible":true}`, "", "", true},
 		{"enable missing value", `{"sensitive":false}`, `{"sensitive":true}`, "", "", false},
 		{"disable missing value", `{"sensitive":true}`, `{"sensitive":false}`, "", "", false},
 		{"enable redacted", `{"sensitive":false}`, `{"sensitive":true}`, redacted, redacted, true},
@@ -220,7 +316,7 @@ func TestPatchDetailSensitiveFlagEndpoints(t *testing.T) {
 		{"disable plaintext before", `{"sensitive":true}`, `{"sensitive":false}`, plaintext, redacted, false},
 		{"disable plaintext after", `{"sensitive":true}`, `{"sensitive":false}`, redacted, plaintext, false},
 		{"stable sensitive plaintext", `{"sensitive":true}`, `{"sensitive":true}`, plaintext, plaintext, false},
-		{"ordinary plaintext", `{"sensitive":false}`, `{"sensitive":false}`, plaintext, plaintext, true},
+		{"ordinary plaintext", `{"sensitive":false}`, `{"sensitive":false,"visible":true}`, plaintext, `{"hasValue":true,"text":"other-endpoint-marker"}`, true},
 		{"case alias", `{"Sensitive":true}`, `{"sensitive":false}`, plaintext, plaintext, false},
 		{"null sensitivity", `{"sensitive":null}`, `{"sensitive":false}`, "", "", false},
 		{"string sensitivity", `{"sensitive":"true"}`, `{"sensitive":false}`, "", "", false},
@@ -320,14 +416,14 @@ func TestPatchDetailRedactionAppliesAcrossValueEndpoints(t *testing.T) {
 		{"empty then redacted", `{}`, secret, false},
 		{"redacted then empty", secret, `{}`, false},
 		{"both redacted", secret, secret, true},
-		{"both ordinary", plain, plain, true},
+		{"both ordinary", plain, `{"hasValue":true,"text":"other-endpoint-marker"}`, true},
 	}
 	for _, tc := range cases {
 		for _, withFlags := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/flags=%t", tc.name, withFlags), func(t *testing.T) {
 				fields := []FieldChange{}
 				if withFlags {
-					fields = append(fields, FieldChange{Path: "/flags", Before: json.RawMessage(`{"sensitive":false}`), After: json.RawMessage(`{"sensitive":false}`)})
+					fields = append(fields, FieldChange{Path: "/flags", Before: json.RawMessage(`{"sensitive":false}`), After: json.RawMessage(`{"sensitive":false,"visible":true}`)})
 				}
 				fields = append(fields, FieldChange{Path: "/value", Before: json.RawMessage(tc.before), After: json.RawMessage(tc.after)})
 				detail := PatchDetail{SchemaVersion: PatchDetailV1, FromRevision: 1, ToRevision: 2, Changed: []NodeChange{{NodeID: id, Fields: fields}}}
