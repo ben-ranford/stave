@@ -478,6 +478,7 @@
         "fmt",
         "github.com/ben-ranford/stave/action",
         "github.com/ben-ranford/stave/capability",
+        "github.com/ben-ranford/stave/config",
         "github.com/ben-ranford/stave/diag",
         "github.com/ben-ranford/stave/observer",
         "github.com/ben-ranford/stave/protocol",

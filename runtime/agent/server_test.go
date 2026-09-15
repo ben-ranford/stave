@@ -14,10 +14,80 @@ import (
 
 	"github.com/ben-ranford/stave/action"
 	"github.com/ben-ranford/stave/capability"
+	"github.com/ben-ranford/stave/config"
 	"github.com/ben-ranford/stave/diag"
 	"github.com/ben-ranford/stave/protocol"
 	"github.com/ben-ranford/stave/semantic"
 )
+
+func TestOptionsFromConfigProjectsOnlyAgentLimits(t *testing.T) {
+	defaults, err := OptionsFromConfig(config.Defaults())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if defaults.MaxMessageBytes != 4<<20 || defaults.MaxOutputBytes != 4<<20 || defaults.MaxTreeNodes != 100_000 {
+		t.Fatalf("default projection = %+v", defaults)
+	}
+
+	cfg := config.Defaults()
+	cfg.Protocol.MaxMessageBytes = 8192
+	cfg.Security.MaxTreeNodes = 42
+	cfg.Runtime.InputQueue = 7
+	projected, err := OptionsFromConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if projected.MaxMessageBytes != 8192 || projected.MaxOutputBytes != 4<<20 || projected.MaxTreeNodes != 42 {
+		t.Fatalf("projected limits = %+v", projected)
+	}
+	if projected.Queue != 0 || projected.MaxInFlight != 0 {
+		t.Fatalf("adapter-only options were implicitly projected: %+v", projected)
+	}
+
+	projected.Queue = 3
+	projected.MaxOutputBytes = 1024
+	projected.MaxTreeNodes = 17
+	server := New(projected)
+	if server.opt.Queue != 3 || server.limits.MaxTreeNodes != 17 || server.limits.MaxMessageBytes != 8192 || server.limits.MaxOutputBytes != 1024 {
+		t.Fatalf("explicit adapter overrides were not retained: %+v", server.opt)
+	}
+
+	cfg.Protocol.MaxMessageBytes = 0
+	if _, err := OptionsFromConfig(cfg); err == nil {
+		t.Fatal("invalid config was projected")
+	}
+}
+
+func TestOptionsFromConfigKeepsAdapterOutputDefaultIndependent(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.Protocol.MaxMessageBytes = 96
+	projected, err := OptionsFromConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projected.CompatibilityMode = true
+	root, err := semantic.NewNode(semantic.NodeSpec{Key: &semantic.NodeKey{AppNamespace: "app", View: "view", Kind: "root", Entity: "root", Slot: "main"}, Generation: 1, Role: "application", Name: "App"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree, err := semantic.NewTree(2, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot := tree.Snapshot()
+	hash := strings.Repeat("a", 64)
+	projected.SnapshotEnvelope = func(context.Context, string, uint64) (SnapshotEnvelope, error) {
+		return SnapshotEnvelope{Snapshot: &snapshot, Mode: "full", SessionID: "stave-session", Sequence: 3, Revision: 2, TreeHash: tree.Hash(), CapabilityHash: hash, SemanticVersion: tree.SchemaVersion(), ConfigHash: hash, ThemeHash: hash, WidthVersion: "width-v1"}, nil
+	}
+	var out bytes.Buffer
+	in := input("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"stave.initialize\"}\n{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"stave.initialized\"}\n{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"stave.snapshot\"}\n")
+	if err := New(projected).Serve(context.Background(), in, &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), `"id":3`) || !strings.Contains(out.String(), `"mode":"full"`) {
+		t.Fatalf("small-input projected server did not emit snapshot: %s", out.String())
+	}
+}
 
 func input(value string) io.ReadCloser { return io.NopCloser(strings.NewReader(value)) }
 
