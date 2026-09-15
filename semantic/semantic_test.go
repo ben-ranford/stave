@@ -185,70 +185,90 @@ func TestTreeRelationValidationPreservesPreorderErrors(t *testing.T) {
 	}
 
 	t.Run("valid", func(t *testing.T) {
-		root, err := NewNode(NodeSpec{ID: rootID, Role: "group", Name: "root", Relations: []Relation{{Kind: "described-by", Target: childID}}, Children: []Node{child}})
-		if err != nil {
-			t.Fatal(err)
-		}
-		tree, err := NewTree(1, root)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := tree.WithRevision(2); err != nil {
-			t.Fatal(err)
-		}
-		if err := tree.Snapshot().Validate(); err != nil {
-			t.Fatal(err)
-		}
-		relations := tree.Root().Relations()
-		relations[0].Target = danglingID
-		if err := tree.Validate(); err != nil {
-			t.Fatalf("relation accessor mutation changed tree validation: %v", err)
-		}
+		testTreeRelationValidationValid(t, rootID, childID, danglingID, child)
 	})
 
 	t.Run("invalid target", func(t *testing.T) {
-		root, err := NewNode(NodeSpec{ID: rootID, Role: "group", Name: "root", Relations: []Relation{{Kind: "described-by", Target: "invalid"}}})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := NewTree(1, root); err == nil || err.Error() != "invalid relation target" {
-			t.Fatalf("NewTree() error = %v", err)
-		}
+		testTreeRelationValidationInvalidTarget(t, rootID)
 	})
 
 	t.Run("dangling relation", func(t *testing.T) {
-		root, err := NewNode(NodeSpec{ID: rootID, Role: "group", Name: "root", Relations: []Relation{{Kind: "described-by", Target: danglingID}}})
-		if err != nil {
-			t.Fatal(err)
-		}
-		want := "dangling relation " + danglingID.String()
-		if _, err := NewTree(1, root); err == nil || err.Error() != want {
-			t.Fatalf("NewTree() error = %v, want %q", err, want)
-		}
-		invalid := Tree{schemaVersion: "stave-semantic-v1", revision: 1, root: root}
-		if _, err := invalid.WithRevision(2); err == nil || err.Error() != want {
-			t.Fatalf("WithRevision() error = %v, want %q", err, want)
-		}
-		snapshot := Snapshot{SchemaVersion: "stave-semantic-v1", Revision: 1, TreeHash: "hash", Root: root}
-		if err := snapshot.Validate(); err == nil || err.Error() != want {
-			t.Fatalf("Snapshot.Validate() error = %v, want %q", err, want)
-		}
+		testTreeRelationValidationDanglingTarget(t, rootID, danglingID)
 	})
 
 	t.Run("duplicate precedes dangling relation", func(t *testing.T) {
-		duplicate, err := NewNode(NodeSpec{ID: rootID, Role: "text", Name: "duplicate"})
-		if err != nil {
-			t.Fatal(err)
-		}
-		root, err := NewNode(NodeSpec{ID: rootID, Role: "group", Name: "root", Relations: []Relation{{Kind: "described-by", Target: danglingID}}, Children: []Node{duplicate}})
-		if err != nil {
-			t.Fatal(err)
-		}
-		want := "duplicate node id " + rootID.String() + " generations 0/0"
-		if _, err := NewTree(1, root); err == nil || err.Error() != want {
-			t.Fatalf("NewTree() error = %v, want %q", err, want)
-		}
+		testTreeRelationValidationDuplicatePrecedesDangling(t, rootID, danglingID)
 	})
+}
+
+func testTreeRelationValidationValid(t *testing.T, rootID, childID, danglingID NodeID, child Node) {
+	t.Helper()
+	root, err := NewNode(NodeSpec{ID: rootID, Role: "group", Name: "root", Relations: []Relation{{Kind: "described-by", Target: childID}}, Children: []Node{child}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree, err := NewTree(1, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tree.WithRevision(2); err != nil {
+		t.Fatal(err)
+	}
+	if err := tree.Snapshot().Validate(); err != nil {
+		t.Fatal(err)
+	}
+	relations := tree.Root().Relations()
+	relations[0].Target = danglingID
+	if err := tree.Validate(); err != nil {
+		t.Fatalf("relation accessor mutation changed tree validation: %v", err)
+	}
+}
+
+func testTreeRelationValidationInvalidTarget(t *testing.T, rootID NodeID) {
+	t.Helper()
+	root, err := NewNode(NodeSpec{ID: rootID, Role: "group", Name: "root", Relations: []Relation{{Kind: "described-by", Target: "invalid"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewTree(1, root); err == nil || err.Error() != "invalid relation target" {
+		t.Fatalf("NewTree() error = %v", err)
+	}
+}
+
+func testTreeRelationValidationDanglingTarget(t *testing.T, rootID, danglingID NodeID) {
+	t.Helper()
+	root, err := NewNode(NodeSpec{ID: rootID, Role: "group", Name: "root", Relations: []Relation{{Kind: "described-by", Target: danglingID}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "dangling relation " + danglingID.String()
+	if _, err := NewTree(1, root); err == nil || err.Error() != want {
+		t.Fatalf("NewTree() error = %v, want %q", err, want)
+	}
+	invalid := Tree{schemaVersion: "stave-semantic-v1", revision: 1, root: root}
+	if _, err := invalid.WithRevision(2); err == nil || err.Error() != want {
+		t.Fatalf("WithRevision() error = %v, want %q", err, want)
+	}
+	snapshot := Snapshot{SchemaVersion: "stave-semantic-v1", Revision: 1, TreeHash: "hash", Root: root}
+	if err := snapshot.Validate(); err == nil || err.Error() != want {
+		t.Fatalf("Snapshot.Validate() error = %v, want %q", err, want)
+	}
+}
+
+func testTreeRelationValidationDuplicatePrecedesDangling(t *testing.T, rootID, danglingID NodeID) {
+	t.Helper()
+	duplicate, err := NewNode(NodeSpec{ID: rootID, Role: "text", Name: "duplicate"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := NewNode(NodeSpec{ID: rootID, Role: "group", Name: "root", Relations: []Relation{{Kind: "described-by", Target: danglingID}}, Children: []Node{duplicate}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "duplicate node id " + rootID.String() + " generations 0/0"
+	if _, err := NewTree(1, root); err == nil || err.Error() != want {
+		t.Fatalf("NewTree() error = %v, want %q", err, want)
+	}
 }
 
 func BenchmarkTreeValidateRelationRich(b *testing.B) {
