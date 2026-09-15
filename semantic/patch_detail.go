@@ -82,7 +82,11 @@ type FieldChange struct {
 }
 
 // Validate checks ordering, canonical field types and local consistency.
-// Partial details cannot prove full-tree membership or application action authority.
+// It does not establish child ownership across parents, absence of cycles,
+// reachability from the root, or complete relation-target membership.
+// Consumers that reconstruct a tree from external detail must validate the
+// complete result with NewTree or Snapshot.Validate. Detail alone omits added
+// node payloads and cannot prove full-tree validity or application action authority.
 func (p PatchDetail) Validate() error {
 	if p.SchemaVersion != PatchDetailV1 {
 		return errors.New("unsupported semantic patch detail version")
