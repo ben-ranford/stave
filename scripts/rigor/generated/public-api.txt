@@ -171,9 +171,9 @@ type ValidationError struct { Problems []Problem `json:"problems"` }
 type Viewport struct { Width int `json:"width,omitempty"`; Height int `json:"height,omitempty"` }
 
 [github.com/ben-ranford/stave/conformance]
-const MaxReportBytes
-const MaxReportFailures
-const ReportSchemaVersion
+const MaxReportBytes untyped int = 65536
+const MaxReportFailures untyped int = 256
+const ReportSchemaVersion untyped string = "stave.conformance.report.v1"
 func CheckAdapter(a Adapter, tree semantic.Node, modes []Mode) Report
 func CheckClient(client Client, fixtures []ClientFixture) ClientReport
 func MarshalJSONReport(report JSONReport) ([]byte, error)
