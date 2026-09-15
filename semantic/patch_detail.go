@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"sort"
+	"unicode/utf8"
 
 	"github.com/ben-ranford/stave/internal/canonical"
 )
@@ -74,7 +75,7 @@ func (p PatchDetail) Validate() error {
 		previous = change.NodeID
 		path := ""
 		for _, field := range change.Fields {
-			if !supportedPatchDetailField(field.Path) || field.Path <= path || !canonicalRawJSON(field.Before) || !canonicalRawJSON(field.After) {
+			if !supportedPatchDetailField(field.Path) || field.Path <= path || !validPatchDetailEndpoint(field.Path, field.Before) || !validPatchDetailEndpoint(field.Path, field.After) {
 				return errors.New("invalid semantic patch detail field")
 			}
 			path = field.Path
@@ -100,6 +101,46 @@ func supportedPatchDetailField(path string) bool {
 func canonicalRawJSON(raw json.RawMessage) bool {
 	canonicalized, err := canonical.JSON(raw)
 	return err == nil && bytes.Equal(canonicalized, raw)
+}
+
+func validPatchDetailEndpoint(path string, raw json.RawMessage) bool {
+	if !canonicalRawJSON(raw) {
+		return false
+	}
+	return path != "/value" || validPatchDetailValue(raw)
+}
+
+func validPatchDetailValue(raw json.RawMessage) bool {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil || fields == nil {
+		return false
+	}
+	for name, field := range fields {
+		if !validPatchDetailValueField(name, field) {
+			return false
+		}
+	}
+	var value Value
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return false
+	}
+	return utf8.ValidString(value.Text) && !containsUnsafeControl(value.Text) && (!value.Redacted || value.Text == "")
+}
+
+func validPatchDetailValueField(name string, raw json.RawMessage) bool {
+	if bytes.Equal(raw, []byte("null")) {
+		return false
+	}
+	switch name {
+	case "text":
+		var text string
+		return json.Unmarshal(raw, &text) == nil
+	case "redacted", "hasValue":
+		var flag bool
+		return json.Unmarshal(raw, &flag) == nil
+	default:
+		return false
+	}
 }
 
 // DiffDetail returns changed-field detail only for a previously negotiated
