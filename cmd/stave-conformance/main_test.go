@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ben-ranford/stave/action"
@@ -112,6 +115,37 @@ func TestNormalizeRenderedMeaningIgnoresTerminalPadding(t *testing.T) {
 	}
 }
 
+func TestReportModeFormatsOnlyValidatedReportJSON(t *testing.T) {
+	input := `{"schemaVersion":"stave.conformance.report.v1","failures":[{"path":"/b","rule":"secret-redaction","detail":"redacted","documentation":"docs/accessibility-agent-parity.md#capability-policy"},{"path":"/a","rule":"accessible-name","detail":"missing","documentation":"docs/accessibility-agent-parity.md#parity-rules"}]}`
+	var output bytes.Buffer
+	if err := runReportMode([]string{"--report", "-"}, bytes.NewBufferString(input), &output); err != nil {
+		t.Fatal(err)
+	}
+	want := `{"schemaVersion":"stave.conformance.report.v1","failures":[{"path":"/a","rule":"accessible-name","detail":"missing","documentation":"docs/accessibility-agent-parity.md#parity-rules"},{"path":"/b","rule":"secret-redaction","detail":"redacted","documentation":"docs/accessibility-agent-parity.md#capability-policy"}]}`
+	if output.String() != want {
+		t.Fatalf("output = %q", output.String())
+	}
+}
+
+func TestReportModeRejectsAnythingButBoundedReportJSON(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		args []string
+		data string
+	}{
+		{name: "missing mode", args: nil},
+		{name: "unknown option", args: []string{"--fixture", "x"}},
+		{name: "unsupported version", args: []string{"--report", "-"}, data: `{"schemaVersion":"other","failures":[]}`},
+		{name: "unknown field", args: []string{"--report", "-"}, data: `{"schemaVersion":"stave.conformance.report.v1","failures":[],"fixture":"x"}`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if err := runReportMode(test.args, bytes.NewBufferString(test.data), &bytes.Buffer{}); err == nil {
+				t.Fatal("invalid report mode was accepted")
+			}
+		})
+	}
+}
+
 type stubAdapter struct {
 	colorOutput string
 	plainOutput string
@@ -126,3 +160,42 @@ func (s stubAdapter) Render(_ semantic.Node, mode conformance.Mode) (string, err
 }
 func (s stubAdapter) ActionRegistry() *action.Registry { return nil }
 func (s stubAdapter) Keymap() keymap.Map               { return keymap.Map{} }
+
+func TestReportModeEmptyReportRoundTrip(t *testing.T) {
+	wire := `{"schemaVersion":"stave.conformance.report.v1","failures":[]}`
+	for range 2 {
+		var output bytes.Buffer
+		if err := runReportMode([]string{"--report", "-"}, bytes.NewBufferString(wire+"\n"), &output); err != nil {
+			t.Fatal(err)
+		}
+		if output.String() != wire {
+			t.Fatalf("empty report changed: %s", output.String())
+		}
+		wire = output.String()
+	}
+}
+
+func TestReportModeExactBoundaryRoundTripsWithinLimit(t *testing.T) {
+	failures := make([]conformance.JSONFailure, 16)
+	for i := range failures {
+		failures[i] = conformance.JSONFailure{Path: fmt.Sprintf("p%03d", i), Rule: "unknown", Detail: strings.Repeat("x", 4096)}
+	}
+	failures[len(failures)-1].Detail = strings.Repeat("x", 3012)
+	input, err := conformance.MarshalJSONReport(conformance.JSONReport{SchemaVersion: conformance.ReportSchemaVersion, Failures: failures})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(input) != conformance.MaxReportBytes {
+		t.Fatalf("input length = %d, want %d", len(input), conformance.MaxReportBytes)
+	}
+	var output bytes.Buffer
+	if err := runReportMode([]string{"--report", "-"}, bytes.NewReader(input), &output); err != nil {
+		t.Fatal(err)
+	}
+	if output.Len() != conformance.MaxReportBytes {
+		t.Fatalf("output length = %d, want %d", output.Len(), conformance.MaxReportBytes)
+	}
+	if _, err := conformance.ReadJSONReport(&output); err != nil {
+		t.Fatalf("exact-boundary output did not round trip: %v", err)
+	}
+}
