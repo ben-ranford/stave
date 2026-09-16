@@ -2,6 +2,10 @@ package keymap
 
 import (
 	"encoding/json"
+	"fmt"
+	"reflect"
+	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -10,6 +14,174 @@ import (
 	"github.com/ben-ranford/stave/primitive"
 	"github.com/ben-ranford/stave/semantic"
 )
+
+func TestCodecEncodeIsDeterministicAndRoundTrips(t *testing.T) {
+	tab, _ := input.ParseKey("tab")
+	enter, _ := input.ParseKey("enter")
+	activate := action.ID(primitive.CanonicalActionID("activate"))
+	mappings := []Mapping{
+		{Binding: Binding{Sequence: []input.KeyChord{tab}, Command: CommandFocusNext}, Route: Route{Kind: RouteAction, ActionID: activate}},
+		{Binding: Binding{Sequence: []input.KeyChord{enter}, Command: CommandShutdown}, Route: Route{Kind: RouteEvent, EventKind: "shutdown"}},
+	}
+	first, err := New("portable", mappings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := New("portable", []Mapping{mappings[1], mappings[0]})
+	if err != nil {
+		t.Fatal(err)
+	}
+	encodedFirst, err := first.Encode()
+	if err != nil {
+		t.Fatalf("encode first: %v", err)
+	}
+	encodedSecond, err := second.Encode()
+	if err != nil {
+		t.Fatalf("encode second: %v", err)
+	}
+	if string(encodedFirst) != string(encodedSecond) {
+		t.Fatalf("encoding depends on mapping order:\n%s\n%s", encodedFirst, encodedSecond)
+	}
+	var document codecDocument
+	if err := json.Unmarshal(encodedFirst, &document); err != nil {
+		t.Fatalf("decode document: %v", err)
+	}
+	if document.Version != CodecVersion {
+		t.Fatalf("version=%q, want %q", document.Version, CodecVersion)
+	}
+	roundTripped, err := Decode(encodedFirst, []action.Definition{{ID: activate}})
+	if err != nil {
+		t.Fatalf("round trip: %v", err)
+	}
+	expected, err := New(document.Profile, document.Mappings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if roundTripped.Profile() != "portable" || !reflect.DeepEqual(roundTripped.Bindings(), expected.Bindings()) {
+		t.Fatalf("round trip changed map: %#v", roundTripped)
+	}
+}
+
+func TestDecodeRejectsInvalidVersionsBindingsAndUnknownFields(t *testing.T) {
+	for _, raw := range [][]byte{
+		[]byte(`{"version":"stave.keymap.v2","profile":"portable","mappings":[]}`),
+		[]byte(`{"version":"stave.keymap.v1","profile":"portable","mappings":[{"binding":{"command":"stave.activate.v1","sequence":[]},"route":{"kind":"event","eventKind":"shutdown"}}]}`),
+		[]byte(`{"version":"stave.keymap.v1","profile":"portable","mappings":[],"unexpected":true}`),
+	} {
+		if _, err := Decode(raw, nil); err == nil {
+			t.Fatalf("Decode(%s) succeeded", raw)
+		}
+	}
+}
+
+func TestDecodeRejectsInvalidCodecBoundaries(t *testing.T) {
+	invalidUTF8 := append([]byte(`{"version":"stave.keymap.v1","profile":"`), append([]byte{0xff}, []byte(`","mappings":[]}`)...)...)
+	for _, raw := range [][]byte{
+		[]byte(`{"version":"stave.keymap.v1","profile":"portable","mappings":[{"binding":{"command":"stave.activate.v1","sequence":[{}]},"route":{"kind":"event","eventKind":"shutdown"}}]}`),
+		[]byte(`{"version":"stave.keymap.v1","profile":"portable","mappings":[{"binding":{"command":"stave.activate.v1","sequence":[{"code":"invalid"}]},"route":{"kind":"event","eventKind":"shutdown"}}]}`),
+		[]byte(`{"version":"stave.keymap.v1","profile":"portable","mappings":[{"binding":{"command":"stave.activate.v1","sequence":[{"code":"tab","mods":128}]},"route":{"kind":"event","eventKind":"shutdown"}}]}`),
+		[]byte(`{"version":"stave.keymap.v1","profile":"portable","mappings":[{"binding":{"command":"stave.activate.v1","sequence":[{"code":"rune","rune":55296}]},"route":{"kind":"event","eventKind":"shutdown"}}]}`),
+		[]byte(`{"version":"stave.keymap.v1","profile":"portable","mappings":[{"binding":{"command":"stave.activate.v1","sequence":[{"code":"rune","rune":10}]},"route":{"kind":"event","eventKind":"shutdown"}}]}`),
+		invalidUTF8,
+		[]byte(`{"version":"stave.keymap.v1","profile":"portable"}`),
+		[]byte(`{"version":"stave.keymap.v1","profile":"portable","mappings":null}`),
+	} {
+		if _, err := Decode(raw, nil); err == nil {
+			t.Fatalf("Decode(%q) succeeded", raw)
+		}
+	}
+	if _, err := New("direct", []Mapping{{
+		Binding: Binding{Sequence: []input.KeyChord{{}}, Command: CommandActivate},
+		Route:   Route{Kind: RouteEvent, EventKind: "shutdown"},
+	}}); err != nil {
+		t.Fatalf("New changed for direct structured chords: %v", err)
+	}
+}
+
+func TestCodecRoundTripsStructuredRuneChords(t *testing.T) {
+	mappings := []Mapping{
+		{Binding: Binding{Sequence: []input.KeyChord{{Code: input.KeyRune, Rune: '+'}}, Command: CommandFocusNext}, Route: Route{Kind: RouteEvent, EventKind: "shutdown"}},
+		{Binding: Binding{Sequence: []input.KeyChord{{Code: input.KeyRune, Rune: '+', Mods: input.ModCtrl}}, Command: CommandFocusPrevious}, Route: Route{Kind: RouteEvent, EventKind: "shutdown"}},
+		{Binding: Binding{Sequence: []input.KeyChord{{Code: input.KeyRune, Rune: 'é', Mods: input.ModAlt | input.ModMeta}}, Command: CommandActivate}, Route: Route{Kind: RouteEvent, EventKind: "shutdown"}},
+	}
+	profile, err := New("structured-runes", mappings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := profile.Encode()
+	if err != nil {
+		t.Fatalf("Encode() error = %v", err)
+	}
+	decoded, err := Decode(raw, nil)
+	if err != nil {
+		t.Fatalf("Decode() error = %v", err)
+	}
+	encoded, err := decoded.Encode()
+	if err != nil {
+		t.Fatalf("re-encode error = %v", err)
+	}
+	if string(encoded) != string(raw) {
+		t.Fatalf("structured rune encoding changed:\n%s\n%s", encoded, raw)
+	}
+}
+
+func TestEncodeRejectsInvalidUTF8(t *testing.T) {
+	for _, mapping := range []Mapping{
+		{
+			Binding: Binding{Sequence: []input.KeyChord{{Code: input.KeyTab}}, Command: CommandID("\xff")},
+			Route:   Route{Kind: RouteEvent, EventKind: "shutdown"},
+		},
+		{
+			Binding: Binding{Sequence: []input.KeyChord{{Code: input.KeyTab}}, Command: CommandActivate},
+			Route: Route{Kind: RouteAction, ActionID: action.ID(primitive.CanonicalActionID("activate")),
+				Arguments: json.RawMessage("{\"value\":\"\xff\"}")},
+		},
+	} {
+		profile, err := New("portable", []Mapping{mapping})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := profile.Encode(); err == nil {
+			t.Fatal("Encode accepted invalid UTF-8")
+		}
+	}
+	profile, err := New("\xff", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := profile.Encode(); err == nil {
+		t.Fatal("Encode accepted invalid UTF-8 profile")
+	}
+}
+
+func TestDecodeRejectsConflictingBindingsAndActionManifestMismatches(t *testing.T) {
+	tab, _ := input.ParseKey("tab")
+	conflicting, err := json.Marshal(codecDocument{Version: CodecVersion, Profile: "portable", Mappings: []Mapping{
+		{Binding: Binding{Sequence: []input.KeyChord{tab}, Command: CommandFocusNext}, Route: Route{Kind: RouteEvent, EventKind: "shutdown"}},
+		{Binding: Binding{Sequence: []input.KeyChord{tab}, Command: CommandFocusPrevious}, Route: Route{Kind: RouteEvent, EventKind: "shutdown"}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Decode(conflicting, nil); err == nil {
+		t.Fatal("expected conflicting bindings to fail")
+	}
+	activate := action.ID(primitive.CanonicalActionID("activate"))
+	profile, err := New("portable", []Mapping{{Binding: Binding{Sequence: []input.KeyChord{tab}, Command: CommandActivate}, Route: Route{Kind: RouteAction, ActionID: activate}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := profile.Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Decode(raw, nil); err == nil || !strings.Contains(err.Error(), "absent from action manifest") {
+		t.Fatalf("expected manifest parity error, got %v", err)
+	}
+	if _, err := Decode(raw, []action.Definition{{ID: activate}}); err != nil {
+		t.Fatalf("expected matching manifest to import profile: %v", err)
+	}
+}
 
 func TestNewRejectsAmbiguousBindings(t *testing.T) {
 	tab, _ := input.ParseKey("tab")
@@ -199,4 +371,193 @@ func TestDispatcherClonesRouteArgumentsAndPayloadAtIngress(t *testing.T) {
 		t.Fatalf("route args were aliased: %s", r.Call.Arguments)
 	}
 	_ = payload
+}
+
+func codecMappings(count, chords int) []Mapping {
+	mappings := make([]Mapping, count)
+	for i := range mappings {
+		sequence := make([]input.KeyChord, chords)
+		for j := range sequence {
+			sequence[j] = input.KeyChord{Code: input.KeyRune, Rune: 'a'}
+		}
+		sequence[len(sequence)-1] = input.KeyChord{Code: input.KeyRune, Rune: rune(0x4E00 + i)}
+		mappings[i] = Mapping{Binding: Binding{Sequence: sequence, Command: CommandID(fmt.Sprint(i))}, Route: Route{Kind: RouteEvent, EventKind: "shutdown"}}
+	}
+	return mappings
+}
+
+func TestCodecBoundsBytesMappingsAndChords(t *testing.T) {
+	const byteLimit = 1 << 20
+	encode := func(mappings []Mapping, profile string) []byte {
+		t.Helper()
+		raw, err := json.Marshal(codecDocument{Version: CodecVersion, Profile: profile, Mappings: mappings})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return raw
+	}
+	raw := encode([]Mapping{}, "")
+	profile := strings.Repeat("p", byteLimit-len(raw))
+	exact := encode([]Mapping{}, profile)
+	if len(exact) != byteLimit {
+		t.Fatal("incorrect exact-size fixture")
+	}
+	if _, err := Decode(exact, nil); err != nil {
+		t.Fatalf("exact byte limit rejected: %v", err)
+	}
+	boundaryMap, err := New(profile, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if encoded, err := boundaryMap.Encode(); err != nil || len(encoded) != byteLimit {
+		t.Fatalf("exact byte limit encode: bytes=%d err=%v", len(encoded), err)
+	}
+	for _, raw := range [][]byte{append(exact, ' '), encode(codecMappings(1025, 1), "test"), encode(codecMappings(1, 17), "test")} {
+		if _, err := Decode(raw, nil); err == nil {
+			t.Fatal("oversized profile accepted")
+		}
+	}
+	for _, data := range []struct {
+		profile  string
+		mappings []Mapping
+	}{
+		{strings.Repeat("p", byteLimit), nil}, {"test", codecMappings(1025, 1)}, {"test", codecMappings(1, 17)},
+	} {
+		m, err := New(data.profile, data.mappings)
+		if err != nil {
+			t.Fatalf("in-memory API changed: %v", err)
+		}
+		if _, err := m.Encode(); err == nil {
+			t.Fatal("encoder produced non-importable oversized profile")
+		}
+	}
+	maximum, err := New("maximum", codecMappings(1024, 16))
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := maximum.Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := Decode(encoded, nil)
+	if err != nil || len(decoded.Bindings()) != 1024 {
+		t.Fatalf("maximum valid profile rejected: %v", err)
+	}
+}
+
+func TestEncodeRejectsOversizedRawInputsBeforeCloning(t *testing.T) {
+	tab, _ := input.ParseKey("tab")
+	actionID := action.ID(primitive.CanonicalActionID("activate"))
+	large := strings.Repeat("x", MaxProfileBytes)
+
+	tests := []struct {
+		name    string
+		profile string
+		mapping Mapping
+	}{
+		{
+			name:    "profile",
+			profile: large,
+		},
+		{
+			name:    "command",
+			mapping: Mapping{Binding: Binding{Sequence: []input.KeyChord{tab}, Command: CommandID(large)}, Route: Route{Kind: RouteEvent, EventKind: "shutdown"}},
+		},
+		{
+			name:    "scope",
+			mapping: Mapping{Binding: Binding{Sequence: []input.KeyChord{tab}, Command: CommandActivate, Scope: semantic.NodeID(large)}, Route: Route{Kind: RouteEvent, EventKind: "shutdown"}},
+		},
+		{
+			name:    "hint",
+			mapping: Mapping{Binding: Binding{Sequence: []input.KeyChord{tab}, Command: CommandActivate}, Route: Route{Kind: RouteEvent, EventKind: "shutdown"}, Hint: large},
+		},
+		{
+			name:    "chord code",
+			mapping: Mapping{Binding: Binding{Sequence: []input.KeyChord{{Code: input.KeyCode(large)}}, Command: CommandActivate}, Route: Route{Kind: RouteEvent, EventKind: "shutdown"}},
+		},
+		{
+			name:    "arguments",
+			mapping: Mapping{Binding: Binding{Sequence: []input.KeyChord{tab}, Command: CommandActivate}, Route: Route{Kind: RouteAction, ActionID: actionID, Arguments: json.RawMessage(`"` + strings.Repeat("x", MaxProfileBytes-2) + `"`)}},
+		},
+		{
+			name:    "payload value",
+			mapping: Mapping{Binding: Binding{Sequence: []input.KeyChord{tab}, Command: CommandActivate}, Route: Route{Kind: RouteEvent, EventKind: "text", Payload: map[string]string{"text": large}}},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			mapping := tc.mapping
+			if len(mapping.Binding.Sequence) == 0 {
+				mapping = Mapping{Binding: Binding{Sequence: []input.KeyChord{tab}, Command: CommandActivate}, Route: Route{Kind: RouteEvent, EventKind: "shutdown"}}
+			}
+			profile, err := New(tc.profile, []Mapping{mapping})
+			if err != nil {
+				t.Fatalf("New() error = %v", err)
+			}
+			if _, err := profile.Encode(); err == nil || !strings.Contains(err.Error(), "exceeds byte limit") {
+				t.Fatalf("Encode() error = %v, want byte limit", err)
+			}
+		})
+	}
+
+	payload := map[string]string{"text": "valid"}
+	for i := 0; i < MaxProfileBytes/(codecPayloadEntryOverhead+len("p00000"))+1; i++ {
+		payload[fmt.Sprintf("p%05d", i)] = ""
+	}
+	profile, err := New("portable", []Mapping{{
+		Binding: Binding{Sequence: []input.KeyChord{tab}, Command: CommandActivate},
+		Route:   Route{Kind: RouteEvent, EventKind: "text", Payload: payload},
+	}})
+	if err != nil {
+		t.Fatalf("New() with many payload entries: %v", err)
+	}
+	if _, err := profile.Encode(); err == nil || !strings.Contains(err.Error(), "exceeds byte limit") {
+		t.Fatalf("Encode() with many payload entries error = %v, want byte limit", err)
+	}
+}
+
+func TestEncodeRetainsExactWireSizeLimitAfterRawPreflight(t *testing.T) {
+	tab, _ := input.ParseKey("tab")
+	profile, err := New("portable", []Mapping{{
+		Binding: Binding{Sequence: []input.KeyChord{tab}, Command: CommandActivate},
+		Route:   Route{Kind: RouteEvent, EventKind: "shutdown"},
+		Hint:    strings.Repeat("\x00", MaxProfileBytes/2),
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := profile.Encode(); err == nil || !strings.Contains(err.Error(), "exceeds byte limit") {
+		t.Fatalf("Encode() error = %v, want final wire-size rejection", err)
+	}
+}
+
+func TestEncodeRejectsOversizedRawInputWithinAllocationBudget(t *testing.T) {
+	tab, _ := input.ParseKey("tab")
+	profile, err := New("portable", []Mapping{{
+		Binding: Binding{Sequence: []input.KeyChord{tab}, Command: CommandActivate},
+		Route:   Route{Kind: RouteEvent, EventKind: "shutdown"},
+		Hint:    strings.Repeat("x", 8*MaxProfileBytes),
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Warm JSON and codec setup before measuring the oversized encode path.
+	warm, err := Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := warm.Encode(); err != nil {
+		t.Fatal(err)
+	}
+	runtime.GC()
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	if _, err := profile.Encode(); err == nil || !strings.Contains(err.Error(), "exceeds byte limit") {
+		t.Fatalf("Encode() error = %v, want byte limit", err)
+	}
+	runtime.ReadMemStats(&after)
+	if allocated := after.TotalAlloc - before.TotalAlloc; allocated > MaxProfileBytes {
+		t.Fatalf("Encode() allocated %d bytes, limit %d", allocated, MaxProfileBytes)
+	}
 }

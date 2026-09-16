@@ -1,16 +1,22 @@
 package keymap
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/ben-ranford/stave/action"
 	staveevent "github.com/ben-ranford/stave/event"
 	"github.com/ben-ranford/stave/input"
+	"github.com/ben-ranford/stave/internal/canonical"
 	"github.com/ben-ranford/stave/primitive"
 	"github.com/ben-ranford/stave/semantic"
 )
@@ -44,6 +50,22 @@ const (
 	CommandPageUp        CommandID = "stave.page.up.v1"
 	CommandPageDown      CommandID = "stave.page.down.v1"
 )
+
+// CodecVersion identifies the current serialized keymap profile format.
+const CodecVersion = "stave.keymap.v1"
+
+// Codec limits bound imported profile memory and conflict-validation work.
+// They apply to serialized profiles; New retains its in-memory behavior.
+const (
+	MaxProfileBytes    = 1 << 20
+	MaxProfileMappings = 1024
+	MaxBindingChords   = 16
+)
+
+// codecPayloadEntryOverhead counts the minimum JSON syntax for a payload
+// entry: quotes around its key and value, plus its colon. It keeps payload
+// sorting and cloning bounded when a profile contains many small entries.
+const codecPayloadEntryOverhead = 5
 
 const (
 	RouteEvent  RouteKind = "event"
@@ -89,6 +111,18 @@ type Resolution struct {
 type Map struct {
 	profile  string
 	mappings []Mapping
+}
+
+type codecDocument struct {
+	Version  string    `json:"version"`
+	Profile  string    `json:"profile"`
+	Mappings []Mapping `json:"mappings"`
+}
+
+type codecImportDocument struct {
+	Version  string     `json:"version"`
+	Profile  string     `json:"profile"`
+	Mappings *[]Mapping `json:"mappings"`
 }
 
 type Dispatcher struct {
@@ -158,6 +192,209 @@ func (m Map) Bindings() []Mapping {
 		out[i].Route.Payload = copyPayload(mapping.Route.Payload)
 	}
 	return out
+}
+
+// Encode returns a deterministic, versioned keymap profile document.
+func (m Map) Encode() ([]byte, error) {
+	if err := checkCodecMappingCounts(m.mappings); err != nil {
+		return nil, err
+	}
+	// Check raw input before cloning routes or parsing chords. This is not a
+	// wire-size estimate: JSON escaping can still make the final document too
+	// large, so the exact check after marshaling remains required.
+	if err := checkCodecEncodeInput(m.profile, m.mappings); err != nil {
+		return nil, err
+	}
+	if err := checkCodecMappingChords(m.mappings); err != nil {
+		return nil, err
+	}
+	mappings := m.Bindings()
+	document := codecDocument{Version: CodecVersion, Profile: m.profile, Mappings: mappings}
+	if err := validateCodecDocument(document); err != nil {
+		return nil, err
+	}
+	type sortableMapping struct {
+		mapping Mapping
+		encoded string
+	}
+	sorted := make([]sortableMapping, len(mappings))
+	for i, mapping := range mappings {
+		raw, err := json.Marshal(mapping)
+		if err != nil {
+			return nil, fmt.Errorf("encode keymap mapping: %w", err)
+		}
+		sorted[i] = sortableMapping{mapping: mapping, encoded: string(raw)}
+	}
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].encoded < sorted[j].encoded })
+	for i := range sorted {
+		mappings[i] = sorted[i].mapping
+	}
+	document.Mappings = mappings
+	raw, err := json.Marshal(document)
+	if err != nil {
+		return nil, err
+	}
+	if len(raw) > MaxProfileBytes {
+		return nil, errors.New("keymap profile exceeds byte limit")
+	}
+	return raw, nil
+}
+
+// Decode imports a versioned keymap profile and verifies its action routes
+// against the application's action manifest.
+func Decode(raw []byte, manifest []action.Definition) (Map, error) {
+	if len(raw) > MaxProfileBytes {
+		return Map{}, errors.New("keymap profile exceeds byte limit")
+	}
+	if !utf8.Valid(raw) {
+		return Map{}, errors.New("decode keymap profile: invalid UTF-8")
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	var document codecImportDocument
+	if err := decoder.Decode(&document); err != nil {
+		return Map{}, fmt.Errorf("decode keymap profile: %w", err)
+	}
+	if decoder.Decode(&struct{}{}) != io.EOF {
+		return Map{}, errors.New("decode keymap profile: trailing data")
+	}
+	if document.Version != CodecVersion {
+		return Map{}, fmt.Errorf("unsupported keymap profile version %q", document.Version)
+	}
+	if document.Mappings == nil {
+		return Map{}, errors.New("decode keymap profile: mappings must be a non-null array")
+	}
+	if err := checkCodecMappings(*document.Mappings); err != nil {
+		return Map{}, err
+	}
+	keymap, err := New(document.Profile, *document.Mappings)
+	if err != nil {
+		return Map{}, fmt.Errorf("decode keymap profile: %w", err)
+	}
+	if err := keymap.ValidateActionManifest(manifest); err != nil {
+		return Map{}, err
+	}
+	return keymap, nil
+}
+
+func checkCodecMappings(mappings []Mapping) error {
+	if err := checkCodecMappingCounts(mappings); err != nil {
+		return err
+	}
+	return checkCodecMappingChords(mappings)
+}
+
+func checkCodecMappingCounts(mappings []Mapping) error {
+	if len(mappings) > MaxProfileMappings {
+		return errors.New("keymap profile exceeds mapping limit")
+	}
+	for _, mapping := range mappings {
+		if len(mapping.Binding.Sequence) > MaxBindingChords {
+			return errors.New("keymap binding exceeds chord limit")
+		}
+	}
+	return nil
+}
+
+func checkCodecMappingChords(mappings []Mapping) error {
+	for _, mapping := range mappings {
+		for _, chord := range mapping.Binding.Sequence {
+			if !validCodecChord(chord) {
+				return errors.New("keymap binding contains an invalid chord")
+			}
+		}
+	}
+	return nil
+}
+
+func validCodecChord(chord input.KeyChord) bool {
+	normalized := chord.Normalize()
+	if normalized == (input.KeyChord{}) {
+		return false
+	}
+	if normalized.Mods&^(input.ModShift|input.ModCtrl|input.ModAlt|input.ModMeta) != 0 {
+		return false
+	}
+	if normalized.Code == input.KeyRune {
+		return utf8.ValidRune(normalized.Rune) && unicode.IsPrint(normalized.Rune) && !unicode.IsControl(normalized.Rune)
+	}
+	parsed, err := input.ParseKey(string(normalized.Code))
+	return err == nil && parsed.Code == normalized.Code && parsed.Rune == 0
+}
+
+func checkCodecEncodeInput(profile string, mappings []Mapping) error {
+	remaining := MaxProfileBytes
+	consume := func(size int) bool {
+		if size > remaining {
+			return false
+		}
+		remaining -= size
+		return true
+	}
+	if !consume(len(profile)) {
+		return errors.New("keymap profile exceeds byte limit")
+	}
+	for _, mapping := range mappings {
+		if !checkCodecEncodeMappingInput(mapping, consume) {
+			return errors.New("keymap profile exceeds byte limit")
+		}
+	}
+	return nil
+}
+
+func checkCodecEncodeMappingInput(mapping Mapping, consume func(int) bool) bool {
+	for _, value := range []string{
+		string(mapping.Binding.Command),
+		string(mapping.Binding.Scope),
+		mapping.Hint,
+		string(mapping.Route.Kind),
+		string(mapping.Route.ActionID),
+		string(mapping.Route.EventKind),
+	} {
+		if !consume(len(value)) {
+			return false
+		}
+	}
+	for _, chord := range mapping.Binding.Sequence {
+		if !consume(len(chord.Code)) {
+			return false
+		}
+	}
+	if !consume(len(mapping.Route.Arguments)) {
+		return false
+	}
+	for key, value := range mapping.Route.Payload {
+		if !consume(codecPayloadEntryOverhead) || !consume(len(key)) || !consume(len(value)) {
+			return false
+		}
+	}
+	return true
+}
+
+func validateCodecDocument(document codecDocument) error {
+	if _, err := canonical.Encode(document); err != nil {
+		return fmt.Errorf("encode keymap profile: %w", err)
+	}
+	for _, mapping := range document.Mappings {
+		if !utf8.Valid(mapping.Route.Arguments) {
+			return errors.New("encode keymap profile: invalid UTF-8 in action arguments")
+		}
+	}
+	return nil
+}
+
+// ValidateActionManifest rejects action bindings that are absent from manifest.
+func (m Map) ValidateActionManifest(manifest []action.Definition) error {
+	known := make(map[action.ID]struct{}, len(manifest))
+	for _, definition := range manifest {
+		known[definition.ID] = struct{}{}
+	}
+	for _, id := range m.ActionIDs() {
+		if _, ok := known[id]; !ok {
+			return fmt.Errorf("keymap action %q is absent from action manifest", id)
+		}
+	}
+	return nil
 }
 
 func (m Map) Hints(command CommandID) []string {
