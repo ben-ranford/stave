@@ -76,4 +76,8 @@ Serialized keymap profiles are limited to 1 MiB (`keymap.MaxProfileBytes`),
 1,024 mappings (`keymap.MaxProfileMappings`), and 16 chords per binding
 (`keymap.MaxBindingChords`). `Encode` and `Decode` enforce the same limits;
 `Decode` checks bytes before parsing and mapping/chord counts before conflict
-validation. The existing in-memory `keymap.New` API retains its behavior.
+validation. Before copying or serializing a map, `Encode` also limits its
+combined input data, including raw action arguments, to 1 MiB. Whitespace in
+raw arguments counts toward that input limit even if JSON serialization would
+remove it. The final encoded document must also fit within 1 MiB after JSON
+escaping. The existing in-memory `keymap.New` API retains its behavior.

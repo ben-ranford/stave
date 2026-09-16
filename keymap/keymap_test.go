@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -441,5 +442,122 @@ func TestCodecBoundsBytesMappingsAndChords(t *testing.T) {
 	decoded, err := Decode(encoded, nil)
 	if err != nil || len(decoded.Bindings()) != 1024 {
 		t.Fatalf("maximum valid profile rejected: %v", err)
+	}
+}
+
+func TestEncodeRejectsOversizedRawInputsBeforeCloning(t *testing.T) {
+	tab, _ := input.ParseKey("tab")
+	actionID := action.ID(primitive.CanonicalActionID("activate"))
+	large := strings.Repeat("x", MaxProfileBytes)
+
+	tests := []struct {
+		name    string
+		profile string
+		mapping Mapping
+	}{
+		{
+			name:    "profile",
+			profile: large,
+		},
+		{
+			name:    "command",
+			mapping: Mapping{Binding: Binding{Sequence: []input.KeyChord{tab}, Command: CommandID(large)}, Route: Route{Kind: RouteEvent, EventKind: "shutdown"}},
+		},
+		{
+			name:    "scope",
+			mapping: Mapping{Binding: Binding{Sequence: []input.KeyChord{tab}, Command: CommandActivate, Scope: semantic.NodeID(large)}, Route: Route{Kind: RouteEvent, EventKind: "shutdown"}},
+		},
+		{
+			name:    "hint",
+			mapping: Mapping{Binding: Binding{Sequence: []input.KeyChord{tab}, Command: CommandActivate}, Route: Route{Kind: RouteEvent, EventKind: "shutdown"}, Hint: large},
+		},
+		{
+			name:    "chord code",
+			mapping: Mapping{Binding: Binding{Sequence: []input.KeyChord{{Code: input.KeyCode(large)}}, Command: CommandActivate}, Route: Route{Kind: RouteEvent, EventKind: "shutdown"}},
+		},
+		{
+			name:    "arguments",
+			mapping: Mapping{Binding: Binding{Sequence: []input.KeyChord{tab}, Command: CommandActivate}, Route: Route{Kind: RouteAction, ActionID: actionID, Arguments: json.RawMessage(`"` + strings.Repeat("x", MaxProfileBytes-2) + `"`)}},
+		},
+		{
+			name:    "payload value",
+			mapping: Mapping{Binding: Binding{Sequence: []input.KeyChord{tab}, Command: CommandActivate}, Route: Route{Kind: RouteEvent, EventKind: "text", Payload: map[string]string{"text": large}}},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			mapping := tc.mapping
+			if len(mapping.Binding.Sequence) == 0 {
+				mapping = Mapping{Binding: Binding{Sequence: []input.KeyChord{tab}, Command: CommandActivate}, Route: Route{Kind: RouteEvent, EventKind: "shutdown"}}
+			}
+			profile, err := New(tc.profile, []Mapping{mapping})
+			if err != nil {
+				t.Fatalf("New() error = %v", err)
+			}
+			if _, err := profile.Encode(); err == nil || !strings.Contains(err.Error(), "exceeds byte limit") {
+				t.Fatalf("Encode() error = %v, want byte limit", err)
+			}
+		})
+	}
+
+	payload := map[string]string{"text": "valid"}
+	for i := 0; i < MaxProfileBytes/(codecPayloadEntryOverhead+len("p00000"))+1; i++ {
+		payload[fmt.Sprintf("p%05d", i)] = ""
+	}
+	profile, err := New("portable", []Mapping{{
+		Binding: Binding{Sequence: []input.KeyChord{tab}, Command: CommandActivate},
+		Route:   Route{Kind: RouteEvent, EventKind: "text", Payload: payload},
+	}})
+	if err != nil {
+		t.Fatalf("New() with many payload entries: %v", err)
+	}
+	if _, err := profile.Encode(); err == nil || !strings.Contains(err.Error(), "exceeds byte limit") {
+		t.Fatalf("Encode() with many payload entries error = %v, want byte limit", err)
+	}
+}
+
+func TestEncodeRetainsExactWireSizeLimitAfterRawPreflight(t *testing.T) {
+	tab, _ := input.ParseKey("tab")
+	profile, err := New("portable", []Mapping{{
+		Binding: Binding{Sequence: []input.KeyChord{tab}, Command: CommandActivate},
+		Route:   Route{Kind: RouteEvent, EventKind: "shutdown"},
+		Hint:    strings.Repeat("\x00", MaxProfileBytes/2),
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := profile.Encode(); err == nil || !strings.Contains(err.Error(), "exceeds byte limit") {
+		t.Fatalf("Encode() error = %v, want final wire-size rejection", err)
+	}
+}
+
+func TestEncodeRejectsOversizedRawInputWithinAllocationBudget(t *testing.T) {
+	tab, _ := input.ParseKey("tab")
+	profile, err := New("portable", []Mapping{{
+		Binding: Binding{Sequence: []input.KeyChord{tab}, Command: CommandActivate},
+		Route:   Route{Kind: RouteEvent, EventKind: "shutdown"},
+		Hint:    strings.Repeat("x", 8*MaxProfileBytes),
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Warm JSON and codec setup before measuring the oversized encode path.
+	warm, err := Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := warm.Encode(); err != nil {
+		t.Fatal(err)
+	}
+	runtime.GC()
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	if _, err := profile.Encode(); err == nil || !strings.Contains(err.Error(), "exceeds byte limit") {
+		t.Fatalf("Encode() error = %v, want byte limit", err)
+	}
+	runtime.ReadMemStats(&after)
+	if allocated := after.TotalAlloc - before.TotalAlloc; allocated > MaxProfileBytes {
+		t.Fatalf("Encode() allocated %d bytes, limit %d", allocated, MaxProfileBytes)
 	}
 }

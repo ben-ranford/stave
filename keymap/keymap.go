@@ -62,6 +62,11 @@ const (
 	MaxBindingChords   = 16
 )
 
+// codecPayloadEntryOverhead counts the minimum JSON syntax for a payload
+// entry: quotes around its key and value, plus its colon. It keeps payload
+// sorting and cloning bounded when a profile contains many small entries.
+const codecPayloadEntryOverhead = 5
+
 const (
 	RouteEvent  RouteKind = "event"
 	RouteAction RouteKind = "action"
@@ -191,11 +196,17 @@ func (m Map) Bindings() []Mapping {
 
 // Encode returns a deterministic, versioned keymap profile document.
 func (m Map) Encode() ([]byte, error) {
-	if err := checkCodecMappings(m.mappings); err != nil {
+	if err := checkCodecMappingCounts(m.mappings); err != nil {
 		return nil, err
 	}
-	if len(m.profile) > MaxProfileBytes {
-		return nil, errors.New("keymap profile exceeds byte limit")
+	// Check raw input before cloning routes or parsing chords. This is not a
+	// wire-size estimate: JSON escaping can still make the final document too
+	// large, so the exact check after marshaling remains required.
+	if err := checkCodecEncodeInput(m.profile, m.mappings); err != nil {
+		return nil, err
+	}
+	if err := checkCodecMappingChords(m.mappings); err != nil {
+		return nil, err
 	}
 	mappings := m.Bindings()
 	document := codecDocument{Version: CodecVersion, Profile: m.profile, Mappings: mappings}
@@ -267,6 +278,13 @@ func Decode(raw []byte, manifest []action.Definition) (Map, error) {
 }
 
 func checkCodecMappings(mappings []Mapping) error {
+	if err := checkCodecMappingCounts(mappings); err != nil {
+		return err
+	}
+	return checkCodecMappingChords(mappings)
+}
+
+func checkCodecMappingCounts(mappings []Mapping) error {
 	if len(mappings) > MaxProfileMappings {
 		return errors.New("keymap profile exceeds mapping limit")
 	}
@@ -274,6 +292,12 @@ func checkCodecMappings(mappings []Mapping) error {
 		if len(mapping.Binding.Sequence) > MaxBindingChords {
 			return errors.New("keymap binding exceeds chord limit")
 		}
+	}
+	return nil
+}
+
+func checkCodecMappingChords(mappings []Mapping) error {
+	for _, mapping := range mappings {
 		for _, chord := range mapping.Binding.Sequence {
 			if !validCodecChord(chord) {
 				return errors.New("keymap binding contains an invalid chord")
@@ -296,6 +320,55 @@ func validCodecChord(chord input.KeyChord) bool {
 	}
 	parsed, err := input.ParseKey(string(normalized.Code))
 	return err == nil && parsed.Code == normalized.Code && parsed.Rune == 0
+}
+
+func checkCodecEncodeInput(profile string, mappings []Mapping) error {
+	remaining := MaxProfileBytes
+	consume := func(size int) bool {
+		if size > remaining {
+			return false
+		}
+		remaining -= size
+		return true
+	}
+	if !consume(len(profile)) {
+		return errors.New("keymap profile exceeds byte limit")
+	}
+	for _, mapping := range mappings {
+		if !checkCodecEncodeMappingInput(mapping, consume) {
+			return errors.New("keymap profile exceeds byte limit")
+		}
+	}
+	return nil
+}
+
+func checkCodecEncodeMappingInput(mapping Mapping, consume func(int) bool) bool {
+	for _, value := range []string{
+		string(mapping.Binding.Command),
+		string(mapping.Binding.Scope),
+		mapping.Hint,
+		string(mapping.Route.Kind),
+		string(mapping.Route.ActionID),
+		string(mapping.Route.EventKind),
+	} {
+		if !consume(len(value)) {
+			return false
+		}
+	}
+	for _, chord := range mapping.Binding.Sequence {
+		if !consume(len(chord.Code)) {
+			return false
+		}
+	}
+	if !consume(len(mapping.Route.Arguments)) {
+		return false
+	}
+	for key, value := range mapping.Route.Payload {
+		if !consume(codecPayloadEntryOverhead) || !consume(len(key)) || !consume(len(value)) {
+			return false
+		}
+	}
+	return true
 }
 
 func validateCodecDocument(document codecDocument) error {
