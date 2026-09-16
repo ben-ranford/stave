@@ -161,6 +161,19 @@
       ]
     },
     {
+      "importPath": "github.com/ben-ranford/stave/cmd/stave-replay",
+      "dir": "cmd/stave-replay",
+      "imports": [
+        "encoding/json",
+        "errors",
+        "flag",
+        "fmt",
+        "github.com/ben-ranford/stave/replay",
+        "io",
+        "os"
+      ]
+    },
+    {
       "importPath": "github.com/ben-ranford/stave/config",
       "dir": "config",
       "imports": [
@@ -455,11 +468,22 @@
       "importPath": "github.com/ben-ranford/stave/replay",
       "dir": "replay",
       "imports": [
+        "bytes",
         "context",
+        "encoding/json",
+        "errors",
         "fmt",
+        "github.com/ben-ranford/stave/effect",
         "github.com/ben-ranford/stave/event",
         "github.com/ben-ranford/stave/internal/canonical",
-        "github.com/ben-ranford/stave/state"
+        "github.com/ben-ranford/stave/semantic",
+        "github.com/ben-ranford/stave/state",
+        "io",
+        "math",
+        "reflect",
+        "strings",
+        "sync",
+        "unicode/utf8"
       ]
     },
     {
