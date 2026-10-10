@@ -36,10 +36,10 @@ Stave is created by [Ben Ranford](https://github.com/ben-ranford) and is
 
 Requires **Go 1.22 or later**. In your Go module, install the release candidate:
 
-<!-- v1.0.0-rc.2 x-release-please-version -->
+<!-- v1.0.0-rc.3 x-release-please-version -->
 <!-- x-release-please-start-version -->
 ```sh
-go get github.com/ben-ranford/stave@v1.0.0-rc.2
+go get github.com/ben-ranford/stave@v1.0.0-rc.3
 ```
 <!-- x-release-please-end -->
 
