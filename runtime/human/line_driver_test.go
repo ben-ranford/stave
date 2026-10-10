@@ -87,7 +87,7 @@ func TestLineDriverOpenHonorsActiveContext(t *testing.T) {
 
 func TestLineDriverEmitsCanonicalTextAndShutdown(t *testing.T) {
 	var output bytes.Buffer
-	driver, err := NewLineDriver(LineDriverOptions{Input: strings.NewReader("alpha\nbeta\n"), Output: &output, Width: 40, Height: 10})
+	driver, err := NewLineDriver(LineDriverOptions{Input: strings.NewReader("alpha\nbeta\n你好 café 👋\n"), Output: &output, Width: 40, Height: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func TestLineDriverEmitsCanonicalTextAndShutdown(t *testing.T) {
 		}
 		got = append(got, ev)
 	}
-	if len(got) != 3 || got[0].Payload.(event.TextPayload).Text != "alpha" || got[1].Payload.(event.TextPayload).Text != "beta" || got[2].Kind != event.Shutdown {
+	if len(got) != 4 || got[0].Payload.(event.TextPayload).Text != "alpha" || got[1].Payload.(event.TextPayload).Text != "beta" || got[2].Payload.(event.TextPayload).Text != "你好 café 👋" || got[3].Kind != event.Shutdown {
 		t.Fatalf("unexpected line events: %#v", got)
 	}
 }
