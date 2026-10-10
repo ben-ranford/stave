@@ -16,7 +16,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  GO_VERSION_CURRENT: "1.27.1"
+  GO_VERSION_CURRENT: "1.27.2"
 
 jobs:
   rolling:
