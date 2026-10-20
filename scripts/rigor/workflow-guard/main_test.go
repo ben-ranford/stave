@@ -32,6 +32,18 @@ jobs:
 	}
 }
 
+func TestCheckWorkflowAllowsNativeHostedSmokeJobsOnlyInCI(t *testing.T) {
+	for name, runner := range map[string]string{"native-smoke-macos": "macos-14", "native-smoke-windows": "windows-2025"} {
+		workflow := "on: push\njobs:\n  " + name + ":\n    runs-on: " + runner + "\n    steps:\n      - run: true\n"
+		if err := checkWorkflow(".github/workflows/ci.yml", []byte(workflow)); err != nil {
+			t.Fatalf("approved native runner rejected: %v", err)
+		}
+		if err := checkWorkflow(".github/workflows/release.yml", []byte(workflow)); err == nil {
+			t.Fatal("native runner allowed outside ci workflow")
+		}
+	}
+}
+
 func TestCheckWorkflowRejectsUnsafeTrustBoundaries(t *testing.T) {
 	workflowPrefix := "on: push\njobs:\n"
 	validJob := `
