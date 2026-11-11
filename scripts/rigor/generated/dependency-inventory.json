@@ -161,6 +161,18 @@
       ]
     },
     {
+      "importPath": "github.com/ben-ranford/stave/cmd/stave-performance-compare",
+      "dir": "cmd/stave-performance-compare",
+      "imports": [
+        "encoding/json",
+        "flag",
+        "fmt",
+        "github.com/ben-ranford/stave/performance",
+        "io",
+        "os"
+      ]
+    },
+    {
       "importPath": "github.com/ben-ranford/stave/cmd/stave-replay",
       "dir": "cmd/stave-replay",
       "imports": [
@@ -404,6 +416,7 @@
       "importPath": "github.com/ben-ranford/stave/performance",
       "dir": "performance",
       "imports": [
+        "bytes",
         "context",
         "encoding/json",
         "errors",
@@ -418,10 +431,16 @@
         "github.com/ben-ranford/stave/secret",
         "github.com/ben-ranford/stave/semantic",
         "github.com/ben-ranford/stave/surface",
+        "io",
+        "math",
+        "reflect",
         "runtime",
         "runtime/metrics",
         "sort",
-        "time"
+        "strings",
+        "sync",
+        "time",
+        "unicode/utf8"
       ]
     },
     {
