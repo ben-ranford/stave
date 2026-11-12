@@ -22,7 +22,7 @@ jobs:
     if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
     outputs:
       channel: ${{ steps.release_tag.outputs.channel }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     steps:
       - name: Check out repository
@@ -74,7 +74,7 @@ jobs:
     name: release / publish
     if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
     needs: verify
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       contents: write
@@ -103,7 +103,7 @@ jobs:
     name: release / public consumer
     if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
     needs: publish
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     permissions:
       contents: read
