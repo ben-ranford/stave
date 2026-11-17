@@ -428,9 +428,14 @@ type Nop struct {  }
 type Observer interface { Observe(context.Context, Event) }
 
 [github.com/ben-ranford/stave/performance]
+const ComparisonSchemaVersion untyped string = "stave.performance.comparison/v1"
+const MaxReportBytes untyped int = 16777216
 const Samples untyped int = 101
 func ActionAckLine() ([]byte, error)
+func Compare(baseline, candidate Report) (Comparison, error)
+func CompareWithPolicy(baseline, candidate Report, policy ComparisonPolicy) (Comparison, error)
 func Context() context.Context
+func DecodeReport(data []byte) (Report, error)
 func Fixture(n int) (semantic.Tree, error)
 func Measure(fn func()) time.Duration
 func MeasureIdleCPU(window time.Duration) RatioMeasurement
@@ -440,18 +445,24 @@ func ReduceCounter(ctx context.Context, count int, ev event.Event) (int, []effec
 func ResizeStormRecovery(count int) error
 func SurfaceFixture(w, h int) (surface.Surface, error)
 func TerminalRestoreAfterCancellation() error
+func ValidateReport(report Report) error
 method (*measurementDriver) Close() error
 method (*measurementDriver) Draw(context.Context, surface.Surface, surface.Patch) error
 method (*measurementDriver) Events() <-chan event.Event
 method (*measurementDriver) Open(context.Context, capability.Policy) (capability.Manifest, error)
 method (*measurementDriver) ReadSecret(context.Context, input.SecretPrompt) (secret.Handle, error)
 method (*measurementDriver) Restore(context.Context) error
+method (MetricDelta) MarshalJSON() ([]byte, error)
 type Attempt struct { P50 time.Duration `json:"p50"`; P95 time.Duration `json:"p95"`; P99 time.Duration `json:"p99"` }
 type Budget struct { Name string `json:"name"`; Limit time.Duration `json:"limit"` }
+type Comparison struct { SchemaVersion string `json:"schemaVersion"`; Policy string `json:"policy"`; BaselineRevision string `json:"baselineRevision,omitempty"`; CandidateRevision string `json:"candidateRevision,omitempty"`; Deltas []MetricDelta `json:"deltas"`; Passed bool `json:"passed"` }
+type ComparisonPolicy struct { MeasurementTolerance float64; AllocationTolerance float64; IdleCPUTolerance float64 }
 type Measurement struct { Name string `json:"name"`; Samples int `json:"samples"`; P50 time.Duration `json:"p50"`; P95 time.Duration `json:"p95"`; P99 time.Duration `json:"p99"`; AllWithinBudget bool `json:"allWithinBudget"`; Limit time.Duration `json:"limit"`; Disposition string `json:"disposition,omitempty"`; Attempts []Attempt `json:"attempts,omitempty"` }
+type MetricDelta struct { Metric string `json:"metric"`; Unit string `json:"unit"`; Baseline float64 `json:"baseline"`; Candidate float64 `json:"candidate"`; Delta float64 `json:"delta"`; PercentDelta float64 `json:"percentDelta,omitempty"`; Tolerance float64 `json:"tolerance"`; ToleranceUnit string `json:"toleranceUnit"`; WithinTolerance bool `json:"withinTolerance"` }
 type RatioMeasurement struct { Name string `json:"name"`; Window time.Duration `json:"window"`; Value float64 `json:"value"`; Limit float64 `json:"limit"`; AllWithinBudget bool `json:"allWithinBudget"`; Disposition string `json:"disposition,omitempty"`; Attempts []float64 `json:"attempts,omitempty"` }
 type Report struct { GeneratedAt time.Time `json:"generatedAt"`; Host string `json:"host"`; GoVersion string `json:"goVersion"`; GOOS string `json:"goos"`; GOARCH string `json:"goarch"`; CPUs int `json:"cpus"`; Nodes int `json:"nodes"`; NodeShape string `json:"nodeDistribution"`; Renderer string `json:"renderer"`; Viewport layout.Size `json:"viewport"`; Capabilities capability.Manifest `json:"capabilities"`; Reproducibility Reproducibility `json:"reproducibility"`; AllocBytes uint64 `json:"allocBytes"`; AllocLimit uint64 `json:"allocLimitBytes"`; AllocWithin bool `json:"allocWithinBudget"`; IdleCPU RatioMeasurement `json:"idleCpu"`; Measurements []Measurement `json:"measurements"`; Invariants []string `json:"invariants"` }
 type Reproducibility struct { Invocation []string `json:"invocation"`; SampleCount int `json:"sampleCount"`; Strict bool `json:"strict"`; GOMAXPROCS int `json:"gomaxprocs"`; VCSRevision string `json:"vcsRevision,omitempty"`; VCSModified bool `json:"vcsModified,omitempty"` }
+var DefaultComparisonPolicy ComparisonPolicy
 
 [github.com/ben-ranford/stave/primitive]
 const Grid Direction = "grid"
