@@ -1,9 +1,9 @@
 module github.com/ben-ranford/stave/adapters/lipgloss
 
-go 1.25.0
+go 1.26.0
 
 require (
-	charm.land/lipgloss/v2 v2.0.6
+	charm.land/lipgloss/v2 v2.1.1
 	github.com/ben-ranford/stave v0.0.0
 	github.com/charmbracelet/colorprofile v0.4.3
 )
